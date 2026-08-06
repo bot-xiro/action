@@ -1,0 +1,13 @@
+# 占位工作流 - 后续替换为真正的构建工作流
+name: placeholder
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "仓库初始化完成，等待正式构建工作流"
