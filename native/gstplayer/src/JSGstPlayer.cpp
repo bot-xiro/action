@@ -339,7 +339,7 @@ void JSGstPlayer::teardownPipeline()
 
 GstElement* JSGstPlayer::getPipeline() const
 {
-    return static_cast<GstElement*>(pipeline_);
+    return pipeline_;
 }
 
 void JSGstPlayer::OnGCCollect()

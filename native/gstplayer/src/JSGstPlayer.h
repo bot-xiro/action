@@ -13,6 +13,8 @@
 // 前向声明（避免头文件依赖 gst/gst.h，GStreamer 实现在 .cpp 中引入）
 struct _GstPad;
 typedef struct _GstPad GstPad;
+struct _GstElement;
+typedef struct _GstElement GstElement;
 
 using namespace JQUTIL_NS;
 
@@ -30,29 +32,31 @@ public:
 
     // decodebin 动态 pad 分发（供 pad-added 回调调用）
     void onDecodebinPad(GstPad* pad);
-    void* getPipeline() const;
+    GstElement* getPipeline() const;
+
+    // GStreamer bus watch 回调需要（自由函数不能访问 private）
+    void publishState(const std::string& state, const std::string& detail = "");
 
 protected:
     void OnGCCollect() override;
 
 private:
-    void publishState(const std::string& state, const std::string& detail = "");
     void throwError(JQFunctionInfo& info, const std::string& msg);
     void buildPipeline(const std::string& url);
     void teardownPipeline();
 
     std::mutex mutex_;
-    void* pipeline_;          // GstElement*
+    GstElement* pipeline_;
     std::atomic<bool> playing_;
     int posX_, posY_, posW_, posH_;
     bool audioEnable_;
     bool useKmsSink_;         // true=kmssink, false=waylandsink
-    void* videoQueue_;        // GstElement*
-    void* videoConvert_;
-    void* videoSink_;
-    void* audioQueue_;
-    void* audioConvert_;
-    void* audioSink_;
+    GstElement* videoQueue_;
+    GstElement* videoConvert_;
+    GstElement* videoSink_;
+    GstElement* audioQueue_;
+    GstElement* audioConvert_;
+    GstElement* audioSink_;
 
     // QuickJS callback on 'finish'
     JSValue finishCallback_;
