@@ -33,5 +33,5 @@ RUN cmake -B build \
 
 RUN cmake --build build --config Release --parallel $(nproc)
 
-# Verify output
-RUN file build/libjsapi_gstplayer.so && ls -la build/libjsapi_gstplayer.so
+# Verify output (file cmd not present in minimal image; use ls + hexdump via od)
+RUN ls -la build/libjsapi_gstplayer.so && od -An -tx1 -N16 build/libjsapi_gstplayer.so
