@@ -1,6 +1,6 @@
 // JSGstPlayer.h
 // GStreamer 视频播放器 —— MiniApp JSAPI 对象
-// pipeline: playbin(source=souphttpsrc+UA/Referer) → 自动 demux/decode → waylandsink(video) / alsasink(audio)
+// pipeline: souphttpsrc(+UA+Referer) → typefind → decodebin → waylandsink(video) / alsasink(audio)
 // 视频输出到 DRM overlay plane（hole-punch 与 mplayer 同思路）
 
 #pragma once
@@ -11,6 +11,8 @@
 #include <atomic>
 
 // 前向声明（避免头文件依赖 gst/gst.h，GStreamer 实现在 .cpp 中引入）
+struct _GstPad;
+typedef struct _GstPad GstPad;
 struct _GstElement;
 typedef struct _GstElement GstElement;
 
@@ -28,9 +30,12 @@ public:
     void pause(JQFunctionInfo& info);
     void close(JQFunctionInfo& info);
 
+    // decodebin 动态 pad 分发（供 pad-added 回调调用）
+    void onDecodebinPad(GstPad* pad);
+    GstElement* getPipeline() const;
+
     // GStreamer bus watch 回调需要（自由函数不能访问 private）
     void publishState(const std::string& state, const std::string& detail = "");
-    GstElement* getPipeline() const;
 
 protected:
     void OnGCCollect() override;
@@ -67,6 +72,12 @@ private:
     int posX_, posY_, posW_, posH_;
     bool audioEnable_;
     bool useKmsSink_;         // true=kmssink, false=waylandsink
+    GstElement* videoQueue_;
+    GstElement* videoConvert_;
+    GstElement* videoSink_;
+    GstElement* audioQueue_;
+    GstElement* audioConvert_;
+    GstElement* audioSink_;
 
     // QuickJS callback on 'finish'
     JSValue finishCallback_;
