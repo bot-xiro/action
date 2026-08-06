@@ -20,4 +20,5 @@
 - 环境摸底: [docs/X6PRO_ENV.txt](docs/X6PRO_ENV.txt)
 - 阅读笔记与骨架设计: [docs/STUDY_NOTES.md](docs/STUDY_NOTES.md)
 - 适配差异与崩溃修复: [docs/PORTING_NOTES.md](docs/PORTING_NOTES.md)
+- 亮屏方法汇总: [docs/SCREEN_WAKE.md](docs/SCREEN_WAKE.md)
 - 测试日志: [docs/X6PRO_TEST_LOG/](docs/X6PRO_TEST_LOG/)

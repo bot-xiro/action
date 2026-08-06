@@ -3,6 +3,7 @@ platform-tools/
 .android/
 refs/
 *.log
+.omo/
 
 # Node
 node_modules/
