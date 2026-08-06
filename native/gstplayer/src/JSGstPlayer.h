@@ -44,6 +44,9 @@ private:
     void throwError(JQFunctionInfo& info, const std::string& msg);
     void buildPipeline(const std::string& url);
     void teardownPipeline();
+    // 以下两个必须在 GLib main loop 线程中调用（由 GstTask 调度）
+    GstStateChangeReturn startInternal();
+    GstStateChangeReturn pauseInternal();
 
     std::mutex mutex_;
     GstElement* pipeline_;

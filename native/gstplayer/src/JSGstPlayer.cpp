@@ -1,12 +1,20 @@
 // JSGstPlayer.cpp
 // GStreamer 视频播放器真实实现
-// pipeline: souphttpsrc(+UA+Referer) → typefind → decodebin → kmssink(video) / alsasink(audio)
-// 视频用 render-rectangle 定位到 MiniApp hole 区域（与设备原生 mplayer 同思路）
+// pipeline: souphttpsrc(+UA+Referer) → typefind → decodebin → waylandsink(video) / alsasink(audio)
+//
+// 关键架构: miniapp 进程没有 GLib main loop（QuickJS 驱动），而 waylandsink 的 wayland
+// 事件与 bus 消息都必须由 GLib main context 派发，否则 pipeline 永远卡在 preroll、
+// 画面/声音都不出来（gst-launch 能播是因为它自带 main loop）。
+// 因此本模块自建专用 GLib main loop 线程，所有 GStreamer 操作通过
+// g_main_context_invoke 同步调度到该线程执行。
+//
 // open 支持 options.sink = "kmssink" | "waylandsink"，便于真机调试切换
+// （注意: kmssink 与设备 weston(drm-backend) 抢 DRM master 会卡死，默认 waylandsink）
 
 #include "JSGstPlayer.h"
 #include "jqutil_v2/jqutil.h"
 #include <gst/gst.h>
+#include <glib.h>
 #include <cstring>
 #include <mutex>
 #include <string>
@@ -22,11 +30,85 @@ const char* kUserAgent =
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 const char* kReferer = "https://www.bilibili.com";
 
+// ---------------- GLib main loop 专用线程 ----------------
+// 所有 GStreamer 对象都在此线程创建/操作，bus watch 与 waylandsink 的
+// wayland 事件源都挂到这个 context 上，由 g_main_loop_run 持续派发。
+GMainContext* g_gstCtx = nullptr;
+GMainLoop* g_gstLoop = nullptr;
+GThread* g_gstThread = nullptr;
+
+gpointer gst_loop_main(gpointer data)
+{
+    (void)data;
+    GMainContext* ctx = g_main_context_new();
+    g_main_context_push_thread_default(ctx);
+    g_gstCtx = ctx;
+    g_gstLoop = g_main_loop_new(ctx, FALSE);
+    g_main_loop_run(g_gstLoop);
+    g_main_loop_unref(g_gstLoop);
+    g_main_context_pop_thread_default(ctx);
+    g_main_context_unref(ctx);
+    return nullptr;
+}
+
+void ensureGstLoop()
+{
+    if (g_gstThread) return;
+    g_gstThread = g_thread_new("gst-main-loop", gst_loop_main, nullptr);
+    // 等待 context 就绪（很快）
+    while (!g_gstCtx) g_usleep(1000);
+}
+
 void on_pad_added(GstElement* element, GstPad* pad, gpointer user_data)
 {
     (void)element;
     JSGstPlayer* self = static_cast<JSGstPlayer*>(user_data);
     self->onDecodebinPad(pad);
+}
+
+// ---------------- 同步调度到 GLib loop 线程 ----------------
+enum class GstOp {
+    Build,
+    Start,
+    Pause,
+    Teardown,
+};
+
+struct GstTask {
+    GstOp op;
+    JSGstPlayer* self;
+    std::string url;
+    std::string error;          // 操作失败信息（Build 用）
+    GstStateChangeReturn ret;   // Start/Pause 用
+};
+
+gboolean gst_task_cb(gpointer data)
+{
+    GstTask* t = static_cast<GstTask*>(data);
+    switch (t->op) {
+    case GstOp::Build:
+        try {
+            t->self->buildPipeline(t->url);
+        } catch (const std::exception& e) {
+            t->error = e.what();
+        }
+        break;
+    case GstOp::Start:
+        t->ret = t->self->startInternal();
+        break;
+    case GstOp::Pause:
+        t->ret = t->self->pauseInternal();
+        break;
+    case GstOp::Teardown:
+        t->self->teardownPipeline();
+        break;
+    }
+    return G_SOURCE_REMOVE;
+}
+
+void invokeGst(GstTask* t)
+{
+    g_main_context_invoke(g_gstCtx, gst_task_cb, t);
 }
 
 }  // namespace
@@ -49,18 +131,25 @@ JSGstPlayer::JSGstPlayer()
     , finishCallback_(JS_UNDEFINED)
     , ctx_(nullptr)
 {
-    // 模块首次使用时初始化 GStreamer
+    // 模块首次使用时初始化 GStreamer + 启动 GLib main loop 线程
     static bool gstInited = false;
     if (!gstInited) {
         gst_init(nullptr, nullptr);
         gstInited = true;
         LOGI("gstplayer: gst_init done (gstreamer %s)", gst_version_string());
     }
+    ensureGstLoop();
 }
 
 JSGstPlayer::~JSGstPlayer()
 {
-    teardownPipeline();
+    // 在 GLib loop 线程中清理 pipeline（析构可能发生在任意线程）
+    if (g_gstCtx && pipeline_) {
+        GstTask clean;
+        clean.op = GstOp::Teardown;
+        clean.self = this;
+        invokeGst(&clean);
+    }
     if (ctx_ && !JS_IsUndefined(finishCallback_)) {
         JS_FreeValue(ctx_, finishCallback_);
     }
@@ -192,11 +281,19 @@ void JSGstPlayer::open(JQFunctionInfo& info)
         JS_FreeValue(ctx, val);
     }
 
-    try {
-        buildPipeline(url);
-    } catch (const std::exception& e) {
-        teardownPipeline();
-        throwError(info, e.what());
+    // 在 GLib loop 线程中构建 pipeline（bus watch / waylandsink 事件依赖该线程派发）
+    GstTask task;
+    task.op = GstOp::Build;
+    task.self = this;
+    task.url = url;
+    invokeGst(&task);
+    if (!task.error.empty()) {
+        // 构建失败: 在 loop 线程清理残留对象
+        GstTask clean;
+        clean.op = GstOp::Teardown;
+        clean.self = this;
+        invokeGst(&clean);
+        throwError(info, task.error);
         return;
     }
 
@@ -206,8 +303,57 @@ void JSGstPlayer::open(JQFunctionInfo& info)
     info.GetReturnValue().Set(0);
 }
 
+void JSGstPlayer::start(JQFunctionInfo& info)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!pipeline_) {
+        throwError(info, "not opened");
+        return;
+    }
+    GstTask task;
+    task.op = GstOp::Start;
+    task.self = this;
+    invokeGst(&task);
+    if (task.ret == GST_STATE_CHANGE_FAILURE) {
+        playing_ = false;
+        throwError(info, "gst set PLAYING failed");
+        return;
+    }
+    playing_ = true;
+    LOGI("gstplayer start -> PLAYING, ret=%d", task.ret);
+    info.GetReturnValue().Set(0);
+}
+
+void JSGstPlayer::pause(JQFunctionInfo& info)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!pipeline_) {
+        throwError(info, "not opened");
+        return;
+    }
+    GstTask task;
+    task.op = GstOp::Pause;
+    task.self = this;
+    invokeGst(&task);
+    playing_ = false;
+    LOGI("gstplayer pause -> PAUSED, ret=%d", task.ret);
+    info.GetReturnValue().Set(0);
+}
+
+void JSGstPlayer::close(JQFunctionInfo& info)
+{
+    std::lock_guard<std::mutex> lock(mutex_);
+    GstTask task;
+    task.op = GstOp::Teardown;
+    task.self = this;
+    invokeGst(&task);
+    LOGI("gstplayer close");
+    info.GetReturnValue().Set(0);
+}
+
 void JSGstPlayer::buildPipeline(const std::string& url)
 {
+    // 注意: 必须在 GLib loop 线程中调用（bus watch / waylandsink 事件源挂到该线程 context）
     if (!pipeline_) {
         pipeline_ = gst_pipeline_new("gstplayer-pipeline");
         if (!pipeline_) throw std::runtime_error("gst_pipeline_new failed");
@@ -252,6 +398,10 @@ void JSGstPlayer::buildPipeline(const std::string& url)
         if (!audioQueue_ || !audioConvert_ || !audioSink_) {
             throw std::runtime_error("audio branch elements not available");
         }
+        // 设备声卡: card0=rk817, card1=aw883xx(功放/扬声器)。
+        // alsasink 默认选错设备（实测 "alsa is anolog mic" 链接失败）。
+        // asound.conf 定义 pcm.speaker = plug→softvol→resample→hw:1,0，扬声器输出用这个别名。
+        g_object_set(audioSink_, "device", "speaker", nullptr);
     }
 
     // ---- 组装 ----
@@ -275,7 +425,7 @@ void JSGstPlayer::buildPipeline(const std::string& url)
     // decodebin 动态 pad -> 视频/音频分支
     g_signal_connect(decodebin, "pad-added", G_CALLBACK(on_pad_added), this);
 
-    // bus 监控
+    // bus 监控（挂到当前线程即 GLib loop 线程的 default context）
     GstBus* bus = gst_element_get_bus(GST_ELEMENT(pipeline_));
     gst_bus_add_watch(bus, bus_watch, this);
     gst_object_unref(bus);
@@ -284,47 +434,9 @@ void JSGstPlayer::buildPipeline(const std::string& url)
     // 待 start() 时切 PLAYING
 }
 
-void JSGstPlayer::start(JQFunctionInfo& info)
-{
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!pipeline_) {
-        throwError(info, "not opened");
-        return;
-    }
-    playing_ = true;
-    GstStateChangeReturn ret = gst_element_set_state(GST_ELEMENT(pipeline_), GST_STATE_PLAYING);
-    LOGI("gstplayer start -> PLAYING, ret=%d", ret);
-    if (ret == GST_STATE_CHANGE_FAILURE) {
-        playing_ = false;
-        throwError(info, "gst set PLAYING failed");
-        return;
-    }
-    info.GetReturnValue().Set(0);
-}
-
-void JSGstPlayer::pause(JQFunctionInfo& info)
-{
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (!pipeline_) {
-        throwError(info, "not opened");
-        return;
-    }
-    playing_ = false;
-    GstStateChangeReturn ret = gst_element_set_state(GST_ELEMENT(pipeline_), GST_STATE_PAUSED);
-    LOGI("gstplayer pause -> PAUSED, ret=%d", ret);
-    info.GetReturnValue().Set(0);
-}
-
-void JSGstPlayer::close(JQFunctionInfo& info)
-{
-    std::lock_guard<std::mutex> lock(mutex_);
-    teardownPipeline();
-    LOGI("gstplayer close");
-    info.GetReturnValue().Set(0);
-}
-
 void JSGstPlayer::teardownPipeline()
 {
+    // 注意: 本函数必须在 GLib loop 线程中调用（bus watch 持有 pipeline 引用）
     if (pipeline_) {
         gst_element_set_state(GST_ELEMENT(pipeline_), GST_STATE_NULL);
         gst_object_unref(pipeline_);
@@ -337,6 +449,20 @@ void JSGstPlayer::teardownPipeline()
     audioConvert_ = nullptr;
     audioSink_ = nullptr;
     playing_ = false;
+}
+
+GstStateChangeReturn JSGstPlayer::startInternal()
+{
+    // 必须在 GLib loop 线程中调用
+    if (!pipeline_) return GST_STATE_CHANGE_FAILURE;
+    return gst_element_set_state(GST_ELEMENT(pipeline_), GST_STATE_PLAYING);
+}
+
+GstStateChangeReturn JSGstPlayer::pauseInternal()
+{
+    // 必须在 GLib loop 线程中调用
+    if (!pipeline_) return GST_STATE_CHANGE_FAILURE;
+    return gst_element_set_state(GST_ELEMENT(pipeline_), GST_STATE_PAUSED);
 }
 
 GstElement* JSGstPlayer::getPipeline() const
