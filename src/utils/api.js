@@ -189,10 +189,24 @@ async function searchVideo(keyword, page) {
   throw new Error('searchVideo failed: ' + (data ? data.code : 'no data'))
 }
 
+/**
+ * 相关视频推荐（无需签名）
+ * @param {string} bvid
+ */
+async function getRelated(bvid) {
+  const url = BASE + '/x/web-interface/archive/related?bvid=' + encodeURIComponent(bvid)
+  const data = await request(url, { timeout: 10 })
+  if (data && data.code === 0) {
+    return data.data || []
+  }
+  throw new Error('getRelated failed: ' + (data ? data.code : 'no data'))
+}
+
 export default {
   getPopular: getPopular,
   getVideoInfo: getVideoInfo,
   getPlayUrl: getPlayUrl,
   searchVideo: searchVideo,
+  getRelated: getRelated,
   encWbi: encWbi
 }

@@ -171,7 +171,7 @@ export default {
         },
         openVideo(item) {
             console.log('[index] open: ' + item.bvid)
-            // 详情/播放页将在后续阶段实现
+            $falcon.navTo('detail', { bvid: item.bvid })
         }
     }
 }
