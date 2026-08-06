@@ -1,12 +1,18 @@
 // JSGstPlayer.cpp
 // GStreamer 视频播放器真实实现
-// pipeline: souphttpsrc(+UA+Referer) → typefind → decodebin → waylandsink(video) / alsasink(audio)
+// pipeline: playbin(source=souphttpsrc+UA+Referer) → 自动 demux/decode → waylandsink(video) / alsasink(audio)
 //
 // 关键架构: miniapp 进程没有 GLib main loop（QuickJS 驱动），而 waylandsink 的 wayland
 // 事件与 bus 消息都必须由 GLib main context 派发，否则 pipeline 永远卡在 preroll、
 // 画面/声音都不出来（gst-launch 能播是因为它自带 main loop）。
 // 因此本模块自建专用 GLib main loop 线程，所有 GStreamer 操作通过
-// g_main_context_invoke 同步调度到该线程执行。
+// g_main_context_invoke 调度到该线程执行。
+//
+// 注意: 设备 GLib(2.7x) 的 g_main_context_invoke 在非 owner/非 thread-default 线程
+// 调用时是异步 fire-and-forget（attach idle source 后立即返回，不等待执行），
+// 因此 GstTask 带 done 标志，invokeGst 自旋等待任务完成，恢复同步契约，防止
+// 栈上 GstTask 悬垂（旧版无等待导致 open() 未建链即返回 → start() 抛 not opened，
+// 且悬垂 task 偶发崩溃在 g_object_set）。
 //
 // open 支持 options.sink = "kmssink" | "waylandsink"，便于真机调试切换
 // （注意: kmssink 与设备 weston(drm-backend) 抢 DRM master 会卡死，默认 waylandsink）
@@ -59,13 +65,6 @@ void ensureGstLoop()
     while (!g_gstCtx) g_usleep(1000);
 }
 
-void on_pad_added(GstElement* element, GstPad* pad, gpointer user_data)
-{
-    (void)element;
-    JSGstPlayer* self = static_cast<JSGstPlayer*>(user_data);
-    self->onDecodebinPad(pad);
-}
-
 // ---------------- 同步调度到 GLib loop 线程 ----------------
 // GstOp / GstTask / gst_task_cb / invokeGst 定义见 JSGstPlayer.h（类内成员，
 // 静态成员函数 gst_task_cb 可访问私有方法；invokeGst 通过 g_main_context_invoke
@@ -94,12 +93,21 @@ int JSGstPlayer::gst_task_cb(void* data)
         t->self->teardownPipeline();
         break;
     }
+    t->done = true;
     return G_SOURCE_REMOVE;
 }
 
 void JSGstPlayer::invokeGst(GstTask* t)
 {
+    t->done = false;
     g_main_context_invoke(g_gstCtx, gst_task_cb, t);
+    // 设备 GLib(2.7x) 的 g_main_context_invoke 在非 owner/非 thread-default 线程调用时是
+    // 异步 fire-and-forget：attach idle source 后立即返回，不等待执行。此处自旋等待任务
+    // 完成，恢复"同步调度"契约（等待期间调用线程栈帧保持有效，GstTask 不悬垂）。
+    // 若 gst_task_cb 在当前线程直接执行（is_owner/acquire 路径），done 已为 true，立即返回。
+    while (!t->done) {
+        g_usleep(1000);
+    }
 }
 
 JSGstPlayer::JSGstPlayer()
@@ -111,12 +119,6 @@ JSGstPlayer::JSGstPlayer()
     , posH_(200)
     , audioEnable_(true)
     , useKmsSink_(false)   // 默认 waylandsink: kmssink 与 weston(drm-backend) 抢 DRM master 会卡死
-    , videoQueue_(nullptr)
-    , videoConvert_(nullptr)
-    , videoSink_(nullptr)
-    , audioQueue_(nullptr)
-    , audioConvert_(nullptr)
-    , audioSink_(nullptr)
     , finishCallback_(JS_UNDEFINED)
     , ctx_(nullptr)
 {
@@ -142,37 +144,6 @@ JSGstPlayer::~JSGstPlayer()
     if (ctx_ && !JS_IsUndefined(finishCallback_)) {
         JS_FreeValue(ctx_, finishCallback_);
     }
-}
-
-void JSGstPlayer::onDecodebinPad(GstPad* pad)
-{
-    GstCaps* caps = gst_pad_get_current_caps(pad);
-    if (!caps) caps = gst_pad_query_caps(pad, nullptr);
-    GstStructure* s = caps ? gst_caps_get_structure(caps, 0) : nullptr;
-    if (!s) {
-        if (caps) gst_caps_unref(caps);
-        return;
-    }
-    const char* mime = gst_structure_get_name(s);
-    bool isVideo = g_str_has_prefix(mime, "video/");
-    bool isAudio = g_str_has_prefix(mime, "audio/");
-    if (caps) gst_caps_unref(caps);
-
-    GstElement* queue = nullptr;
-    if (isVideo && videoQueue_) queue = videoQueue_;
-    else if (isAudio && audioQueue_) queue = audioQueue_;
-    if (!queue) return;
-
-    GstPad* sinkpad = gst_element_get_static_pad(queue, "sink");
-    if (!sinkpad || gst_pad_is_linked(sinkpad)) {
-        if (sinkpad) gst_object_unref(sinkpad);
-        return;
-    }
-    GstPadLinkReturn ret = gst_pad_link(pad, sinkpad);
-    if (ret != GST_PAD_LINK_OK) {
-        LOGE("gstplayer link %s to queue failed: %d", mime, ret);
-    }
-    gst_object_unref(sinkpad);
 }
 
 static gboolean bus_watch(GstBus* bus, GstMessage* msg, gpointer user_data)
@@ -344,11 +315,17 @@ void JSGstPlayer::buildPipeline(const std::string& url)
 {
     // 注意: 必须在 GLib loop 线程中调用（bus watch / waylandsink 事件源挂到该线程 context）
     if (!pipeline_) {
-        pipeline_ = gst_pipeline_new("gstplayer-pipeline");
-        if (!pipeline_) throw std::runtime_error("gst_pipeline_new failed");
+        // playbin: 自动 demux/decode/sink 选择，比手动 souphttpsrc+typefind+decodebin 链
+        // 兼容性更好（IOT 点读笔系统部分 GStreamer 元素/参数不兼容，playbin 内部自适应）
+        pipeline_ = gst_element_factory_make("playbin", "playbin");
+        if (!pipeline_) throw std::runtime_error("playbin not available");
     }
 
-    // ---- 源: souphttpsrc + UA + Referer ----
+    // flags 用 playbin 默认值（VIDEO|AUDIO|NATIVE_VIDEO|NATIVE_AUDIO，硬件解码优先）；
+    // 不启用 DOWNLOAD（流式直放，避免 IOT 设备本地缓冲）
+
+    // ---- 源: souphttpsrc + UA + Referer（playbin 的 source 属性接管，不设 uri）----
+    // playbin 会对自定义 source 自动加 typefind + demux，UA/Referer 防 B 站 403
     GstElement* src = gst_element_factory_make("souphttpsrc", "src");
     if (!src) throw std::runtime_error("souphttpsrc not available");
     g_object_set(src, "location", url.c_str(), nullptr);
@@ -358,61 +335,33 @@ void JSGstPlayer::buildPipeline(const std::string& url)
         g_object_set(src, "extra-headers", hdrs, nullptr);
         gst_structure_free(hdrs);
     }
+    g_object_set(pipeline_, "source", src, nullptr);
+    gst_object_unref(src);  // playbin 已持有引用
 
-    // ---- typefind + decodebin ----
-    GstElement* typefind = gst_element_factory_make("typefind", "typefind");
-    GstElement* decodebin = gst_element_factory_make("decodebin", "decodebin");
-    if (!typefind || !decodebin) throw std::runtime_error("typefind/decodebin not available");
-
-    // ---- 视频分支: queue ! videoconvert ! (kmssink|waylandsink) ----
-    videoQueue_ = gst_element_factory_make("queue", "vqueue");
-    videoConvert_ = gst_element_factory_make("videoconvert", "vconvert");
+    // ---- 视频 sink: waylandsink（默认）| kmssink（调试用）----
     const char* sinkName = useKmsSink_ ? "kmssink" : "waylandsink";
-    videoSink_ = gst_element_factory_make(sinkName, "vsink");
-    if (!videoQueue_ || !videoConvert_ || !videoSink_) {
-        throw std::runtime_error(std::string("video branch elements not available: ") + sinkName);
-    }
+    GstElement* vsink = gst_element_factory_make(sinkName, "vsink");
+    if (!vsink) throw std::runtime_error(std::string("video sink not available: ") + sinkName);
     if (useKmsSink_) {
         // kmssink 定位到 hole 区域: render-rectangle "<x, y, w, h>"
         gchar* rect = g_strdup_printf("<%d, %d, %d, %d>", posX_, posY_, posW_, posH_);
-        g_object_set(videoSink_, "render-rectangle", rect, nullptr);
+        g_object_set(vsink, "render-rectangle", rect, nullptr);
         g_free(rect);
     }
+    g_object_set(pipeline_, "video-sink", vsink, nullptr);
+    gst_object_unref(vsink);
 
-    // ---- 音频分支: queue ! audioconvert ! alsasink ----
+    // ---- 音频 sink: alsasink device=speaker ----
     if (audioEnable_) {
-        audioQueue_ = gst_element_factory_make("queue", "aqueue");
-        audioConvert_ = gst_element_factory_make("audioconvert", "aconvert");
-        audioSink_ = gst_element_factory_make("alsasink", "asink");
-        if (!audioQueue_ || !audioConvert_ || !audioSink_) {
-            throw std::runtime_error("audio branch elements not available");
-        }
+        GstElement* asink = gst_element_factory_make("alsasink", "asink");
+        if (!asink) throw std::runtime_error("alsasink not available");
         // 设备声卡: card0=rk817, card1=aw883xx(功放/扬声器)。
         // alsasink 默认选错设备（实测 "alsa is anolog mic" 链接失败）。
         // asound.conf 定义 pcm.speaker = plug→softvol→resample→hw:1,0，扬声器输出用这个别名。
-        g_object_set(audioSink_, "device", "speaker", nullptr);
+        g_object_set(asink, "device", "speaker", nullptr);
+        g_object_set(pipeline_, "audio-sink", asink, nullptr);
+        gst_object_unref(asink);
     }
-
-    // ---- 组装 ----
-    gst_bin_add_many(GST_BIN(pipeline_), src, typefind, decodebin,
-                     videoQueue_, videoConvert_, videoSink_, nullptr);
-    if (audioEnable_) {
-        gst_bin_add_many(GST_BIN(pipeline_), audioQueue_, audioConvert_, audioSink_, nullptr);
-    }
-
-    if (!gst_element_link_many(src, typefind, decodebin, nullptr)) {
-        throw std::runtime_error("link src->typefind->decodebin failed");
-    }
-    if (!gst_element_link_many(videoQueue_, videoConvert_, videoSink_, nullptr)) {
-        throw std::runtime_error("link video branch failed");
-    }
-    if (audioEnable_ &&
-        !gst_element_link_many(audioQueue_, audioConvert_, audioSink_, nullptr)) {
-        throw std::runtime_error("link audio branch failed");
-    }
-
-    // decodebin 动态 pad -> 视频/音频分支
-    g_signal_connect(decodebin, "pad-added", G_CALLBACK(on_pad_added), this);
 
     // bus 监控（挂到当前线程即 GLib loop 线程的 default context）
     GstBus* bus = gst_element_get_bus(GST_ELEMENT(pipeline_));
@@ -431,12 +380,6 @@ void JSGstPlayer::teardownPipeline()
         gst_object_unref(pipeline_);
         pipeline_ = nullptr;
     }
-    videoQueue_ = nullptr;
-    videoConvert_ = nullptr;
-    videoSink_ = nullptr;
-    audioQueue_ = nullptr;
-    audioConvert_ = nullptr;
-    audioSink_ = nullptr;
     playing_ = false;
 }
 

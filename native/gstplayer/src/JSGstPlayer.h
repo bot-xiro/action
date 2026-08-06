@@ -1,6 +1,6 @@
 // JSGstPlayer.h
 // GStreamer 视频播放器 —— MiniApp JSAPI 对象
-// 真实 pipeline: souphttpsrc(+UA/Referer) → typefind → decodebin → kmssink(video) / alsasink(audio)
+// pipeline: playbin(source=souphttpsrc+UA/Referer) → 自动 demux/decode → waylandsink(video) / alsasink(audio)
 // 视频输出到 DRM overlay plane（hole-punch 与 mplayer 同思路）
 
 #pragma once
@@ -11,8 +11,6 @@
 #include <atomic>
 
 // 前向声明（避免头文件依赖 gst/gst.h，GStreamer 实现在 .cpp 中引入）
-struct _GstPad;
-typedef struct _GstPad GstPad;
 struct _GstElement;
 typedef struct _GstElement GstElement;
 
@@ -30,12 +28,9 @@ public:
     void pause(JQFunctionInfo& info);
     void close(JQFunctionInfo& info);
 
-    // decodebin 动态 pad 分发（供 pad-added 回调调用）
-    void onDecodebinPad(GstPad* pad);
-    GstElement* getPipeline() const;
-
     // GStreamer bus watch 回调需要（自由函数不能访问 private）
     void publishState(const std::string& state, const std::string& detail = "");
+    GstElement* getPipeline() const;
 
 protected:
     void OnGCCollect() override;
@@ -52,6 +47,8 @@ private:
     // ---- GLib main loop 调度 ----
     // miniapp 进程无 GLib main loop，waylandsink/bus 事件必须由专用线程派发。
     // 所有 GStreamer 操作封装为 GstTask，经 invokeGst 同步调度到该线程。
+    // 注意: 设备 GLib 的 g_main_context_invoke 在非 owner 线程是异步 fire-and-forget，
+    // 因此 GstTask 带 done 标志，invokeGst 自旋等待任务完成（恢复同步契约，防止悬垂）。
     enum class GstOp { Build, Start, Pause, Teardown };
     struct GstTask {
         GstOp op;
@@ -59,6 +56,7 @@ private:
         std::string url;
         std::string error;          // Build 失败信息
         int ret;                    // Start/Pause 返回值
+        std::atomic<bool> done{false};  // 任务完成标志（设备 GLib invoke 为异步 fire-and-forget，须自旋等待）
     };
     static int gst_task_cb(void* data);   // 静态成员可访问私有方法
     void invokeGst(GstTask* t);
@@ -69,12 +67,6 @@ private:
     int posX_, posY_, posW_, posH_;
     bool audioEnable_;
     bool useKmsSink_;         // true=kmssink, false=waylandsink
-    GstElement* videoQueue_;
-    GstElement* videoConvert_;
-    GstElement* videoSink_;
-    GstElement* audioQueue_;
-    GstElement* audioConvert_;
-    GstElement* audioSink_;
 
     // QuickJS callback on 'finish'
     JSValue finishCallback_;
