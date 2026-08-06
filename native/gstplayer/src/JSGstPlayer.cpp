@@ -39,7 +39,7 @@ JSGstPlayer::JSGstPlayer()
     , posW_(960)
     , posH_(200)
     , audioEnable_(true)
-    , useKmsSink_(true)
+    , useKmsSink_(false)   // 默认 waylandsink: kmssink 与 weston(drm-backend) 抢 DRM master 会卡死
     , videoQueue_(nullptr)
     , videoConvert_(nullptr)
     , videoSink_(nullptr)
@@ -183,9 +183,11 @@ void JSGstPlayer::open(JQFunctionInfo& info)
         if (JS_IsString(val)) {
             const char* s = JS_ToCString(ctx, val);
             if (s) {
-                useKmsSink_ = (strcmp(s, "waylandsink") != 0);
+                useKmsSink_ = (strcmp(s, "kmssink") == 0);
                 JS_FreeCString(ctx, s);
             }
+        } else {
+            useKmsSink_ = false;  // 默认 waylandsink（kmssink 会与 weston 冲突卡死）
         }
         JS_FreeValue(ctx, val);
     }
