@@ -1,7 +1,7 @@
 // JSGstPlayer.h
 // GStreamer 视频播放器 —— MiniApp JSAPI 对象
-// 提供 open/start/pause/close API，仿 mplayer 接口
-// TODO: 真实 GStreamer pipeline 实现
+// 真实 pipeline: souphttpsrc(+UA/Referer) → typefind → decodebin → kmssink(video) / alsasink(audio)
+// 视频输出到 DRM overlay plane（hole-punch 与 mplayer 同思路）
 
 #pragma once
 
@@ -9,6 +9,10 @@
 #include <string>
 #include <mutex>
 #include <atomic>
+
+// 前向声明（避免头文件依赖 gst/gst.h，GStreamer 实现在 .cpp 中引入）
+struct _GstPad;
+typedef struct _GstPad GstPad;
 
 using namespace JQUTIL_NS;
 
@@ -24,17 +28,31 @@ public:
     void pause(JQFunctionInfo& info);
     void close(JQFunctionInfo& info);
 
+    // decodebin 动态 pad 分发（供 pad-added 回调调用）
+    void onDecodebinPad(GstPad* pad);
+    void* getPipeline() const;
+
 protected:
     void OnGCCollect() override;
 
 private:
     void publishState(const std::string& state, const std::string& detail = "");
     void throwError(JQFunctionInfo& info, const std::string& msg);
+    void buildPipeline(const std::string& url);
+    void teardownPipeline();
 
     std::mutex mutex_;
-    void* pipeline_;  // GstElement* in real impl
+    void* pipeline_;          // GstElement*
     std::atomic<bool> playing_;
     int posX_, posY_, posW_, posH_;
+    bool audioEnable_;
+    bool useKmsSink_;         // true=kmssink, false=waylandsink
+    void* videoQueue_;        // GstElement*
+    void* videoConvert_;
+    void* videoSink_;
+    void* audioQueue_;
+    void* audioConvert_;
+    void* audioSink_;
 
     // QuickJS callback on 'finish'
     JSValue finishCallback_;

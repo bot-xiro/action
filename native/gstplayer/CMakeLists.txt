@@ -13,6 +13,15 @@ endif()
 include_directories("${CMAKE_CURRENT_SOURCE_DIR}/src")
 include_directories("${IOT_UI_SDK_PATH}/include")
 
+# GStreamer dev headers (host arch, Ubuntu 22.04 amd64 default paths).
+# Used for COMPILE only; actual symbols resolve at runtime on device.
+include_directories(
+    /usr/include/gstreamer-1.0
+    /usr/lib/x86_64-linux-gnu/gstreamer-1.0/include
+    /usr/include/glib-2.0
+    /usr/lib/x86_64-linux-gnu/glib-2.0/include
+)
+
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
 endif()

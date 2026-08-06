@@ -1,9 +1,11 @@
 # Dockerfile.arm64 - Cross-compile gstplayer for ARM64 (RK3562)
-# Build a minimal stub module with just the cross-compiler (no GStreamer dev libs yet)
+# GStreamer dev headers (amd64) are used for COMPILE only;
+# symbols are resolved at runtime from the device's GStreamer 1.22 libs
+# (linked with -Wl,-unresolved-symbols=ignore-all).
 
 FROM ubuntu:22.04 AS builder
 
-# Install only the cross-compilation toolchain (no ARM64 GStreamer packages)
+# Install cross-compilation toolchain + GStreamer dev headers (host arch)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc-aarch64-linux-gnu \
     g++-aarch64-linux-gnu \
@@ -11,6 +13,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     make \
     git \
     ca-certificates \
+    libgstreamer1.0-dev \
+    libgstreamer-plugins-base1.0-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
