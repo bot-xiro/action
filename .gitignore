@@ -16,6 +16,7 @@ node_modules/
 dist/
 *.amr
 *.so
+!libs/
 
 # 系统文件
 Thumbs.db

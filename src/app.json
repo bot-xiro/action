@@ -1,7 +1,10 @@
 {
   "pages": {
     "index": "pages/index/index.vue",
-    "detail": "pages/detail/detail.vue"
+    "detail": "pages/detail/detail.vue",
+    "player": "pages/player/player.vue"
   },
-  "options": {}
+  "options": {
+    "external": ["gstplayer"]
+  }
 }

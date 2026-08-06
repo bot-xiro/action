@@ -1,0 +1,57 @@
+# Dockerfile.arm64 - Cross-compile gstplayer for ARM64 (RK3562)
+# Based on WPE4YDPv2 build environment
+
+FROM --platform=linux/amd64 ubuntu:22.04 AS builder
+
+# Install cross-compilation toolchain and dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc-aarch64-linux-gnu \
+    g++-aarch64-linux-gnu \
+    cmake \
+    pkg-config \
+    git \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install GStreamer ARM64 cross-compilation libraries
+RUN dpkg --add-architecture arm64 && apt-get update && apt-get install -y --no-install-recommends \
+    libgstreamer1.0-dev:arm64 \
+    libgstreamer-plugins-base1.0-dev:arm64 \
+    gstreamer1.0-plugins-base:arm64 \
+    gstreamer1.0-plugins-good:arm64 \
+    gstreamer1.0-plugins-bad:arm64 \
+    gstreamer1.0-plugins-ugly:arm64 \
+    libglib2.0-dev:arm64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up cross-compilation pkg-config
+ENV PKG_CONFIG_LIBDIR=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+ENV PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+
+WORKDIR /build
+
+# Copy source and iot-miniapp-sdk
+COPY . .
+# iot-miniapp-sdk 通过 submodule checkout，或在此处 clone
+RUN if [ ! -d "../iot-miniapp-sdk" ]; then \
+      git clone --depth 1 https://github.com/ls-jl/WPE4YDPv2.git /tmp/WPE4YDPv2 && \
+      cp -r /tmp/WPE4YDPv2/jsapi/iot-miniapp-sdk ../iot-miniapp-sdk; \
+    fi
+
+# Configure and build
+RUN cmake -B build -DCMAKE_TOOLCHAIN_FILE=/usr/share/cmake-3.22/Platform/Linux-ARM64.cmake \
+    -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+    -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+    -DCMAKE_SYSTEM_NAME=Linux \
+    -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+    -DCMAKE_FIND_ROOT_PATH=/usr/aarch64-linux-gnu \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+    -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+    -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+    -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY .
+
+RUN cmake --build build --config Release --parallel $(nproc)
+
+# Verify output
+RUN file build/libjsapi_gstplayer.so && ls -la build/libjsapi_gstplayer.so
