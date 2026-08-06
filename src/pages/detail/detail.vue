@@ -18,6 +18,7 @@
                 <image class="cover" :src="video.pic" resize="cover"></image>
                 <text class="title" :lines="1">{{ video.title }}</text>
                 <text class="meta">{{ video.owner.name }} · {{ formatCount(video.stat.view) }}播放 · {{ formatCount(video.stat.danmaku) }}弹幕</text>
+                <text class="play-btn" @click="openPlayer(video)">► 播放</text>
                 <text class="desc" :lines="2">{{ video.desc }}</text>
             </div>
         </div>
@@ -81,6 +82,18 @@
     margin-top: 4px;
     font-size: 14px;
     color: #999999;
+}
+
+.play-btn {
+    margin-top: 8px;
+    width: 400px;
+    height: 32px;
+    background-color: #fb7299;
+    border-radius: 6px;
+    text-align: center;
+    line-height: 32px;
+    font-size: 18px;
+    color: #ffffff;
 }
 
 .desc {
@@ -223,6 +236,10 @@ export default {
         openVideo(v) {
             console.log('[detail] open: ' + v.bvid)
             $falcon.navTo('detail', { bvid: v.bvid })
+        },
+        openPlayer(v) {
+            console.log('[detail] openPlayer: ' + v.bvid + ' cid=' + v.cid)
+            $falcon.navTo('player', { bvid: v.bvid, cid: v.cid, title: v.title })
         },
         formatCount(count) {
             if (count >= 10000) {
