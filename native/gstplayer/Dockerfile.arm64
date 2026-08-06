@@ -1,7 +1,7 @@
 # Dockerfile.arm64 - Cross-compile gstplayer for ARM64 (RK3562)
 # Based on WPE4YDPv2 build environment
 
-FROM --platform=linux/amd64 ubuntu:22.04 AS builder
+FROM ubuntu:22.04 AS builder
 
 # Install cross-compilation toolchain and dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
