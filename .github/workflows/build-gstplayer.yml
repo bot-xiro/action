@@ -67,7 +67,9 @@ jobs:
           node-version: '18'
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          npm install -g aiot-vue-cli@1.0.32
+          npm install
 
       - name: Build miniapp
         run: npm run build
