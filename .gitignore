@@ -4,6 +4,7 @@ platform-tools/
 refs/
 *.log
 .omo/
+docs/
 
 # Node
 node_modules/
