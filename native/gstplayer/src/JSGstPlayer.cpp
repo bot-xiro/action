@@ -67,22 +67,13 @@ void on_pad_added(GstElement* element, GstPad* pad, gpointer user_data)
 }
 
 // ---------------- 同步调度到 GLib loop 线程 ----------------
-enum class GstOp {
-    Build,
-    Start,
-    Pause,
-    Teardown,
-};
+// GstOp / GstTask / gst_task_cb / invokeGst 定义见 JSGstPlayer.h（类内成员，
+// 静态成员函数 gst_task_cb 可访问私有方法；invokeGst 通过 g_main_context_invoke
+// 把任务同步调度到 GLib loop 线程执行）
 
-struct GstTask {
-    GstOp op;
-    JSGstPlayer* self;
-    std::string url;
-    std::string error;          // 操作失败信息（Build 用）
-    GstStateChangeReturn ret;   // Start/Pause 用
-};
+}  // namespace
 
-gboolean gst_task_cb(gpointer data)
+int JSGstPlayer::gst_task_cb(void* data)
 {
     GstTask* t = static_cast<GstTask*>(data);
     switch (t->op) {
@@ -106,12 +97,10 @@ gboolean gst_task_cb(gpointer data)
     return G_SOURCE_REMOVE;
 }
 
-void invokeGst(GstTask* t)
+void JSGstPlayer::invokeGst(GstTask* t)
 {
     g_main_context_invoke(g_gstCtx, gst_task_cb, t);
 }
-
-}  // namespace
 
 JSGstPlayer::JSGstPlayer()
     : pipeline_(nullptr)
@@ -451,14 +440,14 @@ void JSGstPlayer::teardownPipeline()
     playing_ = false;
 }
 
-GstStateChangeReturn JSGstPlayer::startInternal()
+int JSGstPlayer::startInternal()
 {
     // 必须在 GLib loop 线程中调用
     if (!pipeline_) return GST_STATE_CHANGE_FAILURE;
     return gst_element_set_state(GST_ELEMENT(pipeline_), GST_STATE_PLAYING);
 }
 
-GstStateChangeReturn JSGstPlayer::pauseInternal()
+int JSGstPlayer::pauseInternal()
 {
     // 必须在 GLib loop 线程中调用
     if (!pipeline_) return GST_STATE_CHANGE_FAILURE;

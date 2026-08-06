@@ -45,8 +45,23 @@ private:
     void buildPipeline(const std::string& url);
     void teardownPipeline();
     // 以下两个必须在 GLib main loop 线程中调用（由 GstTask 调度）
-    GstStateChangeReturn startInternal();
-    GstStateChangeReturn pauseInternal();
+    // 返回 GstStateChangeReturn 的整数值（-1 = FAILURE），头文件不依赖 gst 类型
+    int startInternal();
+    int pauseInternal();
+
+    // ---- GLib main loop 调度 ----
+    // miniapp 进程无 GLib main loop，waylandsink/bus 事件必须由专用线程派发。
+    // 所有 GStreamer 操作封装为 GstTask，经 invokeGst 同步调度到该线程。
+    enum class GstOp { Build, Start, Pause, Teardown };
+    struct GstTask {
+        GstOp op;
+        JSGstPlayer* self;
+        std::string url;
+        std::string error;          // Build 失败信息
+        int ret;                    // Start/Pause 返回值
+    };
+    static int gst_task_cb(void* data);   // 静态成员可访问私有方法
+    void invokeGst(GstTask* t);
 
     std::mutex mutex_;
     GstElement* pipeline_;
