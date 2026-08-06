@@ -33,7 +33,7 @@ jobs:
       - name: Extract built .so
         run: |
           docker create --name gstplayer-extract gstplayer:arm64
-          docker cp gstplayer-extract:/build/libjsapi_gstplayer.so ./libs/libjsapi_gstplayer.so
+          docker cp gstplayer-extract:/build/build/libjsapi_gstplayer.so ./libs/libjsapi_gstplayer.so
           docker rm gstplayer-extract
           ls -la ./libs/libjsapi_gstplayer.so
           file ./libs/libjsapi_gstplayer.so
