@@ -87,7 +87,9 @@ async function getWbiKeys(forceRefresh) {
     return { imgKey: _imgKey, subKey: _subKey }
   }
   const data = await request(BASE + '/x/web-interface/nav', { timeout: 8 })
-  if (data && data.code === 0 && data.data && data.data.wbi_img) {
+  // 注意: 设备端无登录态，nav 返回 code=-101（账号未登录），但 wbi_img 仍然下发。
+  // 因此不要求 code===0，只要 data.data.wbi_img 存在即可提取 keys。
+  if (data && data.data && data.data.wbi_img) {
     // img_url 形如 https://i0.hdslb.com/bfs/wbi/xxx.png
     _imgKey = data.data.wbi_img.img_url.split('/').pop().split('.')[0]
     _subKey = data.data.wbi_img.sub_url.split('/').pop().split('.')[0]
@@ -160,13 +162,26 @@ async function getPlayUrl(bvid, cid, qn, fnval) {
     fnval: fnval || 1,
     fourk: 0
   }
-  const query = await encWbi(params)
-  const url = BASE + '/x/player/wbi/playurl?' + query
+  // 优先使用 wbi 签名；设备实测 nav 返回 -101 时 playurl 不带签名也能成功，
+  // 因此 wbi 失败时降级为无签名请求。
+  let url
+  try {
+    const query = await encWbi(params)
+    url = BASE + '/x/player/wbi/playurl?' + query
+  } catch (e) {
+    console.warn('[api] wbi sign failed, fallback unsigned: ' + (e && e.message ? e.message : JSON.stringify(e)))
+    const qs = Object.keys(params)
+      .sort()
+      .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
+      .join('&')
+    url = BASE + '/x/player/wbi/playurl?' + qs
+  }
   const data = await request(url, { timeout: 10 })
   if (data && data.code === 0) {
     return data.data
   }
-  throw new Error('getPlayUrl failed: ' + (data ? data.code : 'no data'))
+  console.warn('[api] getPlayUrl bad code: ' + url.substring(0, 150) + ' :: ' + JSON.stringify(data).substring(0, 300))
+  throw new Error('getPlayUrl failed: ' + (data ? data.code : 'no data') + ' msg=' + (data ? data.message : ''))
 }
 
 /**

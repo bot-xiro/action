@@ -121,8 +121,9 @@ export default {
           this.error = '未获取到播放地址'
         }
       } catch (e) {
-        this.error = '获取播放地址失败: ' + (e && e.message ? e.message : JSON.stringify(e))
-        console.warn('[player] getPlayUrl error: ' + JSON.stringify(e))
+        var msg = (e && e.message) ? e.message : JSON.stringify(e)
+        this.error = '获取播放地址失败: ' + msg
+        console.warn('[player] getPlayUrl error: ' + msg)
       }
     },
 
@@ -132,7 +133,8 @@ export default {
         return
       }
 
-      this.mPlayer = new gstPlayerModule()
+      // gstplayer 模块导出的是单例实例（CallConstructor 结果），直接调用其方法，不需要 new
+      this.mPlayer = gstPlayerModule
       var self = this
 
       // 方案：直接用网络 URL 播放
@@ -148,21 +150,18 @@ export default {
     },
 
     async openAndStart(filename) {
-      var self = this
-      return new Promise((resolve, reject) => {
-        self.mPlayer.open({
-          filename: filename,
-          decoder: 2,
-          loop: 0,
-          pos_x: 0,
-          pos_y: 0,
-          pos_w: 960,
-          pos_h: 200,
-          aoenable: 1,
-        }).then(function () {
-          self.mPlayer.start().then(resolve).catch(reject)
-        }).catch(reject)
+      // 注意: gstplayer stub 的 open/start 是同步方法（返回值非 Promise），不能 .then 链
+      this.mPlayer.open({
+        filename: filename,
+        decoder: 2,
+        loop: 0,
+        pos_x: 0,
+        pos_y: 0,
+        pos_w: 960,
+        pos_h: 200,
+        aoenable: 1,
       })
+      this.mPlayer.start()
     },
 
     pauseVideo() {
