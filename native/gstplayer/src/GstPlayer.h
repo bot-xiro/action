@@ -46,21 +46,14 @@ private:
     void busLoop();
     void emitState(const std::string& state);
     void onDecodebinPadAdded(GstPad* pad);
-    GstPadProbeReturn onVideoCapsProbe(GstPad* pad, GstPadProbeInfo* info);
 
     static void decodebinPadAddedCb(GstElement* element, GstPad* pad, gpointer userdata);
-    static GstPadProbeReturn videoCapsProbeCb(GstPad* pad, GstPadProbeInfo* info, gpointer userdata);
 
     GstElement* pipeline_ = nullptr;     // gst_pipeline
     GstElement* decodebin_ = nullptr;    // decodebin（保留引用以便 teardown 前分流结束）
     GstElement* videoSink_ = nullptr;    // waylandsink
     GstElement* audioSink_ = nullptr;    // alsasink
-    GstElement* vQueue_ = nullptr;       // 视频 queue
-    GstElement* vConvert_ = nullptr;     // videoconvertscale（RGA：DMABuf→普通内存 + 等比缩放）
-    GstElement* vFlip_ = nullptr;        // videoflip（竖屏顺时针 90°，横屏 identity）
-    GstElement* vCrop_ = nullptr;        // videocrop（裁掉超出 960x266 的部分）
-    GstElement* vCaps_ = nullptr;        // capsfilter 强制输出 960x266
-    gulong vProbeId_ = 0;                // decodebin video pad 上的 CAPS 探针
+    GstElement* videoFlip_ = nullptr;    // videoflip（竖屏视频顺时针旋转 90°，横屏为 nullptr）
 
     std::thread busThread_;
     std::atomic<bool> stopping_{false};

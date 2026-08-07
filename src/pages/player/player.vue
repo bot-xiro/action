@@ -219,7 +219,8 @@ export default {
                     uri: url,
                     audio: true,
                     pos_x: 0,
-                    pos_y: 0,
+                    // 视频画面整体下移 100px（用户：下方黑边接近一半，允许底部溢出屏幕）
+                    pos_y: 100,
                     pos_w: 960,
                     pos_h: 266,
                     // fill 不传 = fit：等比缩放完整显示在屏幕内（左右黑边），

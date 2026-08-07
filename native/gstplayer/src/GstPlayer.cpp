@@ -1,6 +1,5 @@
 #include "GstPlayer.h"
 
-#include <algorithm>
 #include <sstream>
 #include <syslog.h>
 
@@ -244,38 +243,8 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     }
     PLAYER_LOG("audio-sink created: %s", audio ? "alsasink" : "fakesink");
 
-    // 视频裁剪链：queue → videoconvertscale → videoflip → videocrop → capsfilter(960x266) → waylandsink
-    // 目的：960×266 超宽屏（3.6:1）上等比铺满全屏无黑边无变形。
-    //   - videoconvertscale（RGA）：DMABuf → 普通内存 + 等比缩放（由下游 capsfilter 协商目标尺寸）
-    //   - videoflip：竖屏视频顺时针旋转 90°（method 初始 identity，CAPS 探针里按宽高设置）
-    //   - videocrop：裁掉超出 960×266 的部分（CAPS 探针里按宽高计算）
-    //   - capsfilter：强制最终输出 960×266 → 铺满全屏
-    vQueue_ = gst_element_factory_make("queue", "vqueue");
-    vConvert_ = gst_element_factory_make("videoconvertscale", "vconvert");
-    vFlip_ = gst_element_factory_make("videoflip", "vflip");
-    vCrop_ = gst_element_factory_make("videocrop", "vcrop");
-    vCaps_ = gst_element_factory_make("capsfilter", "vcaps");
-    if (!vQueue_ || !vConvert_ || !vFlip_ || !vCrop_ || !vCaps_) {
-        PLAYER_LOG("video chain factory failed");
-        teardown();
-        return false;
-    }
-    // videoflip 初始 identity（不旋转），CAPS 探针检测竖屏后改 clockwise
-    g_object_set(vFlip_, "method", 0, nullptr);
-    // capsfilter 初始放行（空 caps = 透传），CAPS 探针里设置 960x266
-    GstCaps* fullCaps = gst_caps_new_empty_simple("video/x-raw");
-    g_object_set(vCaps_, "caps", fullCaps, nullptr);
-    gst_caps_unref(fullCaps);
-    gst_bin_add_many(GST_BIN(pipeline_), vQueue_, vConvert_, vFlip_, vCrop_, vCaps_, videoSink_, nullptr);
-    if (!gst_element_link_many(vQueue_, vConvert_, vFlip_, vCrop_, vCaps_, videoSink_, nullptr)) {
-        PLAYER_LOG("link video chain failed");
-        teardown();
-        return false;
-    }
-    PLAYER_LOG("video chain linked");
-
-    // 组装：src → queue → decodebin（动态 pad 分流到视频链 / 音频）
-    gst_bin_add_many(GST_BIN(pipeline_), src, queue, decodebin_, audioSink_, nullptr);
+    // 组装：src → queue → decodebin（动态 pad 分流到 videoSink_/audioSink_）
+    gst_bin_add_many(GST_BIN(pipeline_), src, queue, decodebin_, videoSink_, audioSink_, nullptr);
     if (!gst_element_link_many(src, queue, decodebin_, nullptr)) {
         PLAYER_LOG("link src->decodebin failed");
         teardown();
@@ -311,117 +280,61 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
 {
     GstCaps* caps = gst_pad_get_current_caps(pad);
     if (!caps) {
-        // pad 已添加但 caps 尚未协商：先链接到视频链，CAPS 探针稍后设置裁剪参数
-        PLAYER_LOG("pad-added: no caps yet, link to chain");
-        GstPad* sinkPad = gst_element_get_static_pad(vQueue_, "sink");
-        if (sinkPad) {
-            GstPadLinkReturn r = gst_pad_link(pad, sinkPad);
-            PLAYER_LOG("video pad link ret=%d (no caps)", r);
-            gst_object_unref(sinkPad);
-        }
-        // 仍要挂 CAPS 探针：解码器输出真实 caps 后设置翻转/裁剪
-        vProbeId_ = gst_pad_add_probe(pad,
-            static_cast<GstPadProbeType>(GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM | GST_PAD_PROBE_TYPE_EVENT_FLUSH),
-            GstPlayer::videoCapsProbeCb, this, nullptr);
-        PLAYER_LOG("video caps probe attached id=%lu (no caps path)", vProbeId_);
+        PLAYER_LOG("pad-added: no caps");
         return;
     }
     const GstStructure* s = gst_caps_get_structure(caps, 0);
-    const gchar* media = s ? gst_structure_get_name(s) : nullptr;  // "video/x-raw" / "audio/mpeg"
+    const gchar* media = s ? gst_structure_get_name(s) : nullptr;  // "video/x-h264" / "audio/mpeg"
     PLAYER_LOG("pad-added: %s", media ? media : "?");
-
+    GstElement* sink = nullptr;
     if (media && g_str_has_prefix(media, "video/")) {
-        // 链接到视频链 queue；CAPS 探针在解码器输出真实宽高后设置翻转/裁剪
-        GstPad* sinkPad = gst_element_get_static_pad(vQueue_, "sink");
-        if (sinkPad) {
-            GstPadLinkReturn r = gst_pad_link(pad, sinkPad);
-            PLAYER_LOG("video pad link ret=%d", r);
-            gst_object_unref(sinkPad);
+        // 竖屏视频（高>宽）顺时针旋转 90°，横过来利用超宽屏空间：
+        // 动态插入 videoflip（纯旋转不改格式/尺寸，不会引发协商失败），解码 pad → videoflip → waylandsink
+        gint w = 0, h = 0;
+        gst_structure_get_int(s, "width", &w);
+        gst_structure_get_int(s, "height", &h);
+        if (h > w) {
+            GstElement* flip = gst_element_factory_make("videoflip", "vflip");
+            if (flip) {
+                gst_bin_add(GST_BIN(pipeline_), flip);
+                if (gst_element_link(flip, videoSink_)) {
+                    // method=1 即 clockwise（GstVideoFlipMethod 枚举）
+                    g_object_set(flip, "method", 1, nullptr);
+                    // 动态添加的元素必须同步到父管线状态，否则数据流被阻塞
+                    gst_element_sync_state_with_parent(flip);
+                    videoFlip_ = flip;
+                    sink = flip;
+                    PLAYER_LOG("video portrait %dx%d -> videoflip inserted (clockwise)", w, h);
+                } else {
+                    gst_bin_remove(GST_BIN(pipeline_), flip);
+                    gst_object_unref(flip);
+                    sink = videoSink_;
+                    PLAYER_LOG("videoflip link failed, keep portrait as-is");
+                }
+            } else {
+                sink = videoSink_;
+                PLAYER_LOG("videoflip factory failed, keep portrait as-is");
+            }
+        } else {
+            sink = videoSink_;
+            PLAYER_LOG("video landscape %dx%d -> direct waylandsink", w, h);
         }
-        // 挂 CAPS 探针（EVENT_DOWNSTREAM 拦截 CAPS 事件，只触发一次后移除）
-        vProbeId_ = gst_pad_add_probe(pad,
-            static_cast<GstPadProbeType>(GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM | GST_PAD_PROBE_TYPE_EVENT_FLUSH),
-            GstPlayer::videoCapsProbeCb, this, nullptr);
-        PLAYER_LOG("video caps probe attached id=%lu", vProbeId_);
     } else if (media && g_str_has_prefix(media, "audio/")) {
-        GstPad* sinkPad = gst_element_get_static_pad(audioSink_, "sink");
+        sink = audioSink_;
+    }
+    if (sink) {
+        GstPad* sinkPad = gst_element_get_static_pad(sink, "sink");
         if (sinkPad) {
             GstPadLinkReturn r = gst_pad_link(pad, sinkPad);
-            PLAYER_LOG("audio pad link ret=%d", r);
+            PLAYER_LOG("pad link ret=%d", r);
             gst_object_unref(sinkPad);
+        } else {
+            PLAYER_LOG("sink pad not found for %s", media ? media : "?");
         }
     } else {
         PLAYER_LOG("no sink for %s", media ? media : "?");
     }
     gst_caps_unref(caps);
-}
-
-// CAPS 探针静态回调 → 转成员函数
-GstPadProbeReturn GstPlayer::videoCapsProbeCb(GstPad* pad, GstPadProbeInfo* info, gpointer userdata)
-{
-    GstPlayer* self = static_cast<GstPlayer*>(userdata);
-    return self->onVideoCapsProbe(pad, info);
-}
-
-GstPadProbeReturn GstPlayer::onVideoCapsProbe(GstPad* pad, GstPadProbeInfo* info)
-{
-    // 只处理 CAPS 事件
-    GstEvent* event = GST_PAD_PROBE_INFO_EVENT(info);
-    if (GST_EVENT_TYPE(event) != GST_EVENT_CAPS) {
-        return GST_PAD_PROBE_OK;
-    }
-    GstCaps* caps = nullptr;
-    gst_event_parse_caps(event, &caps);
-    if (!caps) return GST_PAD_PROBE_OK;
-    const GstStructure* s = gst_caps_get_structure(caps, 0);
-    const gchar* media = s ? gst_structure_get_name(s) : nullptr;
-
-    // 只处理一次，处理完移除探针
-    if (vProbeId_ != 0) {
-        gst_pad_remove_probe(pad, vProbeId_);
-        vProbeId_ = 0;
-    }
-
-    if (media && g_str_has_prefix(media, "video/")) {
-        gint w = 0, h = 0;
-        gst_structure_get_int(s, "width", &w);
-        gst_structure_get_int(s, "height", &h);
-        if (w <= 0 || h <= 0) {
-            PLAYER_LOG("caps probe: no size, assume 16:9");
-            w = 1280;
-            h = 720;
-        }
-        PLAYER_LOG("caps probe: video %dx%d", w, h);
-
-        // 竖屏（高>宽）：顺时针旋转 90° 横过来利用超宽屏空间
-        if (h > w) {
-            g_object_set(vFlip_, "method", 1, nullptr);  // clockwise
-            PLAYER_LOG("caps probe: portrait -> videoflip clockwise");
-            std::swap(w, h);  // 旋转后宽高互换
-        }
-        // 等比放大到至少一边铺满 960x266，videocrop 裁掉超出部分
-        gdouble scale = std::max(960.0 / w, 266.0 / h);
-        gint W = static_cast<gint>(w * scale + 0.5);
-        gint H = static_cast<gint>(h * scale + 0.5);
-        gint cropLeft = (W - 960) / 2;
-        gint cropRight = W - 960 - cropLeft;
-        gint cropTop = (H - 266) / 2;
-        gint cropBottom = H - 266 - cropTop;
-        PLAYER_LOG("caps probe: scale %dx%d, crop L%d R%d T%d B%d", W, H, cropLeft, cropRight, cropTop, cropBottom);
-        // videocrop 裁掉超出 960x266 的部分
-        g_object_set(vCrop_,
-            "left", cropLeft, "right", cropRight,
-            "top", cropTop, "bottom", cropBottom, nullptr);
-        // capsfilter 强制最终输出 960x266（铺满全屏，videoconvertscale 等比缩放配合）
-        GstCaps* outCaps = gst_caps_new_simple("video/x-raw",
-            "width", G_TYPE_INT, 960, "height", G_TYPE_INT, 266, nullptr);
-        g_object_set(vCaps_, "caps", outCaps, nullptr);
-        gst_caps_unref(outCaps);
-        PLAYER_LOG("caps probe: chain configured");
-    } else {
-        PLAYER_LOG("caps probe: non-video %s, skip", media ? media : "?");
-    }
-    return GST_PAD_PROBE_OK;
 }
 
 void GstPlayer::teardown()
@@ -439,12 +352,7 @@ void GstPlayer::teardown()
     decodebin_ = nullptr;
     videoSink_ = nullptr;
     audioSink_ = nullptr;
-    vQueue_ = nullptr;
-    vConvert_ = nullptr;
-    vFlip_ = nullptr;
-    vCrop_ = nullptr;
-    vCaps_ = nullptr;
-    vProbeId_ = 0;
+    videoFlip_ = nullptr;
     PLAYER_LOG("teardown done");
 }
 
