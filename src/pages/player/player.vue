@@ -70,6 +70,11 @@
 }
 
 .video-hole {
+    /* 绝对定位铺满 player-area：挖洞区域固定 960×266 全屏，
+       不受控制栏或 flex 布局影响，waylandsink 渲染窗口铺满整个屏幕 */
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 960px;
     height: 266px;
 }
@@ -217,8 +222,8 @@ export default {
                     pos_y: 0,
                     pos_w: 960,
                     pos_h: 266,
-                    // 原生视频链（videoconvertscale+videoflip+videocrop）自动等比铺满
-                    // 960x266 全屏：横屏铺满、竖屏旋转 90°；控制栏浮空在视频之上
+                    // fill 不传 = fit：等比缩放完整显示在屏幕内（左右黑边），
+                    // crop 会使 waylandsink 窗口随视频放大超出屏幕，禁用
                     loop: 0
                 })
                 console.warn('[player] open ret: ' + ok)
