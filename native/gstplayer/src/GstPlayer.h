@@ -19,7 +19,9 @@ namespace gstplayer {
 //   gstPlayer.start() / gstPlayer.pause() / gstPlayer.resume() / gstPlayer.close()
 //   gstPlayer.stateChanged.on(function(state) { ... })   // "playing"/"paused"/"ended"/"error:..."
 //
-// 实现：GStreamer playbin 高层播放元素（URI 加载 → demux → mppvideodec 硬解 → 输出）
+// 实现：手动构建 GStreamer 管线（souphttpsrc → queue → decodebin → 音视频分流）
+//   - souphttpsrc: 直接创建，设置浏览器 UA + Referer（B站 CDN 防盗链必需；playbin 内部 source 无法获取）
+//   - decodebin: pad-added 信号按媒体类型分流到 waylandsink / alsasink
 //   - video-sink: waylandsink（weston 环境；kmssink 会死锁，禁用）
 //   - audio-sink: alsasink（device=speaker）
 //   - 状态/错误/EOS 通过 bus 轮询线程 → JQSignal 回调 JS 线程
@@ -43,8 +45,12 @@ private:
     void teardown();
     void busLoop();
     void emitState(const std::string& state);
+    void onDecodebinPadAdded(GstPad* pad);
 
-    GstElement* playbin_ = nullptr;      // playbin 主元素（即 pipeline）
+    static void decodebinPadAddedCb(GstElement* element, GstPad* pad, gpointer userdata);
+
+    GstElement* pipeline_ = nullptr;     // gst_pipeline
+    GstElement* decodebin_ = nullptr;    // decodebin（保留引用以便 teardown 前分流结束）
     GstElement* videoSink_ = nullptr;    // waylandsink
     GstElement* audioSink_ = nullptr;    // alsasink
 

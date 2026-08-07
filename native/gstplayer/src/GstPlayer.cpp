@@ -23,32 +23,6 @@ void ensureGstInit()
     }
 }
 
-// 遍历 playbin 子树找 souphttpsrc。
-// 注意：playbin 内部 source 实例名为 "source"（非 "souphttpsrc*"），
-// 必须按元素类型名（"GstSoup*"）匹配；且 uridecodebin 创建 source 是异步的，
-// READY 后可能尚未出现，调用处需轮询重试。
-GstElement* findSoupSrc(GstElement* playbin)
-{
-    GstIterator* it = gst_bin_iterate_recurse(GST_BIN(playbin));
-    GstElement* result = nullptr;
-    GValue v = G_VALUE_INIT;
-    while (gst_iterator_next(it, &v) == GST_ITERATOR_OK) {
-        GObject* obj = static_cast<GObject*>(g_value_get_object(&v));
-        if (obj && GST_IS_ELEMENT(obj)) {
-            const gchar* tname = g_type_name(G_OBJECT_TYPE(obj));
-            if (tname && g_str_has_prefix(tname, "GstSoup")) {
-                result = GST_ELEMENT(gst_object_ref(obj));
-                g_value_reset(&v);
-                break;
-            }
-        }
-        g_value_reset(&v);
-    }
-    g_value_unset(&v);
-    gst_iterator_free(it);
-    return result;
-}
-
 // ---- JS 参数解析辅助 ----
 std::string jsGetString(JSContext* ctx, JSValueConst obj, const char* key)
 {
@@ -144,32 +118,32 @@ void GstPlayer::open(JQFunctionInfo& info)
 void GstPlayer::start(JQFunctionInfo& info)
 {
     PLAYER_LOG("start enter");
-    if (!playbin_) {
+    if (!pipeline_) {
         info.GetReturnValue().ThrowInternalError("start: not opened");
         return;
     }
-    gst_element_set_state(playbin_, GST_STATE_PLAYING);
+    gst_element_set_state(pipeline_, GST_STATE_PLAYING);
     PLAYER_LOG("start set PLAYING");
     info.GetReturnValue().Set(true);
 }
 
 void GstPlayer::pause(JQFunctionInfo& info)
 {
-    if (!playbin_) {
+    if (!pipeline_) {
         info.GetReturnValue().ThrowInternalError("pause: not opened");
         return;
     }
-    gst_element_set_state(playbin_, GST_STATE_PAUSED);
+    gst_element_set_state(pipeline_, GST_STATE_PAUSED);
     info.GetReturnValue().Set(true);
 }
 
 void GstPlayer::resume(JQFunctionInfo& info)
 {
-    if (!playbin_) {
+    if (!pipeline_) {
         info.GetReturnValue().ThrowInternalError("resume: not opened");
         return;
     }
-    gst_element_set_state(playbin_, GST_STATE_PLAYING);
+    gst_element_set_state(pipeline_, GST_STATE_PLAYING);
     info.GetReturnValue().Set(true);
 }
 
@@ -179,56 +153,51 @@ void GstPlayer::close(JQFunctionInfo& info)
     info.GetReturnValue().Set(true);
 }
 
-// ---- 管线构建（playbin 高层元素）----
+// ---- 管线构建（手动管线：souphttpsrc → queue → decodebin → 音视频分流）----
 
 bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::string& rect)
 {
     ensureGstInit();
 
-    // playbin：URI 加载 → demux → 解码（mppvideodec 硬解自动优先）→ 音视频输出
-    playbin_ = gst_element_factory_make("playbin", "gstplayer-playbin");
-    if (!playbin_) {
-        PLAYER_LOG("playbin factory failed");
+    // 不用 playbin：其内部 souphttpsrc 无法获取（bin 遍历不可见、child proxy 返回 NULL），
+    // 而 B站 CDN 必须设置浏览器 UA + Referer 才能过防盗链。
+    // 手动构建：souphttpsrc（直接创建并设头）→ queue → decodebin（pad-added 按媒体类型分流）
+    pipeline_ = gst_pipeline_new("gstplayer-pipeline");
+    if (!pipeline_) {
+        PLAYER_LOG("pipeline factory failed");
         return false;
     }
-    PLAYER_LOG("playbin created");
 
-    g_object_set(playbin_, "uri", uri.c_str(), nullptr);
-    PLAYER_LOG("uri set");
+    GstElement* src = gst_element_factory_make("souphttpsrc", "src");
+    GstElement* queue = gst_element_factory_make("queue", "qsrc");
+    decodebin_ = gst_element_factory_make("decodebin", "decode");
+    if (!src || !queue || !decodebin_) {
+        PLAYER_LOG("factory failed src=%d queue=%d decodebin=%d",
+            src ? 1 : 0, queue ? 1 : 0, decodebin_ ? 1 : 0);
+        if (src) gst_object_unref(src);
+        if (queue) gst_object_unref(queue);
+        if (decodebin_) gst_object_unref(decodebin_);
+        gst_object_unref(pipeline_);
+        pipeline_ = nullptr;
+        decodebin_ = nullptr;
+        return false;
+    }
 
-    // 进入 READY 让 playbin 创建内部 source（souphttpsrc）。
-    // playbin 状态切换是异步的，必须先等到实际到达 READY；
-    // 且 uridecodebin 创建 source 也是异步的，需轮询重试。
-    gst_element_set_state(playbin_, GST_STATE_READY);
-    GstState cur = GST_STATE_VOID_PENDING;
-    gst_element_get_state(playbin_, &cur, nullptr, 2 * GST_SECOND);
-    PLAYER_LOG("wait READY cur=%s", gst_element_state_get_name(cur));
-    GstElement* src = nullptr;
-    for (int i = 0; i < 20 && !src; ++i) {
-        src = findSoupSrc(playbin_);
-        if (!src) g_usleep(100 * 1000);  // 100ms 间隔，最多等 2s
-    }
-    if (src) {
-        g_object_set(src, "user-agent",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            nullptr);
-        gst_util_set_object_arg(G_OBJECT(src), "extra-headers", "referer=https://www.bilibili.com/");
-        PLAYER_LOG("souphttpsrc UA+Referer set");
-        gst_object_unref(src);
-    } else {
-        PLAYER_LOG("souphttpsrc not found after retry, headers not set");
-    }
+    g_object_set(src, "location", uri.c_str(), nullptr);
+    g_object_set(src, "user-agent",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        nullptr);
+    gst_util_set_object_arg(G_OBJECT(src), "extra-headers", "referer=https://www.bilibili.com/");
+    PLAYER_LOG("souphttpsrc created, UA+Referer set");
 
     // 视频输出：waylandsink（weston DRM-backend；kmssink 会死锁，禁用）
     videoSink_ = gst_element_factory_make("waylandsink", "vsink");
     if (!videoSink_) {
         PLAYER_LOG("waylandsink factory failed");
-        gst_object_unref(playbin_);
-        playbin_ = nullptr;
+        teardown();
         return false;
     }
     PLAYER_LOG("waylandsink created");
-    // 可选：设置渲染区域（waylandsink 的 render-rectangle 属性，非所有版本支持）
     if (!rect.empty()) {
         GParamSpec* pspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "render-rectangle");
         if (pspec) {
@@ -239,8 +208,6 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
             PLAYER_LOG("render-rectangle set: %s", rect.c_str());
         }
     }
-    g_object_set(playbin_, "video-sink", videoSink_, nullptr);
-    PLAYER_LOG("video-sink attached");
 
     // 音频输出：alsasink（device=speaker）；audio=false 时用 fakesink 静音
     audioSink_ = audio
@@ -249,10 +216,17 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     if (audioSink_ && audio) {
         g_object_set(audioSink_, "device", "speaker", nullptr);
     }
-    if (audioSink_) {
-        g_object_set(playbin_, "audio-sink", audioSink_, nullptr);
+    PLAYER_LOG("audio-sink created: %s", audio ? "alsasink" : "fakesink");
+
+    // 组装：src → queue → decodebin（动态 pad 分流到 videoSink_/audioSink_）
+    gst_bin_add_many(GST_BIN(pipeline_), src, queue, decodebin_, videoSink_, audioSink_, nullptr);
+    if (!gst_element_link_many(src, queue, decodebin_, nullptr)) {
+        PLAYER_LOG("link src->decodebin failed");
+        teardown();
+        return false;
     }
-    PLAYER_LOG("audio-sink attached");
+    g_signal_connect(decodebin_, "pad-added", G_CALLBACK(GstPlayer::decodebinPadAddedCb), this);
+    PLAYER_LOG("pipeline linked");
 
     // bus 轮询线程（不用 GLib 主循环，规避设备 GLib 差异）
     stopping_ = false;
@@ -260,7 +234,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     PLAYER_LOG("bus thread started");
 
     // open 到 PAUSED 预滚，由 start() 切换 PLAYING
-    GstStateChangeReturn ret = gst_element_set_state(playbin_, GST_STATE_PAUSED);
+    GstStateChangeReturn ret = gst_element_set_state(pipeline_, GST_STATE_PAUSED);
     PLAYER_LOG("set_state PAUSED ret=%d", ret);
     if (ret == GST_STATE_CHANGE_FAILURE) {
         teardown();
@@ -270,6 +244,44 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     return true;
 }
 
+// decodebin pad-added 静态回调 → 转成员函数（userdata=this）
+void GstPlayer::decodebinPadAddedCb(GstElement* element, GstPad* pad, gpointer userdata)
+{
+    GstPlayer* self = static_cast<GstPlayer*>(userdata);
+    self->onDecodebinPadAdded(pad);
+}
+
+void GstPlayer::onDecodebinPadAdded(GstPad* pad)
+{
+    GstCaps* caps = gst_pad_get_current_caps(pad);
+    if (!caps) {
+        PLAYER_LOG("pad-added: no caps");
+        return;
+    }
+    const GstStructure* s = gst_caps_get_structure(caps, 0);
+    const gchar* media = s ? gst_structure_get_name(s) : nullptr;  // "video/x-h264" / "audio/mpeg"
+    PLAYER_LOG("pad-added: %s", media ? media : "?");
+    GstElement* sink = nullptr;
+    if (media && g_str_has_prefix(media, "video/")) {
+        sink = videoSink_;
+    } else if (media && g_str_has_prefix(media, "audio/")) {
+        sink = audioSink_;
+    }
+    if (sink) {
+        GstPad* sinkPad = gst_element_get_static_pad(sink, "sink");
+        if (sinkPad) {
+            GstPadLinkReturn r = gst_pad_link(pad, sinkPad);
+            PLAYER_LOG("pad link ret=%d", r);
+            gst_object_unref(sinkPad);
+        } else {
+            PLAYER_LOG("sink pad not found for %s", media ? media : "?");
+        }
+    } else {
+        PLAYER_LOG("no sink for %s", media ? media : "?");
+    }
+    gst_caps_unref(caps);
+}
+
 void GstPlayer::teardown()
 {
     PLAYER_LOG("teardown enter");
@@ -277,11 +289,12 @@ void GstPlayer::teardown()
     if (busThread_.joinable()) {
         busThread_.join();
     }
-    if (playbin_) {
-        gst_element_set_state(playbin_, GST_STATE_NULL);
-        gst_object_unref(playbin_);
+    if (pipeline_) {
+        gst_element_set_state(pipeline_, GST_STATE_NULL);
+        gst_object_unref(pipeline_);
     }
-    playbin_ = nullptr;
+    pipeline_ = nullptr;
+    decodebin_ = nullptr;
     videoSink_ = nullptr;
     audioSink_ = nullptr;
     PLAYER_LOG("teardown done");
@@ -292,7 +305,7 @@ void GstPlayer::teardown()
 void GstPlayer::busLoop()
 {
     PLAYER_LOG("busLoop enter");
-    GstBus* bus = gst_element_get_bus(playbin_);
+    GstBus* bus = gst_element_get_bus(pipeline_);
     if (!bus) {
         PLAYER_LOG("busLoop get_bus failed");
         return;
@@ -321,7 +334,7 @@ void GstPlayer::busLoop()
             break;
         }
         case GST_MESSAGE_STATE_CHANGED: {
-            if (GST_MESSAGE_SRC(msg) == GST_OBJECT(playbin_)) {
+            if (GST_MESSAGE_SRC(msg) == GST_OBJECT(pipeline_)) {
                 GstState oldState, newState;
                 gst_message_parse_state_changed(msg, &oldState, &newState, nullptr);
                 PLAYER_LOG("bus state %s -> %s",
