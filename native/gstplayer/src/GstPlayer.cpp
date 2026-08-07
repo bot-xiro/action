@@ -93,6 +93,7 @@ void GstPlayer::open(JQFunctionInfo& info)
     int posY = jsGetInt(ctx, opt, "pos_y", 0);
     int posW = jsGetInt(ctx, opt, "pos_w", 0);
     int posH = jsGetInt(ctx, opt, "pos_h", 0);
+    std::string fill = jsGetString(ctx, opt, "fill");  // "fit"/"crop"/"stretch"，空=fit
 
     std::ostringstream rect;
     if (posW > 0 && posH > 0) {
@@ -103,8 +104,8 @@ void GstPlayer::open(JQFunctionInfo& info)
     // 关闭旧管线
     teardown();
 
-    PLAYER_LOG("open uri=%s audio=%d rect=%s", uri.c_str(), audio ? 1 : 0, rect.str().c_str());
-    bool ok = buildPipeline(uri, audio, rect.str());
+    PLAYER_LOG("open uri=%s audio=%d rect=%s fill=%s", uri.c_str(), audio ? 1 : 0, rect.str().c_str(), fill.c_str());
+    bool ok = buildPipeline(uri, audio, rect.str(), fill);
     PLAYER_LOG("open buildPipeline ret=%d", ok ? 1 : 0);
     if (!ok) {
         teardown();
@@ -155,7 +156,7 @@ void GstPlayer::close(JQFunctionInfo& info)
 
 // ---- 管线构建（手动管线：souphttpsrc → queue → decodebin → 音视频分流）----
 
-bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::string& rect)
+bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::string& rect, const std::string& fill)
 {
     ensureGstInit();
 
@@ -214,6 +215,14 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         return false;
     }
     PLAYER_LOG("waylandsink created");
+    // 填充模式：fit=等比留黑边（默认）、crop=等比裁剪填满、stretch=拉伸变形
+    if (!fill.empty() && (fill == "crop" || fill == "stretch")) {
+        GParamSpec* pspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "fill-mode");
+        if (pspec) {
+            g_object_set(videoSink_, "fill-mode", fill == "crop" ? 2 : 0, nullptr);
+            PLAYER_LOG("fill-mode set: %s", fill.c_str());
+        }
+    }
     if (!rect.empty()) {
         GParamSpec* pspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "render-rectangle");
         if (pspec) {

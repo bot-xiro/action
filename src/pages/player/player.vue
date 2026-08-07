@@ -6,16 +6,15 @@
             <text v-if="loading" class="spinner">●</text>
         </div>
 
-        <!-- 视频区（hole 挖洞显示 waylandsink 输出） -->
+        <!-- 视频区（hole 挖洞显示 waylandsink 输出，全屏 960×266） -->
         <div v-else class="player-area">
             <hole ref="videoHole" class="video-hole"></hole>
-        </div>
-
-        <!-- 控制栏 -->
-        <div v-if="ready" class="controls">
-            <text class="ctrl-title" :lines="1">{{ title }}</text>
-            <text class="ctrl-btn" @click="togglePlay">{{ paused ? '▶ 播放' : '⏸ 暂停' }}</text>
-            <text class="ctrl-btn" @click="closePlayer">✕ 关闭</text>
+            <!-- 控制栏（悬浮在视频底部） -->
+            <div class="controls">
+                <text class="ctrl-title" :lines="1">{{ title }}</text>
+                <text class="ctrl-btn" @click="togglePlay">{{ paused ? '▶ 播放' : '⏸ 暂停' }}</text>
+                <text class="ctrl-btn" @click="closePlayer">✕ 关闭</text>
+            </div>
         </div>
     </div>
 </template>
@@ -33,7 +32,7 @@
     left: 0;
     right: 0;
     width: 960px;
-    height: 200px;
+    height: 266px;
     align-items: center;
     justify-content: center;
     background-color: #000000;
@@ -63,18 +62,23 @@
 }
 
 .player-area {
+    flex: 1;
     width: 960px;
-    height: 200px;
+    height: 266px;
     position: relative;
     background-color: #000000;
 }
 
 .video-hole {
     width: 960px;
-    height: 200px;
+    height: 266px;
 }
 
 .controls {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
     width: 960px;
     height: 66px;
     flex-direction: row;
@@ -82,9 +86,7 @@
     justify-content: space-between;
     padding-left: 16px;
     padding-right: 16px;
-    background-color: #1a1a1a;
-    border-top-width: 1px;
-    border-top-color: #333333;
+    background-color: rgba(0, 0, 0, 0.5);
 }
 
 .ctrl-title {
@@ -206,7 +208,8 @@ export default {
                     pos_x: 0,
                     pos_y: 0,
                     pos_w: 960,
-                    pos_h: 200,
+                    pos_h: 266,
+                    fill: 'crop',
                     loop: 0
                 })
                 console.warn('[player] open ret: ' + ok)
