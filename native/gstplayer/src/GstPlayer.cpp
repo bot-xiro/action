@@ -31,7 +31,7 @@ GstElement* findSoupSrc(GstElement* playbin)
     GstElement* result = nullptr;
     GValue v = G_VALUE_INIT;
     while (gst_iterator_next(it, &v) == GST_ITERATOR_OK) {
-        GObject* obj = g_value_get_object(&v);
+        GObject* obj = static_cast<GObject*>(g_value_get_object(&v));
         if (obj && GST_IS_ELEMENT(obj)) {
             const gchar* name = GST_OBJECT_NAME(obj);
             if (name && g_str_has_prefix(name, "souphttpsrc")) {
