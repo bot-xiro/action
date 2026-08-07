@@ -1,10 +1,13 @@
 #include "GstPlayer.h"
 
 #include <sstream>
+#include <syslog.h>
 
 using namespace JQUTIL_NS;
 
 namespace gstplayer {
+
+#define PLAYER_LOG(fmt, ...) syslog(LOG_ERR, "[gstplayer] " fmt, ##__VA_ARGS__)
 
 namespace {
 
@@ -13,7 +16,9 @@ void ensureGstInit()
 {
     static bool inited = false;
     if (!inited) {
+        PLAYER_LOG("gst_init enter");
         gst_init(nullptr, nullptr);
+        PLAYER_LOG("gst_init done");
         inited = true;
     }
 }
@@ -97,7 +102,10 @@ void GstPlayer::open(JQFunctionInfo& info)
     // 关闭旧管线
     teardown();
 
-    if (!buildPipeline(uri, audio, rect.str())) {
+    PLAYER_LOG("open uri=%s audio=%d rect=%s", uri.c_str(), audio ? 1 : 0, rect.c_str());
+    bool ok = buildPipeline(uri, audio, rect.str());
+    PLAYER_LOG("open buildPipeline ret=%d", ok ? 1 : 0);
+    if (!ok) {
         teardown();
         info.GetReturnValue().ThrowInternalError("open: pipeline build failed");
         return;
@@ -108,11 +116,13 @@ void GstPlayer::open(JQFunctionInfo& info)
 
 void GstPlayer::start(JQFunctionInfo& info)
 {
+    PLAYER_LOG("start enter");
     if (!playbin_) {
         info.GetReturnValue().ThrowInternalError("start: not opened");
         return;
     }
     gst_element_set_state(playbin_, GST_STATE_PLAYING);
+    PLAYER_LOG("start set PLAYING");
     info.GetReturnValue().Set(true);
 }
 
@@ -150,25 +160,34 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
 
     // playbin：URI 加载 → demux → 解码（mppvideodec 硬解自动优先）→ 音视频输出
     playbin_ = gst_element_factory_make("playbin", "gstplayer-playbin");
-    if (!playbin_) return false;
+    if (!playbin_) {
+        PLAYER_LOG("playbin factory failed");
+        return false;
+    }
+    PLAYER_LOG("playbin created");
 
     g_object_set(playbin_, "uri", uri.c_str(), nullptr);
+    PLAYER_LOG("uri set");
 
     // 视频输出：waylandsink（weston DRM-backend；kmssink 会死锁，禁用）
     videoSink_ = gst_element_factory_make("waylandsink", "vsink");
     if (!videoSink_) {
+        PLAYER_LOG("waylandsink factory failed");
         gst_object_unref(playbin_);
         playbin_ = nullptr;
         return false;
     }
+    PLAYER_LOG("waylandsink created");
     // 可选：设置渲染区域（waylandsink 的 render-rectangle 属性，非所有版本支持）
     if (!rect.empty()) {
         GParamSpec* pspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "render-rectangle");
         if (pspec) {
             g_object_set(videoSink_, "render-rectangle", rect.c_str(), nullptr);
+            PLAYER_LOG("render-rectangle set: %s", rect.c_str());
         }
     }
     g_object_set(playbin_, "video-sink", videoSink_, nullptr);
+    PLAYER_LOG("video-sink attached");
 
     // 音频输出：alsasink（device=speaker）；audio=false 时用 fakesink 静音
     audioSink_ = audio
@@ -180,13 +199,16 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     if (audioSink_) {
         g_object_set(playbin_, "audio-sink", audioSink_, nullptr);
     }
+    PLAYER_LOG("audio-sink attached");
 
     // bus 轮询线程（不用 GLib 主循环，规避设备 GLib 差异）
     stopping_ = false;
     busThread_ = std::thread(&GstPlayer::busLoop, this);
+    PLAYER_LOG("bus thread started");
 
     // open 到 PAUSED 预滚，由 start() 切换 PLAYING
     GstStateChangeReturn ret = gst_element_set_state(playbin_, GST_STATE_PAUSED);
+    PLAYER_LOG("set_state PAUSED ret=%d", ret);
     if (ret == GST_STATE_CHANGE_FAILURE) {
         teardown();
         return false;
@@ -197,6 +219,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
 
 void GstPlayer::teardown()
 {
+    PLAYER_LOG("teardown enter");
     stopping_ = true;
     if (busThread_.joinable()) {
         busThread_.join();
@@ -208,14 +231,19 @@ void GstPlayer::teardown()
     playbin_ = nullptr;
     videoSink_ = nullptr;
     audioSink_ = nullptr;
+    PLAYER_LOG("teardown done");
 }
 
 // ---- bus 消息循环（独立线程）----
 
 void GstPlayer::busLoop()
 {
+    PLAYER_LOG("busLoop enter");
     GstBus* bus = gst_element_get_bus(playbin_);
-    if (!bus) return;
+    if (!bus) {
+        PLAYER_LOG("busLoop get_bus failed");
+        return;
+    }
 
     while (!stopping_) {
         GstMessage* msg = gst_bus_timed_pop_filtered(
@@ -225,6 +253,7 @@ void GstPlayer::busLoop()
 
         switch (GST_MESSAGE_TYPE(msg)) {
         case GST_MESSAGE_EOS:
+            PLAYER_LOG("bus EOS");
             emitState("ended");
             break;
         case GST_MESSAGE_ERROR: {
@@ -232,6 +261,7 @@ void GstPlayer::busLoop()
             GError* err = nullptr;
             gst_message_parse_error(msg, &err, &debug);
             std::string emsg = err && err->message ? err->message : "unknown";
+            PLAYER_LOG("bus ERROR: %s", emsg.c_str());
             if (debug) g_free(debug);
             if (err) g_error_free(err);
             emitState("error:" + emsg);
@@ -241,6 +271,8 @@ void GstPlayer::busLoop()
             if (GST_MESSAGE_SRC(msg) == GST_OBJECT(playbin_)) {
                 GstState oldState, newState;
                 gst_message_parse_state_changed(msg, &oldState, &newState, nullptr);
+                PLAYER_LOG("bus state %s -> %s",
+                    gst_element_state_get_name(oldState), gst_element_state_get_name(newState));
                 if (newState == GST_STATE_PLAYING) {
                     emitState("playing");
                 } else if (newState == GST_STATE_PAUSED) {
@@ -256,6 +288,7 @@ void GstPlayer::busLoop()
     }
 
     gst_object_unref(bus);
+    PLAYER_LOG("busLoop exit");
 }
 
 void GstPlayer::emitState(const std::string& state)
