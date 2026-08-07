@@ -22,7 +22,8 @@ set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${BUILD_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${BUILD_FLAGS}")
 set(CMAKE_SKIP_BUILD_RPATH true)
 
-add_definitions(-D__DEBUG -DHAASUI_LOG_TO_SYSLOG)
+# _GNU_SOURCE: SDK 使用 pthread_setcancelstate 等，需 glibc GNU feature macro（Android bionic 默认提供）
+add_definitions(-D__DEBUG -DHAASUI_LOG_TO_SYSLOG -D_GNU_SOURCE)
 
 # GStreamer 开发头文件（宿主架构）仅用于编译期；
 # 运行时符号从设备 GStreamer 1.22 动态库解析（-Wl,-unresolved-symbols=ignore-all）
