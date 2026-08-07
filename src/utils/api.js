@@ -148,7 +148,9 @@ async function getVideoInfo(bvid) {
 }
 
 /**
- * 播放地址（需 Wbi 签名）
+ * 播放地址
+ * 用旧版 /x/player/playurl（非 wbi）：实测设备 http.request 不发送自定义 Referer，
+ * 新版 wbi/playurl 无 Referer 时返回风控 v_voucher（无 durl）；旧版接口无此限制。
  * @param {string} bvid
  * @param {number|string} cid
  * @param {number} qn 清晰度 32/64/80/116
@@ -162,25 +164,15 @@ async function getPlayUrl(bvid, cid, qn, fnval) {
     fnval: fnval || 1,
     fourk: 0
   }
-  // 优先使用 wbi 签名；设备实测 nav 返回 -101 时 playurl 不带签名也能成功，
-  // 因此 wbi 失败时降级为无签名请求。
-  let url
-  try {
-    const query = await encWbi(params)
-    url = BASE + '/x/player/wbi/playurl?' + query
-  } catch (e) {
-    console.warn('[api] wbi sign failed, fallback unsigned: ' + (e && e.message ? e.message : JSON.stringify(e)))
-    const qs = Object.keys(params)
-      .sort()
-      .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
-      .join('&')
-    url = BASE + '/x/player/wbi/playurl?' + qs
-  }
+  const qs = Object.keys(params)
+    .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
+    .join('&')
+  const url = BASE + '/x/player/playurl?' + qs
   const data = await request(url, { timeout: 10 })
-  if (data && data.code === 0) {
+  if (data && data.code === 0 && data.data && data.data.durl && data.data.durl.length > 0) {
     return data.data
   }
-  console.warn('[api] getPlayUrl bad code: ' + url.substring(0, 150) + ' :: ' + JSON.stringify(data).substring(0, 300))
+  console.warn('[api] getPlayUrl no durl: ' + url + ' :: ' + JSON.stringify(data).substring(0, 300))
   throw new Error('getPlayUrl failed: ' + (data ? data.code : 'no data') + ' msg=' + (data ? data.message : ''))
 }
 

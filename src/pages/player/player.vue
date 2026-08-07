@@ -182,11 +182,12 @@ export default {
                 var data = await api.getPlayUrl(this.bvid, this.cid, 64, 1)
                 if (data && data.durl && data.durl.length > 0) {
                     this.playUrl = data.durl[0].url
-                    console.warn('[player] playUrl: ' + this.playUrl.substring(0, 80) + '...')
+                    console.warn('[player] playUrl qn=' + (data.quality || '?') + ' len=' + this.playUrl.length + ' : ' + this.playUrl.substring(0, 80) + '...')
                     this.tryPlay(this.playUrl)
                 } else {
                     this.error = '未获取到播放地址'
                     this.loading = false
+                    console.warn('[player] no durl in response: ' + JSON.stringify(data).substring(0, 200))
                 }
             } catch (e) {
                 var msg = (e && e.message) ? e.message : JSON.stringify(e)
