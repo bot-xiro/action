@@ -244,22 +244,23 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     }
     PLAYER_LOG("audio-sink created: %s", audio ? "alsasink" : "fakesink");
 
-    // 视频裁剪链：queue → capsfilter(等比放大) → videoscale → videocrop → waylandsink
+    // 视频裁剪链：queue → videoconvert → capsfilter(等比放大) → videoscale → videocrop → waylandsink
     // 目的：960×266 超宽屏（3.6:1）上等比铺满全屏无黑边无变形。
-    // 策略：pad-added 时按视频宽高算等比放大尺寸 W'×H'（至少一边铺满），
-    //       videoscale 缩放到 W'×H'，videocrop 裁掉超出 960×266 的部分。
+    // videoconvert 前置：RK mppvideodec 输出 dma-buf/特殊格式，videoscale 无法直接处理
+    // （直连 waylandsink 可以，因为 waylandsink 支持；中间插入 scaler 必须转格式）
     vQueue_ = gst_element_factory_make("queue", "vqueue");
+    vConvert_ = gst_element_factory_make("videoconvert", "vconvert");
     vScaleCaps_ = gst_element_factory_make("capsfilter", "vscalecaps");
     vScale_ = gst_element_factory_make("videoscale", "vscale");
     vCrop_ = gst_element_factory_make("videocrop", "vcrop");
-    if (!vQueue_ || !vScaleCaps_ || !vScale_ || !vCrop_) {
+    if (!vQueue_ || !vConvert_ || !vScaleCaps_ || !vScale_ || !vCrop_) {
         PLAYER_LOG("video chain factory failed");
         teardown();
         return false;
     }
     // 初始放行（capsfilter 空 = 透传），pad-added 时设置目标尺寸
-    gst_bin_add_many(GST_BIN(pipeline_), vQueue_, vScaleCaps_, vScale_, vCrop_, videoSink_, nullptr);
-    if (!gst_element_link_many(vQueue_, vScaleCaps_, vScale_, vCrop_, videoSink_, nullptr)) {
+    gst_bin_add_many(GST_BIN(pipeline_), vQueue_, vConvert_, vScaleCaps_, vScale_, vCrop_, videoSink_, nullptr);
+    if (!gst_element_link_many(vQueue_, vConvert_, vScaleCaps_, vScale_, vCrop_, videoSink_, nullptr)) {
         PLAYER_LOG("link video chain failed");
         teardown();
         return false;
@@ -382,6 +383,7 @@ void GstPlayer::teardown()
     videoSink_ = nullptr;
     audioSink_ = nullptr;
     vQueue_ = nullptr;
+    vConvert_ = nullptr;
     vScaleCaps_ = nullptr;
     vScale_ = nullptr;
     vCrop_ = nullptr;
@@ -416,7 +418,10 @@ void GstPlayer::busLoop()
             gst_message_parse_error(msg, &err, &debug);
             std::string emsg = err && err->message ? err->message : "unknown";
             PLAYER_LOG("bus ERROR: %s", emsg.c_str());
-            if (debug) g_free(debug);
+            if (debug) {
+                PLAYER_LOG("bus ERROR debug: %s", debug);
+                g_free(debug);
+            }
             if (err) g_error_free(err);
             emitState("error:" + emsg);
             break;

@@ -54,6 +54,7 @@ private:
     GstElement* videoSink_ = nullptr;    // waylandsink
     GstElement* audioSink_ = nullptr;    // alsasink
     GstElement* vQueue_ = nullptr;       // 视频 queue
+    GstElement* vConvert_ = nullptr;     // videoconvert（RK dma-buf → 常规格式）
     GstElement* vScaleCaps_ = nullptr;   // capsfilter 强制等比放大尺寸 W'xH'
     GstElement* vScale_ = nullptr;       // videoscale
     GstElement* vCrop_ = nullptr;        // videocrop 裁掉超出 960x266 的部分
