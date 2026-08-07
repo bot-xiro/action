@@ -1,0 +1,66 @@
+# 构建 bilibili miniapp：交叉编译 gstplayer 原生模块 → 打包 .amr
+# 触发: push main / 手动 dispatch
+# 产物: bilibili.amr（含 libs/libjsapi_gstplayer.so）
+name: Build bilibili miniapp
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install cross toolchain + GStreamer dev headers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            cmake \
+            make \
+            pkg-config \
+            libgstreamer1.0-dev \
+            libgstreamer-plugins-base1.0-dev \
+            && sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Build libjsapi_gstplayer.so (aarch64)
+        run: |
+          cmake -B build \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            native/gstplayer
+          cmake --build build --config Release --parallel $(nproc)
+          mkdir -p libs
+          cp build/libjsapi_gstplayer.so libs/libjsapi_gstplayer.so
+          ls -la libs/libjsapi_gstplayer.so
+          file libs/libjsapi_gstplayer.so
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install aiot-vue-cli
+        run: |
+          npm install -g aiot-vue-cli@1.0.32
+          npm install
+
+      - name: Build miniapp .amr
+        run: npm run build
+
+      - name: Upload bilibili.amr
+        uses: actions/upload-artifact@v4
+        with:
+          name: bilibili.amr
+          path: ./*.amr
+          retention-days: 7

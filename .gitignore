@@ -5,6 +5,7 @@ refs/
 *.log
 .omo/
 docs/
+opencode.json
 
 # Node
 node_modules/
