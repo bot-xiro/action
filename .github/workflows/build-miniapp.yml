@@ -10,7 +10,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # ubuntu-22.04: GCC 11.4 (GLIBCXX_3.4.29) + glibc 2.35，
+    # 低于设备 libstdc++ (3.4.29) 与 libc (2.36) 上限，产物可直接加载
+    # （ubuntu-latest=24.04 的 GCC13/glibc2.38 会超设备运行时版本）
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
 
     steps:
