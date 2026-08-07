@@ -23,6 +23,30 @@ void ensureGstInit()
     }
 }
 
+// 遍历 playbin 子树找 souphttpsrc（playbin 的 child proxy 拿不到内部 source，
+// 实测返回 NULL；元素在 READY 状态时已加入 bin，可直接遍历）
+GstElement* findSoupSrc(GstElement* playbin)
+{
+    GstIterator* it = gst_bin_iterate_recurse(GST_BIN(playbin));
+    GstElement* result = nullptr;
+    while (true) {
+        gpointer item = nullptr;
+        GstIteratorResult r = gst_iterator_next(it, &item);
+        if (r != GST_ITERATOR_OK) break;
+        if (GST_IS_ELEMENT(item)) {
+            const gchar* name = GST_OBJECT_NAME(item);
+            if (name && g_str_has_prefix(name, "souphttpsrc")) {
+                result = GST_ELEMENT(gst_object_ref(item));
+                gst_object_unref(item);
+                break;
+            }
+        }
+        gst_object_unref(item);
+    }
+    gst_iterator_free(it);
+    return result;
+}
+
 // ---- JS 参数解析辅助 ----
 std::string jsGetString(JSContext* ctx, JSValueConst obj, const char* key)
 {
@@ -171,17 +195,19 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     PLAYER_LOG("uri set");
 
     // 进入 READY 让 playbin 创建内部 source（souphttpsrc），
-    // 再通过 child proxy 设置浏览器 UA，绕过 B站 CDN 防盗链 403
+    // 再设置浏览器 UA + Referer，绕过 B站 CDN 防盗链 403
+    // （实测：B站 CDN 校验 Referer=bilibili.com，仅 UA 仍 403）
     gst_element_set_state(playbin_, GST_STATE_READY);
-    GstElement* src = GST_ELEMENT(gst_child_proxy_get_child_by_name(GST_CHILD_PROXY(playbin_), "source"));
+    GstElement* src = findSoupSrc(playbin_);
     if (src) {
         g_object_set(src, "user-agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             nullptr);
-        PLAYER_LOG("source user-agent set");
+        gst_util_set_object_arg(G_OBJECT(src), "extra-headers", "referer=https://www.bilibili.com/");
+        PLAYER_LOG("souphttpsrc UA+Referer set");
         gst_object_unref(src);
     } else {
-        PLAYER_LOG("source not found, UA not set");
+        PLAYER_LOG("souphttpsrc not found, headers not set");
     }
 
     // 视频输出：waylandsink（weston DRM-backend；kmssink 会死锁，禁用）
