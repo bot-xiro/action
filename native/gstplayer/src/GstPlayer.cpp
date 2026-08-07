@@ -29,20 +29,20 @@ GstElement* findSoupSrc(GstElement* playbin)
 {
     GstIterator* it = gst_bin_iterate_recurse(GST_BIN(playbin));
     GstElement* result = nullptr;
-    while (true) {
-        gpointer item = nullptr;
-        GstIteratorResult r = gst_iterator_next(it, &item);
-        if (r != GST_ITERATOR_OK) break;
-        if (GST_IS_ELEMENT(item)) {
-            const gchar* name = GST_OBJECT_NAME(item);
+    GValue v = G_VALUE_INIT;
+    while (gst_iterator_next(it, &v) == GST_ITERATOR_OK) {
+        GObject* obj = g_value_get_object(&v);
+        if (obj && GST_IS_ELEMENT(obj)) {
+            const gchar* name = GST_OBJECT_NAME(obj);
             if (name && g_str_has_prefix(name, "souphttpsrc")) {
-                result = GST_ELEMENT(gst_object_ref(item));
-                gst_object_unref(item);
+                result = GST_ELEMENT(gst_object_ref(obj));
+                g_value_reset(&v);
                 break;
             }
         }
-        gst_object_unref(item);
+        g_value_reset(&v);
     }
+    g_value_unset(&v);
     gst_iterator_free(it);
     return result;
 }
