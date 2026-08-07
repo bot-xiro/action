@@ -23,8 +23,10 @@ void ensureGstInit()
     }
 }
 
-// 遍历 playbin 子树找 souphttpsrc（playbin 的 child proxy 拿不到内部 source，
-// 实测返回 NULL；元素在 READY 状态时已加入 bin，可直接遍历）
+// 遍历 playbin 子树找 souphttpsrc。
+// 注意：playbin 内部 source 实例名为 "source"（非 "souphttpsrc*"），
+// 必须按元素类型名（"GstSoup*"）匹配；且 uridecodebin 创建 source 是异步的，
+// READY 后可能尚未出现，调用处需轮询重试。
 GstElement* findSoupSrc(GstElement* playbin)
 {
     GstIterator* it = gst_bin_iterate_recurse(GST_BIN(playbin));
@@ -33,8 +35,8 @@ GstElement* findSoupSrc(GstElement* playbin)
     while (gst_iterator_next(it, &v) == GST_ITERATOR_OK) {
         GObject* obj = static_cast<GObject*>(g_value_get_object(&v));
         if (obj && GST_IS_ELEMENT(obj)) {
-            const gchar* name = GST_OBJECT_NAME(obj);
-            if (name && g_str_has_prefix(name, "souphttpsrc")) {
+            const gchar* tname = g_type_name(G_OBJECT_TYPE(obj));
+            if (tname && g_str_has_prefix(tname, "GstSoup")) {
                 result = GST_ELEMENT(gst_object_ref(obj));
                 g_value_reset(&v);
                 break;
@@ -195,13 +197,17 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     PLAYER_LOG("uri set");
 
     // 进入 READY 让 playbin 创建内部 source（souphttpsrc）。
-    // playbin 状态切换是异步的，必须先等到实际到达 READY，
-    // 否则此时 souphttpsrc 尚未创建（实测立即遍历找不到）。
+    // playbin 状态切换是异步的，必须先等到实际到达 READY；
+    // 且 uridecodebin 创建 source 也是异步的，需轮询重试。
     gst_element_set_state(playbin_, GST_STATE_READY);
     GstState cur = GST_STATE_VOID_PENDING;
     gst_element_get_state(playbin_, &cur, nullptr, 2 * GST_SECOND);
     PLAYER_LOG("wait READY cur=%s", gst_element_state_get_name(cur));
-    GstElement* src = findSoupSrc(playbin_);
+    GstElement* src = nullptr;
+    for (int i = 0; i < 20 && !src; ++i) {
+        src = findSoupSrc(playbin_);
+        if (!src) g_usleep(100 * 1000);  // 100ms 间隔，最多等 2s
+    }
     if (src) {
         g_object_set(src, "user-agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -210,7 +216,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         PLAYER_LOG("souphttpsrc UA+Referer set");
         gst_object_unref(src);
     } else {
-        PLAYER_LOG("souphttpsrc not found, headers not set");
+        PLAYER_LOG("souphttpsrc not found after retry, headers not set");
     }
 
     // 视频输出：waylandsink（weston DRM-backend；kmssink 会死锁，禁用）
