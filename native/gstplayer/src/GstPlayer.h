@@ -40,6 +40,10 @@ public:
     // ---- JS 信号：gstPlayer.stateChanged.on(cb) / .off(cb) ----
     JQUTIL_NS::JQSignal<std::string> stateChanged;
 
+    // ---- JS 信号：gstPlayer.orientationChanged.on(cb) / .off(cb) ----
+    // 值："portrait"（竖屏视频，已插入 videoflip 旋转）/ "landscape"（横屏视频，直连）
+    JQUTIL_NS::JQSignal<std::string> orientationChanged;
+
 private:
     bool buildPipeline(const std::string& uri, bool audio, const std::string& rect, const std::string& fill);
     void teardown();

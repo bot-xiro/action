@@ -294,6 +294,8 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
         gst_structure_get_int(s, "width", &w);
         gst_structure_get_int(s, "height", &h);
         if (h > w) {
+            // 通知 JS：视频为竖屏（控制栏需翻转 90° 跟随）
+            orientationChanged.emit("portrait");
             GstElement* flip = gst_element_factory_make("videoflip", "vflip");
             if (flip) {
                 gst_bin_add(GST_BIN(pipeline_), flip);
@@ -317,6 +319,8 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
             }
         } else {
             sink = videoSink_;
+            // 通知 JS：视频为横屏（控制栏横放）
+            orientationChanged.emit("landscape");
             PLAYER_LOG("video landscape %dx%d -> direct waylandsink", w, h);
         }
     } else if (media && g_str_has_prefix(media, "audio/")) {
@@ -441,6 +445,8 @@ static JSValue createGstPlayer(JQModuleEnv* env)
 
     // JS 侧: gstPlayer.stateChanged.on(cb) / .off(cb)
     tpl->InstanceTemplate()->Set("stateChanged", &GstPlayer::stateChanged);
+    // JS 侧: gstPlayer.orientationChanged.on(cb) / .off(cb) —— "portrait"/"landscape"
+    tpl->InstanceTemplate()->Set("orientationChanged", &GstPlayer::orientationChanged);
 
     return tpl->CallConstructor();
 }
