@@ -87,6 +87,8 @@
     padding-left: 16px;
     padding-right: 16px;
     background-color: rgba(0, 0, 0, 0.5);
+    /* 必须高于视频层（waylandsink hole），否则控制栏被视频盖住无法显示/点击 */
+    z-index: 100;
 }
 
 .ctrl-title {
