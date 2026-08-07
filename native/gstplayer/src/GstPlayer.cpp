@@ -102,7 +102,7 @@ void GstPlayer::open(JQFunctionInfo& info)
     // 关闭旧管线
     teardown();
 
-    PLAYER_LOG("open uri=%s audio=%d rect=%s", uri.c_str(), audio ? 1 : 0, rect.c_str());
+    PLAYER_LOG("open uri=%s audio=%d rect=%s", uri.c_str(), audio ? 1 : 0, rect.str().c_str());
     bool ok = buildPipeline(uri, audio, rect.str());
     PLAYER_LOG("open buildPipeline ret=%d", ok ? 1 : 0);
     if (!ok) {
