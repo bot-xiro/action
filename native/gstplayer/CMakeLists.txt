@@ -28,6 +28,11 @@ add_definitions(-D__DEBUG -DHAASUI_LOG_TO_SYSLOG)
 # 运行时符号从设备 GStreamer 1.22 动态库解析（-Wl,-unresolved-symbols=ignore-all）
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-base-1.0 gstreamer-plugins-base-1.0)
+# 交叉编译时剔除宿主 libc 头目录（/usr/include/x86_64-linux-gnu），
+# 防止与 aarch64 工具链 glibc 头混用导致 gnu/stubs-32.h 缺失
+if(CMAKE_CROSSCOMPILING)
+    list(FILTER GST_INCLUDE_DIRS EXCLUDE REGEX "^/usr/include/x86_64-linux-gnu$")
+endif()
 include_directories(${GST_INCLUDE_DIRS})
 
 file(GLOB_RECURSE SDK_SOURCES "${IOT_UI_SDK_PATH}/src/*.cpp")
