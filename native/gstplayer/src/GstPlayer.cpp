@@ -173,7 +173,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     // 进入 READY 让 playbin 创建内部 source（souphttpsrc），
     // 再通过 child proxy 设置浏览器 UA，绕过 B站 CDN 防盗链 403
     gst_element_set_state(playbin_, GST_STATE_READY);
-    GstElement* src = gst_child_proxy_get_child_by_name(GST_CHILD_PROXY(playbin_), "source");
+    GstElement* src = GST_ELEMENT(gst_child_proxy_get_child_by_name(GST_CHILD_PROXY(playbin_), "source"));
     if (src) {
         g_object_set(src, "user-agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -200,7 +200,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
             // render-rectangle 是 GstValueArray of gint（Write only），
             // g_object_set 传 C 字符串会触发 GLib 类型不匹配 critical/abort 崩溃；
             // gst_util_set_object_arg 会把 "<x, y, w, h>" 字符串解析为值数组
-            gst_util_set_object_arg(videoSink_, "render-rectangle", rect.c_str());
+            gst_util_set_object_arg(G_OBJECT(videoSink_), "render-rectangle", rect.c_str());
             PLAYER_LOG("render-rectangle set: %s", rect.c_str());
         }
     }
