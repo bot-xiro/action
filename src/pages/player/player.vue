@@ -9,8 +9,8 @@
         <!-- 视频区（hole 挖洞显示 waylandsink 输出，全屏 960×266） -->
         <div v-else class="player-area">
             <hole ref="videoHole" class="video-hole"></hole>
-            <!-- 独立控制栏框架：方向跟随视频（竖屏视频翻转90°成竖条贴左侧），常驻显示 -->
-            <player-controls :title="title" :paused="paused" :orientation="orientation" @toggle-play="togglePlay" @close="closePlayer"></player-controls>
+            <!-- 独立控制栏框架：固定在屏幕顶部（标题）/底部（控制），常驻显示，不跟随视频 -->
+            <player-controls :title="title" :paused="paused" @toggle-play="togglePlay" @close="closePlayer"></player-controls>
         </div>
     </div>
 </template>
@@ -98,9 +98,7 @@ export default {
             paused: false,
             error: '',
             mPlayer: null,
-            stateCb: null,
-            orientation: 'landscape',
-            orientCb: null
+            stateCb: null
         }
     },
     mounted() {
@@ -133,26 +131,12 @@ export default {
             console.warn('[player] stateChanged.on error: ' + e.message)
         }
 
-        // 注册视频方向事件：竖屏视频（旋转90°）时控制栏翻转90°成竖条
-        this.orientCb = (ori) => {
-            console.warn('[player] orientationChanged: ' + ori)
-            this.orientation = (ori === 'portrait') ? 'portrait' : 'landscape'
-        }
-        try {
-            gstPlayer.orientationChanged.on(this.orientCb)
-        } catch (e) {
-            console.warn('[player] orientationChanged.on error: ' + e.message)
-        }
-
         this.loadPlayUrl()
     },
     beforeDestroy() {
         console.warn('[player] beforeDestroy')
         if (this.stateCb) {
             try { gstPlayer.stateChanged.off(this.stateCb) } catch (e) { }
-        }
-        if (this.orientCb) {
-            try { gstPlayer.orientationChanged.off(this.orientCb) } catch (e) { }
         }
         if (this.mPlayer) {
             try { this.mPlayer.close() } catch (e) { }
