@@ -244,23 +244,21 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     }
     PLAYER_LOG("audio-sink created: %s", audio ? "alsasink" : "fakesink");
 
-    // 视频裁剪链：queue → videoconvert → capsfilter(等比放大) → videoscale → videocrop → waylandsink
+    // 视频裁剪链：queue → videoconvertscale → capsfilter(等比放大) → videocrop → waylandsink
     // 目的：960×266 超宽屏（3.6:1）上等比铺满全屏无黑边无变形。
-    // videoconvert 前置：RK mppvideodec 输出 dma-buf/特殊格式，videoscale 无法直接处理
-    // （直连 waylandsink 可以，因为 waylandsink 支持；中间插入 scaler 必须转格式）
+    // videoconvertscale：RGA 合并插件，完成颜色空间转换 + 缩放，保持 DMA‑Buf，兼容 downstream。
     vQueue_ = gst_element_factory_make("queue", "vqueue");
-    vConvert_ = gst_element_factory_make("videoconvert", "vconvert");
+    vConvert_ = gst_element_factory_make("videoconvertscale", "vconvert"); // replace separate videoconvert + videoscale
     vScaleCaps_ = gst_element_factory_make("capsfilter", "vscalecaps");
-    vScale_ = gst_element_factory_make("videoscale", "vscale");
     vCrop_ = gst_element_factory_make("videocrop", "vcrop");
-    if (!vQueue_ || !vConvert_ || !vScaleCaps_ || !vScale_ || !vCrop_) {
+    if (!vQueue_ || !vConvert_ || !vScaleCaps_ || !vCrop_) {
         PLAYER_LOG("video chain factory failed");
         teardown();
         return false;
     }
     // 初始放行（capsfilter 空 = 透传），pad-added 时设置目标尺寸
-    gst_bin_add_many(GST_BIN(pipeline_), vQueue_, vConvert_, vScaleCaps_, vScale_, vCrop_, videoSink_, nullptr);
-    if (!gst_element_link_many(vQueue_, vConvert_, vScaleCaps_, vScale_, vCrop_, videoSink_, nullptr)) {
+    gst_bin_add_many(GST_BIN(pipeline_), vQueue_, vConvert_, vScaleCaps_, vCrop_, videoSink_, nullptr);
+    if (!gst_element_link_many(vQueue_, vConvert_, vScaleCaps_, vCrop_, videoSink_, nullptr)) {
         PLAYER_LOG("link video chain failed");
         teardown();
         return false;
