@@ -309,7 +309,9 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
     }
     const GstStructure* s = gst_caps_get_structure(caps, 0);
     const gchar* media = s ? gst_structure_get_name(s) : nullptr;  // "video/x-raw" / "audio/mpeg"
-    PLAYER_LOG("pad-added: %s", media ? media : "?");
+    gchar* capsStr = gst_caps_to_string(caps);
+    PLAYER_LOG("pad-added: %s, caps=%s", media ? media : "?", capsStr ? capsStr : "null");
+    if (capsStr) g_free(capsStr);
 
     if (media && g_str_has_prefix(media, "video/")) {
         // 目标屏幕 960x266（3.6:1 超宽屏）。策略：等比放大到至少一边铺满，
@@ -334,9 +336,10 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
         gint cropBottom = H - 266 - cropTop;
         PLAYER_LOG("video %dx%d -> scale %dx%d, crop L%d R%d T%d B%d",
             w, h, W, H, cropLeft, cropRight, cropTop, cropBottom);
-        // capsfilter 强制 videoscale 输出等比放大后的尺寸
+        // capsfilter 强制 videoscale 输出等比放大后的尺寸，格式锁定 NV12（mppvideodec/waylandsink/videocrop 均支持）
         GstCaps* scaleCaps = gst_caps_new_simple("video/x-raw",
-            "width", G_TYPE_INT, W, "height", G_TYPE_INT, H, nullptr);
+            "width", G_TYPE_INT, W, "height", G_TYPE_INT, H,
+            "format", G_TYPE_STRING, "NV12", nullptr);
         g_object_set(vScaleCaps_, "caps", scaleCaps, nullptr);
         gst_caps_unref(scaleCaps);
         // videocrop 裁掉超出 960x266 的部分
