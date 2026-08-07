@@ -1,6 +1,5 @@
 #include "GstPlayer.h"
 
-#include <algorithm>
 #include <sstream>
 #include <syslog.h>
 
@@ -244,29 +243,8 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     }
     PLAYER_LOG("audio-sink created: %s", audio ? "alsasink" : "fakesink");
 
-    // 视频裁剪链：queue → videoconvertscale → capsfilter(等比放大) → videocrop → waylandsink
-    // 目的：960×266 超宽屏（3.6:1）上等比铺满全屏无黑边无变形。
-    // videoconvertscale：RGA 合并插件，完成颜色空间转换 + 缩放，保持 DMA‑Buf，兼容 downstream。
-    vQueue_ = gst_element_factory_make("queue", "vqueue");
-    vConvert_ = gst_element_factory_make("videoconvertscale", "vconvert"); // replace separate videoconvert + videoscale
-    vScaleCaps_ = gst_element_factory_make("capsfilter", "vscalecaps");
-    vCrop_ = gst_element_factory_make("videocrop", "vcrop");
-    if (!vQueue_ || !vConvert_ || !vScaleCaps_ || !vCrop_) {
-        PLAYER_LOG("video chain factory failed");
-        teardown();
-        return false;
-    }
-    // 初始放行（capsfilter 空 = 透传），pad-added 时设置目标尺寸
-    gst_bin_add_many(GST_BIN(pipeline_), vQueue_, vConvert_, vScaleCaps_, vCrop_, videoSink_, nullptr);
-    if (!gst_element_link_many(vQueue_, vConvert_, vScaleCaps_, vCrop_, videoSink_, nullptr)) {
-        PLAYER_LOG("link video chain failed");
-        teardown();
-        return false;
-    }
-    PLAYER_LOG("video chain linked");
-
-    // 组装：src → queue → decodebin（动态 pad 分流到视频链 / 音频）
-    gst_bin_add_many(GST_BIN(pipeline_), src, queue, decodebin_, audioSink_, nullptr);
+    // 组装：src → queue → decodebin（动态 pad 分流到 videoSink_/audioSink_）
+    gst_bin_add_many(GST_BIN(pipeline_), src, queue, decodebin_, videoSink_, audioSink_, nullptr);
     if (!gst_element_link_many(src, queue, decodebin_, nullptr)) {
         PLAYER_LOG("link src->decodebin failed");
         teardown();
@@ -306,61 +284,22 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
         return;
     }
     const GstStructure* s = gst_caps_get_structure(caps, 0);
-    const gchar* media = s ? gst_structure_get_name(s) : nullptr;  // "video/x-raw" / "audio/mpeg"
-    gchar* capsStr = gst_caps_to_string(caps);
-    PLAYER_LOG("pad-added: %s, caps=%s", media ? media : "?", capsStr ? capsStr : "null");
-    if (capsStr) g_free(capsStr);
-
+    const gchar* media = s ? gst_structure_get_name(s) : nullptr;  // "video/x-h264" / "audio/mpeg"
+    PLAYER_LOG("pad-added: %s", media ? media : "?");
+    GstElement* sink = nullptr;
     if (media && g_str_has_prefix(media, "video/")) {
-        // 目标屏幕 960x266（3.6:1 超宽屏）。策略：等比放大到至少一边铺满，
-        // videoscale 输出 W'xH'，videocrop 裁掉超出 960x266 的部分 → 全屏无黑边无变形
-        gint w = 0, h = 0;
-        gst_structure_get_int(s, "width", &w);
-        gst_structure_get_int(s, "height", &h);
-        if (w <= 0 || h <= 0) {
-            // 编码 caps 通常没有宽高，等解码器输出 raw caps；默认按 16:9 处理
-            PLAYER_LOG("video caps no size, assume 16:9");
-            w = 1280;
-            h = 720;
-        }
-        // 等比放大：scale 取两边比例最大值，保证至少一边刚好铺满
-        gdouble scale = std::max(960.0 / w, 266.0 / h);
-        gint W = static_cast<gint>(w * scale + 0.5);
-        gint H = static_cast<gint>(h * scale + 0.5);
-        // 裁掉超出目标的部分（对半分配）
-        gint cropLeft = (W - 960) / 2;
-        gint cropRight = W - 960 - cropLeft;
-        gint cropTop = (H - 266) / 2;
-        gint cropBottom = H - 266 - cropTop;
-        PLAYER_LOG("video %dx%d -> scale %dx%d, crop L%d R%d T%d B%d",
-            w, h, W, H, cropLeft, cropRight, cropTop, cropBottom);
-        // capsfilter 强制 videoscale 输出等比放大后的尺寸，格式锁定 NV12（mppvideodec/waylandsink/videocrop 均支持）
-        GstCaps* scaleCaps = gst_caps_new_simple("video/x-raw",
-            "width", G_TYPE_INT, W, "height", G_TYPE_INT, H,
-            "format", G_TYPE_STRING, "NV12", nullptr);
-        g_object_set(vScaleCaps_, "caps", scaleCaps, nullptr);
-        gst_caps_unref(scaleCaps);
-        // videocrop 裁掉超出 960x266 的部分
-        g_object_set(vCrop_,
-            "left", cropLeft, "right", cropRight,
-            "top", cropTop, "bottom", cropBottom, nullptr);
-        // 视频 pad 链接到视频链 queue（而非直接 waylandsink）
-        GstPad* sinkPad = gst_element_get_static_pad(vQueue_, "sink");
-        if (sinkPad) {
-            GstPadLinkReturn r = gst_pad_link(pad, sinkPad);
-            PLAYER_LOG("video pad link ret=%d", r);
-            gst_object_unref(sinkPad);
-        } else {
-            PLAYER_LOG("vqueue sink pad not found");
-        }
+        sink = videoSink_;
     } else if (media && g_str_has_prefix(media, "audio/")) {
-        GstPad* sinkPad = gst_element_get_static_pad(audioSink_, "sink");
+        sink = audioSink_;
+    }
+    if (sink) {
+        GstPad* sinkPad = gst_element_get_static_pad(sink, "sink");
         if (sinkPad) {
             GstPadLinkReturn r = gst_pad_link(pad, sinkPad);
-            PLAYER_LOG("audio pad link ret=%d", r);
+            PLAYER_LOG("pad link ret=%d", r);
             gst_object_unref(sinkPad);
         } else {
-            PLAYER_LOG("audio sink pad not found");
+            PLAYER_LOG("sink pad not found for %s", media ? media : "?");
         }
     } else {
         PLAYER_LOG("no sink for %s", media ? media : "?");
@@ -383,11 +322,6 @@ void GstPlayer::teardown()
     decodebin_ = nullptr;
     videoSink_ = nullptr;
     audioSink_ = nullptr;
-    vQueue_ = nullptr;
-    vConvert_ = nullptr;
-    vScaleCaps_ = nullptr;
-    vScale_ = nullptr;
-    vCrop_ = nullptr;
     PLAYER_LOG("teardown done");
 }
 
@@ -419,10 +353,7 @@ void GstPlayer::busLoop()
             gst_message_parse_error(msg, &err, &debug);
             std::string emsg = err && err->message ? err->message : "unknown";
             PLAYER_LOG("bus ERROR: %s", emsg.c_str());
-            if (debug) {
-                PLAYER_LOG("bus ERROR debug: %s", debug);
-                g_free(debug);
-            }
+            if (debug) g_free(debug);
             if (err) g_error_free(err);
             emitState("error:" + emsg);
             break;
