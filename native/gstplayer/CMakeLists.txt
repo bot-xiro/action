@@ -23,7 +23,10 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${BUILD_FLAGS}")
 set(CMAKE_SKIP_BUILD_RPATH true)
 
 # _GNU_SOURCE: SDK 使用 pthread_setcancelstate 等，需 glibc GNU feature macro（Android bionic 默认提供）
+# -include pthread.h: SDK 头（looper/Thread.h）未显式 include pthread.h，glibc 下依赖 include 顺序而失败
 add_definitions(-D__DEBUG -DHAASUI_LOG_TO_SYSLOG -D_GNU_SOURCE)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -include pthread.h")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include pthread.h")
 
 # GStreamer 开发头文件（宿主架构）仅用于编译期；
 # 运行时符号从设备 GStreamer 1.22 动态库解析（-Wl,-unresolved-symbols=ignore-all）
