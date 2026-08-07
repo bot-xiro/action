@@ -217,8 +217,8 @@ export default {
                     pos_y: 0,
                     pos_w: 960,
                     pos_h: 266,
-                    // fill 不传 = fit：等比缩放完整显示在屏幕内（左右黑边），
-                    // crop 会使 waylandsink 窗口随视频放大超出屏幕，禁用
+                    // 原生视频链（videoconvertscale+videoflip+videocrop）自动等比铺满
+                    // 960x266 全屏：横屏铺满、竖屏旋转 90°；控制栏浮空在视频之上
                     loop: 0
                 })
                 console.warn('[player] open ret: ' + ok)
