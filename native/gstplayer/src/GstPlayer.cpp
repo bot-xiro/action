@@ -187,7 +187,23 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     g_object_set(src, "user-agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         nullptr);
-    gst_util_set_object_arg(G_OBJECT(src), "extra-headers", "referer=https://www.bilibili.com/");
+    // 直接构造 GstStructure 设置 extra-headers（gst_util_set_object_arg 字符串解析
+    // 在设备上不可靠，可能解析失败导致 Referer 未生效）
+    GstStructure* hdrs = gst_structure_new_empty("headers");
+    gst_structure_set(hdrs, "referer", G_TYPE_STRING, "https://www.bilibili.com/", nullptr);
+    g_object_set(src, "extra-headers", hdrs, nullptr);
+    gst_structure_free(hdrs);
+    // 回读验证属性是否真正设置成功
+    GstStructure* back = nullptr;
+    g_object_get(src, "extra-headers", &back, nullptr);
+    if (back) {
+        gchar* hs = gst_structure_to_string(back);
+        PLAYER_LOG("extra-headers back: %s", hs ? hs : "(null)");
+        if (hs) g_free(hs);
+        gst_structure_free(back);
+    } else {
+        PLAYER_LOG("extra-headers back: (null) - SET FAILED");
+    }
     PLAYER_LOG("souphttpsrc created, UA+Referer set");
 
     // 视频输出：waylandsink（weston DRM-backend；kmssink 会死锁，禁用）
