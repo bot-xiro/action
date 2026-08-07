@@ -7,10 +7,10 @@
         </div>
 
         <!-- 视频区（hole 挖洞显示 waylandsink 输出，全屏 960×266） -->
-        <div v-else class="player-area">
+        <div v-else class="player-area" @click="toggleControls">
             <hole ref="videoHole" class="video-hole"></hole>
-            <!-- 控制栏（悬浮在视频底部） -->
-            <div class="controls">
+            <!-- 控制栏（现代播放器：默认隐藏，点击视频区显示，3 秒无操作自动隐藏） -->
+            <div v-if="controlsVisible" class="controls" @click.stop>
                 <text class="ctrl-title" :lines="1">{{ title }}</text>
                 <text class="ctrl-btn" @click="togglePlay">{{ paused ? '▶ 播放' : '⏸ 暂停' }}</text>
                 <text class="ctrl-btn" @click="closePlayer">✕ 关闭</text>
@@ -128,7 +128,9 @@ export default {
             paused: false,
             error: '',
             mPlayer: null,
-            stateCb: null
+            stateCb: null,
+            controlsVisible: false,
+            hideTimer: null
         }
     },
     mounted() {
@@ -165,6 +167,10 @@ export default {
     },
     beforeDestroy() {
         console.warn('[player] beforeDestroy')
+        if (this.hideTimer) {
+            clearTimeout(this.hideTimer)
+            this.hideTimer = null
+        }
         if (this.stateCb) {
             try { gstPlayer.stateChanged.off(this.stateCb) } catch (e) { }
         }
@@ -234,6 +240,25 @@ export default {
                 try { this.mPlayer.resume() } catch (e) { }
             }
             console.warn('[player] ' + (this.paused ? 'paused' : 'resumed'))
+        },
+        toggleControls() {
+            // 现代播放器交互：点击视频区切换控制栏显隐；显示后 3 秒无操作自动隐藏
+            this.controlsVisible = !this.controlsVisible
+            if (this.controlsVisible) {
+                this.armHideTimer()
+            } else if (this.hideTimer) {
+                clearTimeout(this.hideTimer)
+                this.hideTimer = null
+            }
+            console.warn('[player] controls ' + (this.controlsVisible ? 'shown' : 'hidden'))
+        },
+        armHideTimer() {
+            if (this.hideTimer) clearTimeout(this.hideTimer)
+            this.hideTimer = setTimeout(() => {
+                this.controlsVisible = false
+                this.hideTimer = null
+                console.warn('[player] controls auto-hidden')
+            }, 3000)
         },
         closePlayer() {
             if (this.mPlayer) {

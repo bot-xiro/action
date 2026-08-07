@@ -53,6 +53,7 @@ private:
     GstElement* decodebin_ = nullptr;    // decodebin（保留引用以便 teardown 前分流结束）
     GstElement* videoSink_ = nullptr;    // waylandsink
     GstElement* audioSink_ = nullptr;    // alsasink
+    GstElement* videoFlip_ = nullptr;    // videoflip（竖屏视频顺时针旋转 90°，横屏为 nullptr）
 
     std::thread busThread_;
     std::atomic<bool> stopping_{false};

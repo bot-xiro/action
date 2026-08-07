@@ -288,7 +288,37 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
     PLAYER_LOG("pad-added: %s", media ? media : "?");
     GstElement* sink = nullptr;
     if (media && g_str_has_prefix(media, "video/")) {
-        sink = videoSink_;
+        // 竖屏视频（高>宽）顺时针旋转 90°，横过来利用超宽屏空间：
+        // 动态插入 videoflip（纯旋转不改格式/尺寸，不会引发协商失败），解码 pad → videoflip → waylandsink
+        gint w = 0, h = 0;
+        gst_structure_get_int(s, "width", &w);
+        gst_structure_get_int(s, "height", &h);
+        if (h > w) {
+            GstElement* flip = gst_element_factory_make("videoflip", "vflip");
+            if (flip) {
+                gst_bin_add(GST_BIN(pipeline_), flip);
+                if (gst_element_link(flip, videoSink_)) {
+                    // method=1 即 clockwise（GstVideoFlipMethod 枚举）
+                    g_object_set(flip, "method", 1, nullptr);
+                    // 动态添加的元素必须同步到父管线状态，否则数据流被阻塞
+                    gst_element_sync_state_with_parent(flip);
+                    videoFlip_ = flip;
+                    sink = flip;
+                    PLAYER_LOG("video portrait %dx%d -> videoflip inserted (clockwise)", w, h);
+                } else {
+                    gst_bin_remove(GST_BIN(pipeline_), flip);
+                    gst_object_unref(flip);
+                    sink = videoSink_;
+                    PLAYER_LOG("videoflip link failed, keep portrait as-is");
+                }
+            } else {
+                sink = videoSink_;
+                PLAYER_LOG("videoflip factory failed, keep portrait as-is");
+            }
+        } else {
+            sink = videoSink_;
+            PLAYER_LOG("video landscape %dx%d -> direct waylandsink", w, h);
+        }
     } else if (media && g_str_has_prefix(media, "audio/")) {
         sink = audioSink_;
     }
@@ -322,6 +352,7 @@ void GstPlayer::teardown()
     decodebin_ = nullptr;
     videoSink_ = nullptr;
     audioSink_ = nullptr;
+    videoFlip_ = nullptr;
     PLAYER_LOG("teardown done");
 }
 
