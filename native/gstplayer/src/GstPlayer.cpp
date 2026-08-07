@@ -194,10 +194,13 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     g_object_set(playbin_, "uri", uri.c_str(), nullptr);
     PLAYER_LOG("uri set");
 
-    // 进入 READY 让 playbin 创建内部 source（souphttpsrc），
-    // 再设置浏览器 UA + Referer，绕过 B站 CDN 防盗链 403
-    // （实测：B站 CDN 校验 Referer=bilibili.com，仅 UA 仍 403）
+    // 进入 READY 让 playbin 创建内部 source（souphttpsrc）。
+    // playbin 状态切换是异步的，必须先等到实际到达 READY，
+    // 否则此时 souphttpsrc 尚未创建（实测立即遍历找不到）。
     gst_element_set_state(playbin_, GST_STATE_READY);
+    GstState cur = GST_STATE_VOID_PENDING;
+    gst_element_get_state(playbin_, &cur, nullptr, 2 * GST_SECOND);
+    PLAYER_LOG("wait READY cur=%s", gst_element_state_get_name(cur));
     GstElement* src = findSoupSrc(playbin_);
     if (src) {
         g_object_set(src, "user-agent",
