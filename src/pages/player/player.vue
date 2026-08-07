@@ -7,14 +7,10 @@
         </div>
 
         <!-- 视频区（hole 挖洞显示 waylandsink 输出，全屏 960×266） -->
-        <div v-else class="player-area" @click="toggleControls">
+        <div v-else class="player-area">
             <hole ref="videoHole" class="video-hole"></hole>
-            <!-- 控制栏（现代播放器：默认隐藏，点击视频区显示，3 秒无操作自动隐藏） -->
-            <div v-if="controlsVisible" class="controls" @click.stop>
-                <text class="ctrl-title" :lines="1">{{ title }}</text>
-                <text class="ctrl-btn" @click="togglePlay">{{ paused ? '▶ 播放' : '⏸ 暂停' }}</text>
-                <text class="ctrl-btn" @click="closePlayer">✕ 关闭</text>
-            </div>
+            <!-- 独立控制栏框架：固定在屏幕顶部（标题）/底部（控制），常驻显示，不跟随视频 -->
+            <player-controls :title="title" :paused="paused" @toggle-play="togglePlay" @close="closePlayer"></player-controls>
         </div>
     </div>
 </template>
@@ -71,59 +67,26 @@
 
 .video-hole {
     /* 绝对定位铺满 player-area：挖洞区域固定 960×266 全屏，
-       不受控制栏或 flex 布局影响，waylandsink 渲染窗口铺满整个屏幕 */
+       不受控制栏或 flex 布局影响，waylandsink 渲染窗口铺满整个屏幕
+       与 waylandsink render-rectangle <0,100,960,266> 对齐（画面下移100px） */
     position: absolute;
-    top: 0;
+    top: 100px;
     left: 0;
     width: 960px;
     height: 266px;
-}
-
-.controls {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: 960px;
-    height: 66px;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    padding-left: 16px;
-    padding-right: 16px;
-    background-color: rgba(0, 0, 0, 0.5);
-    /* 必须高于视频层（waylandsink hole），否则控制栏被视频盖住无法显示/点击 */
-    z-index: 100;
-}
-
-.ctrl-title {
-    flex: 1;
-    font-size: 20px;
-    color: #ffffff;
-    lines: 1;
-}
-
-.ctrl-btn {
-    margin-left: 20px;
-    font-size: 20px;
-    color: #cccccc;
-    padding-top: 8px;
-    padding-right: 16px;
-    padding-bottom: 8px;
-    padding-left: 16px;
-    background-color: #2a2a2a;
-    border-radius: 4px;
-    border-width: 1px;
-    border-color: #444444;
 }
 </style>
 
 <script>
 import api from '../../utils/api.js'
 import { gstPlayer } from 'gstplayer'
+import PlayerControls from './player-controls.vue'
 
 export default {
     name: 'player',
+    components: {
+        PlayerControls
+    },
     data() {
         return {
             bvid: '',
@@ -135,9 +98,7 @@ export default {
             paused: false,
             error: '',
             mPlayer: null,
-            stateCb: null,
-            controlsVisible: false,
-            hideTimer: null
+            stateCb: null
         }
     },
     mounted() {
@@ -174,10 +135,6 @@ export default {
     },
     beforeDestroy() {
         console.warn('[player] beforeDestroy')
-        if (this.hideTimer) {
-            clearTimeout(this.hideTimer)
-            this.hideTimer = null
-        }
         if (this.stateCb) {
             try { gstPlayer.stateChanged.off(this.stateCb) } catch (e) { }
         }
@@ -248,25 +205,6 @@ export default {
                 try { this.mPlayer.resume() } catch (e) { }
             }
             console.warn('[player] ' + (this.paused ? 'paused' : 'resumed'))
-        },
-        toggleControls() {
-            // 现代播放器交互：点击视频区切换控制栏显隐；显示后 3 秒无操作自动隐藏
-            this.controlsVisible = !this.controlsVisible
-            if (this.controlsVisible) {
-                this.armHideTimer()
-            } else if (this.hideTimer) {
-                clearTimeout(this.hideTimer)
-                this.hideTimer = null
-            }
-            console.warn('[player] controls ' + (this.controlsVisible ? 'shown' : 'hidden'))
-        },
-        armHideTimer() {
-            if (this.hideTimer) clearTimeout(this.hideTimer)
-            this.hideTimer = setTimeout(() => {
-                this.controlsVisible = false
-                this.hideTimer = null
-                console.warn('[player] controls auto-hidden')
-            }, 3000)
         },
         closePlayer() {
             if (this.mPlayer) {
