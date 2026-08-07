@@ -41,7 +41,7 @@ public:
     JQUTIL_NS::JQSignal<std::string> stateChanged;
 
 private:
-    bool buildPipeline(const std::string& uri, bool audio, const std::string& rect, const std::string& fill, double alpha);
+    bool buildPipeline(const std::string& uri, bool audio, const std::string& rect, const std::string& fill);
     void teardown();
     void busLoop();
     void emitState(const std::string& state);

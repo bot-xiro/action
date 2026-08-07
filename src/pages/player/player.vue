@@ -211,8 +211,6 @@ export default {
                     pos_h: 266,
                     // fill 不传 = fit：等比缩放完整显示在屏幕内（左右黑边），
                     // crop 会使 waylandsink 窗口随视频放大超出屏幕，禁用
-                    // alpha=0：窗口透明，黑底消失，仅视频画面可见（实验）
-                    alpha: 0,
                     loop: 0
                 })
                 console.warn('[player] open ret: ' + ok)
