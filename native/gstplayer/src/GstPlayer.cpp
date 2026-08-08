@@ -355,13 +355,17 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
             if (flip) {
                 gst_bin_add(GST_BIN(pipeline_), flip);
                 if (gst_element_link(flip, videoSink_)) {
-                    // method=1 即 clockwise（GstVideoFlipMethod 枚举）
-                    g_object_set(flip, "method", 1, nullptr);
+                    // method=3 即 CLOCKWISE（GstVideoFlipMethod 枚举：
+                    // 0=none, 1=counterclockwise, 2=rotate-180, 3=clockwise）。
+                    // 与 waylandsink 分支（method=1）方向相反；kmssink 走的是
+                    // 物理 plane（weston rotate-90 已生效方向相反的旋转），
+                    // 实测 method=1 -> method=3 画面翻转 180° 修正。
+                    g_object_set(flip, "method", 3, nullptr);
                     // 动态添加的元素必须同步到父管线状态，否则数据流被阻塞
                     gst_element_sync_state_with_parent(flip);
                     videoFlip_ = flip;
                     sink = flip;
-                    PLAYER_LOG("video %dx%d -> videoflip inserted (clockwise, kmssink all-flip)", w, h);
+                    PLAYER_LOG("video %dx%d -> videoflip inserted (clockwise=m3, kmssink all-flip)", w, h);
                 } else {
                     gst_bin_remove(GST_BIN(pipeline_), flip);
                     gst_object_unref(flip);
