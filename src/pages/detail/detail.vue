@@ -217,6 +217,13 @@ export default {
                     this.video = data
                     this.loading = false
                     console.warn('[detail] video loaded: ' + data.title)
+                    // 预取播放地址（cid 已就绪）：缓存 10 分钟，点播放时秒开
+                    var prefetchCid = (data && (data.cid || (data.pages && data.pages[0] && data.pages[0].cid))) || ''
+                    if (prefetchCid) {
+                        api.getPlayUrl(this.bvid, prefetchCid, 64, 1)
+                            .then(() => console.warn('[detail] playUrl prefetched: ' + this.bvid))
+                            .catch(err => console.warn('[detail] playUrl prefetch skip: ' + (err && err.message ? err.message : '')))
+                    }
                 })
                 .catch(err => {
                     console.warn('[detail] video error: ' + (err && err.message ? err.message : JSON.stringify(err)))

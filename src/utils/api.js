@@ -148,7 +148,7 @@ async function getVideoInfo(bvid) {
 }
 
 /**
- * 播放地址
+ * 播放地址（带缓存）
  * 用旧版 /x/player/playurl（非 wbi）：实测设备 http.request 不发送自定义 Referer，
  * 新版 wbi/playurl 无 Referer 时返回风控 v_voucher（无 durl）；旧版接口无此限制。
  * @param {string} bvid
@@ -156,7 +156,17 @@ async function getVideoInfo(bvid) {
  * @param {number} qn 清晰度 32/64/80/116
  * @param {number} fnval 16=DASH, 1=MP4
  */
+let _playUrlCache = {}
+const PLAY_URL_TTL = 10 * 60 * 1000 // 地址 10 分钟有效，足够详情页停留期
+
 async function getPlayUrl(bvid, cid, qn, fnval) {
+  // 预取缓存命中直接返回，跳过网络 RTT（detail 页预取后 player 页秒开）
+  const key = bvid + '/' + cid + '/' + (qn || 64) + '/' + (fnval || 1)
+  const hit = _playUrlCache[key]
+  if (hit && Date.now() - hit.ts < PLAY_URL_TTL) {
+    console.warn('[api] playUrl cache hit: ' + key)
+    return hit.data
+  }
   const params = {
     bvid: bvid,
     cid: cid,
@@ -168,8 +178,9 @@ async function getPlayUrl(bvid, cid, qn, fnval) {
     .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
     .join('&')
   const url = BASE + '/x/player/playurl?' + qs
-  const data = await request(url, { timeout: 10 })
+  const data = await request(url, { timeout: 8 })
   if (data && data.code === 0 && data.data && data.data.durl && data.data.durl.length > 0) {
+    _playUrlCache[key] = { ts: Date.now(), data: data.data }
     return data.data
   }
   console.warn('[api] getPlayUrl no durl: ' + url + ' :: ' + JSON.stringify(data).substring(0, 300))

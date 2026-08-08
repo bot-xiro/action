@@ -11,7 +11,7 @@ namespace gstplayer {
 
 namespace {
 
-// 一次性 GStreamer 初始化
+// 一次性 GStreamer 初始化（在模块加载时即完成，避免首次 open 卡在插件扫描上）
 void ensureGstInit()
 {
     static bool inited = false;
@@ -210,6 +210,10 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     g_object_set(src, "user-agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         nullptr);
+    // 网络超时：CDN 拉流卡住时快速失败，避免 open/预滚无限挂起
+    // （timeout 单位秒，0=无限；15s 无数据即报错，正常播放不受影响）
+    g_object_set(src, "timeout", 15, nullptr);
+    g_object_set(src, "retries", 0, nullptr);
     // 直接构造 GstStructure 设置 extra-headers（gst_util_set_object_arg 字符串解析
     // 在设备上不可靠，可能解析失败导致 Referer 未生效）
     GstStructure* hdrs = gst_structure_new_empty("headers");
@@ -491,6 +495,10 @@ void GstPlayer::emitState(const std::string& state)
 
 static JSValue createGstPlayer(JQModuleEnv* env)
 {
+    // 预热 GStreamer：模块加载（app 启动 import gstplayer）即完成 gst_init，
+    // 把插件扫描开销从首次 open 播放路径上移走，缩短首帧延迟
+    ensureGstInit();
+
     JQFunctionTemplateRef tpl = JQFunctionTemplate::New(env, "gstPlayer");
     tpl->InstanceTemplate()->setObjectCreator([]() {
         static GstPlayer* player = []() {

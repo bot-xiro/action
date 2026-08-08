@@ -45,4 +45,8 @@ try {
   console.log(err)
 }
 
+// 预热 gstplayer 原生模块：app 启动即完成 gst_init（插件扫描 100~300ms），
+// 从播放路径上移除，缩短首次播放首帧延迟（gstplayer_init 内 ensureGstInit）
+import { gstPlayer } from 'gstplayer'
+
 export default App
