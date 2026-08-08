@@ -2,7 +2,8 @@
   "pages": {
     "index": "pages/index/index.vue",
     "detail": "pages/detail/detail.vue",
-    "player": "pages/player/player.vue"
+    "player": "pages/player/player.vue",
+    "settings": "pages/settings/settings.vue"
   },
   "options": {
     "external": ["gstplayer"]
