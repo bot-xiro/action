@@ -70,3 +70,10 @@ jobs:
           name: bilibili.amr
           path: ./*.amr
           retention-days: 7
+
+      - name: Upload libjsapi_gstplayer.so
+        uses: actions/upload-artifact@v4
+        with:
+          name: libjsapi_gstplayer.so
+          path: libs/libjsapi_gstplayer.so
+          retention-days: 7
