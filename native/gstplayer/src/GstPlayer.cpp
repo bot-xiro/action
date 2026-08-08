@@ -95,6 +95,28 @@ void GstPlayer::open(JQFunctionInfo& info)
     int posH = jsGetInt(ctx, opt, "pos_h", 0);
     std::string fill = jsGetString(ctx, opt, "fill");  // "fit"/"crop"/"stretch"，空=fit
 
+#ifdef KMSSINK_TEST
+    // KMSSINK 模式坐标换算：前端传的是 weston UI 逻辑坐标（960x480 横屏，
+    // transform=rotate-90 之后的坐标系，如 <0,100,960,266>），而 kmssink 的
+    // render-rectangle 是物理 CRTC 坐标（480x960 竖屏）。
+    // 不换算时矩形宽度 960 超出物理屏宽 480，被 kmssink 钳制到右半屏 → 右下角。
+    // rotate-90（顺时针）映射：物理 x' = LOGIC_H - (y + h)，物理 y' = 逻辑 x，
+    // 物理宽 = 逻辑高，物理高 = 逻辑宽。
+    if (posW > 0 && posH > 0) {
+        constexpr int kLogicHeight = 480;  // weston 逻辑屏高（物理屏宽 480x960 旋转 90° 后）
+        int physX = kLogicHeight - (posY + posH);
+        int physY = posX;
+        int physW = posH;
+        int physH = posW;
+        PLAYER_LOG("kmss rect LOGIC(%d,%d,%d,%d) -> PHYS(%d,%d,%d,%d)",
+            posX, posY, posW, posH, physX, physY, physW, physH);
+        posX = physX;
+        posY = physY;
+        posW = physW;
+        posH = physH;
+    }
+#endif
+
     std::ostringstream rect;
     if (posW > 0 && posH > 0) {
         // GstValueArray 字符串格式：<x, y, width, height>
@@ -321,7 +343,14 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
         gint w = 0, h = 0;
         gst_structure_get_int(s, "width", &w);
         gst_structure_get_int(s, "height", &h);
+#ifdef KMSSINK_TEST
+        // kmssink 直出物理 plane（480x960 竖屏），不经过 weston 的 rotate-90 变换；
+        // UI 是旋转过的，所以所有视频内容都必须顺时针转 90° 才能与 UI 同向显示
+        // （横屏视频转成竖向填进物理竖条，用户视角旋转回来看就是横屏）。
+        if (true) {
+#else
         if (h > w) {
+#endif
             GstElement* flip = gst_element_factory_make("videoflip", "vflip");
             if (flip) {
                 gst_bin_add(GST_BIN(pipeline_), flip);
@@ -332,21 +361,28 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
                     gst_element_sync_state_with_parent(flip);
                     videoFlip_ = flip;
                     sink = flip;
-                    PLAYER_LOG("video portrait %dx%d -> videoflip inserted (clockwise)", w, h);
+                    PLAYER_LOG("video %dx%d -> videoflip inserted (clockwise, kmssink all-flip)", w, h);
                 } else {
                     gst_bin_remove(GST_BIN(pipeline_), flip);
                     gst_object_unref(flip);
                     sink = videoSink_;
-                    PLAYER_LOG("videoflip link failed, keep portrait as-is");
+                    PLAYER_LOG("videoflip link failed, keep as-is");
                 }
             } else {
                 sink = videoSink_;
-                PLAYER_LOG("videoflip factory failed, keep portrait as-is");
+                PLAYER_LOG("videoflip factory failed, keep as-is");
             }
+#ifdef KMSSINK_TEST
+        } else {
+            sink = videoSink_;
+            PLAYER_LOG("video %dx%d -> direct kmssink", w, h);
+        }
+#else
         } else {
             sink = videoSink_;
             PLAYER_LOG("video landscape %dx%d -> direct waylandsink", w, h);
         }
+#endif
     } else if (media && g_str_has_prefix(media, "audio/")) {
         sink = audioSink_;
     }
