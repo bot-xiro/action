@@ -16,7 +16,9 @@
                         <text class="setting-label">使用系统播放器</text>
                         <text class="setting-desc">开启后，点击播放将调用系统默认视频播放器（需视频为本地文件或可直链访问）</text>
                     </div>
-                    <switch class="setting-switch" :checked="useSystemPlayer" @change="onSystemPlayerChange"></switch>
+                    <div class="custom-switch" :class="{ 'custom-switch-on': useSystemPlayer }" @click="onSystemPlayerToggle">
+                        <div class="switch-thumb" :class="{ 'switch-thumb-on': useSystemPlayer }"></div>
+                    </div>
                 </div>
 
                 <!-- 说明 -->
@@ -143,6 +145,34 @@
     height: 30px;
 }
 
+/* 自定义开关样式 */
+.custom-switch {
+    width: 56px;
+    height: 30px;
+    border-radius: 15px;
+    background-color: #dddddd;
+    position: relative;
+}
+
+.custom-switch-on {
+    background-color: #fb7299;
+}
+
+.switch-thumb {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 26px;
+    height: 26px;
+    border-radius: 13px;
+    background-color: #ffffff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.switch-thumb-on {
+    left: 28px;
+}
+
 /* 说明区域 */
 .setting-note {
     margin-top: 8px;
@@ -217,6 +247,11 @@ export default {
         loadSettings() {
             const settings = storage.getSettings()
             this.useSystemPlayer = settings.useSystemPlayer || false
+        },
+        onSystemPlayerToggle() {
+            this.useSystemPlayer = !this.useSystemPlayer
+            storage.setSetting('useSystemPlayer', this.useSystemPlayer)
+            console.warn('[settings] useSystemPlayer changed to:', this.useSystemPlayer)
         },
         onSystemPlayerChange(e) {
             const checked = e.checked === true || e.checked === 'true'

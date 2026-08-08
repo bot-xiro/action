@@ -113,7 +113,7 @@ export default {
 
         // 读取设置：是否使用系统播放器
         this.useSystemPlayer = storage.getSetting('useSystemPlayer') || false
-        console.warn('[player] useSystemPlayer:', this.useSystemPlayer)
+        console.warn('[player] useSystemPlayer =', this.useSystemPlayer, '(type:', typeof this.useSystemPlayer, ')')
 
         // 注册状态事件（stateChanged.on(cb) / .off(cb)）
         this.stateCb = (state) => {
@@ -247,10 +247,12 @@ export default {
             console.warn('[player] ' + (this.paused ? 'paused' : 'resumed'))
         },
         closePlayer() {
-            if (this.mPlayer) {
-                try { this.mPlayer.close() } catch (e) { }
-                this.mPlayer = null
+            if (this.mPlayer && typeof this.mPlayer.close === 'function') {
+                try { this.mPlayer.close() } catch (e) { console.warn('[player] close error:', e.message) }
+            } else if (this.mPlayer && typeof gstPlayer.close === 'function') {
+                try { gstPlayer.close() } catch (e) { console.warn('[player] close via gstPlayer error:', e.message) }
             }
+            this.mPlayer = null
             $falcon.closePage()
         }
     }
