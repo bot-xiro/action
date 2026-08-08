@@ -3,10 +3,7 @@
         <!-- 顶部标题栏 -->
         <div class="topbar">
             <text class="topbar-title">Bilibili 热门</text>
-            <div class="topbar-actions">
-                <text class="topbar-status">{{ statusText }}</text>
-                <text class="topbar-btn" @click="openSettings">⚙</text>
-            </div>
+            <text class="topbar-status">{{ statusText }}</text>
         </div>
 
         <!-- 加载中 -->
@@ -56,20 +53,8 @@
     font-weight: bold;
 }
 
-.topbar-actions {
-    flex-direction: row;
-    align-items: center;
-}
-
 .topbar-status {
     font-size: 20px;
-    color: #ffffff;
-    opacity: 0.9;
-    margin-right: 16px;
-}
-
-.topbar-btn {
-    font-size: 26px;
     color: #ffffff;
     opacity: 0.9;
 }
@@ -187,10 +172,6 @@ export default {
         openVideo(item) {
             console.log('[index] open: ' + item.bvid)
             $falcon.navTo('detail', { bvid: item.bvid })
-        },
-        openSettings() {
-            console.log('[index] open settings')
-            $falcon.navTo('settings')
         }
     }
 }

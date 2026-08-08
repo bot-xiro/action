@@ -81,8 +81,6 @@
 import api from '../../utils/api.js'
 import { gstPlayer } from 'gstplayer'
 import PlayerControls from './player-controls.vue'
-import storage from '../../utils/storage.js'
-import bridge from '../../utils/bridge.js'
 
 export default {
     name: 'player',
@@ -100,8 +98,7 @@ export default {
             paused: false,
             error: '',
             mPlayer: null,
-            stateCb: null,
-            useSystemPlayer: false
+            stateCb: null
         }
     },
     mounted() {
@@ -110,10 +107,6 @@ export default {
         this.cid = opt.cid || ''
         this.title = opt.title || '视频播放'
         console.warn('[player] mounted bvid=' + this.bvid + ' cid=' + this.cid)
-
-        // 读取设置：是否使用系统播放器
-        this.useSystemPlayer = storage.getSetting('useSystemPlayer') || false
-        console.warn('[player] useSystemPlayer =', this.useSystemPlayer, '(type:', typeof this.useSystemPlayer, ')')
 
         // 注册状态事件（stateChanged.on(cb) / .off(cb)）
         this.stateCb = (state) => {
@@ -162,13 +155,7 @@ export default {
                 if (data && data.durl && data.durl.length > 0) {
                     this.playUrl = data.durl[0].url
                     console.warn('[player] playUrl qn=' + (data.quality || '?') + ' len=' + this.playUrl.length + ' : ' + this.playUrl.substring(0, 80) + '...')
-                    
-                    // 根据设置决定播放方式
-                    if (this.useSystemPlayer) {
-                        this.trySystemPlayer(this.playUrl)
-                    } else {
-                        this.tryPlay(this.playUrl)
-                    }
+                    this.tryPlay(this.playUrl)
                 } else {
                     this.error = '未获取到播放地址'
                     this.loading = false
@@ -179,33 +166,6 @@ export default {
                 this.error = '获取播放地址失败: ' + msg
                 this.loading = false
                 console.warn('[player] getPlayUrl error: ' + msg)
-            }
-        },
-        // 尝试使用系统播放器
-        async trySystemPlayer(url) {
-            console.warn('[player] trying system player for:', url)
-            try {
-                // 系统播放器通常需要本地文件路径或直链
-                // B 站视频流通常是带防盗链的 m3u8/flv/mp4，可能无法直接在系统播放器打开
-                // 这里尝试调用 bridge.shell.openSystemVideo
-                const success = await bridge.openSystemVideo(url)
-                if (success) {
-                    console.warn('[player] system player launched successfully')
-                    this.ready = true
-                    this.loading = false
-                    // 系统播放器启动后关闭当前页面（可选）
-                    setTimeout(() => {
-                        this.closePlayer()
-                    }, 1000)
-                } else {
-                    console.warn('[player] system player not available, falling back to in-app player')
-                    this.error = '系统播放器不可用，自动切换到应用内播放器'
-                    this.tryPlay(url)
-                }
-            } catch (e) {
-                console.warn('[player] system player error, fallback:', e.message)
-                this.error = '系统播放器调用失败，自动切换到应用内播放器'
-                this.tryPlay(url)
             }
         },
         tryPlay(url) {
@@ -247,12 +207,10 @@ export default {
             console.warn('[player] ' + (this.paused ? 'paused' : 'resumed'))
         },
         closePlayer() {
-            if (this.mPlayer && typeof this.mPlayer.close === 'function') {
-                try { this.mPlayer.close() } catch (e) { console.warn('[player] close error:', e.message) }
-            } else if (this.mPlayer && typeof gstPlayer.close === 'function') {
-                try { gstPlayer.close() } catch (e) { console.warn('[player] close via gstPlayer error:', e.message) }
+            if (this.mPlayer) {
+                try { this.mPlayer.close() } catch (e) { }
+                this.mPlayer = null
             }
-            this.mPlayer = null
             $falcon.closePage()
         }
     }
