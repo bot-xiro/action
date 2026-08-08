@@ -43,6 +43,7 @@ jobs:
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
             -DCMAKE_BUILD_TYPE=Release \
+            -DKMSSINK_TEST=ON \
             native/gstplayer
           cmake --build build --config Release --parallel $(nproc)
           mkdir -p libs

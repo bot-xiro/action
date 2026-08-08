@@ -207,7 +207,34 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     }
     PLAYER_LOG("souphttpsrc created, UA+Referer set");
 
-    // 视频输出：waylandsink（weston DRM-backend；kmssink 会死锁，禁用）
+    // 视频输出：kmssink（KMS overlay 双平面直出，Lilo 方案；临时实验分支，
+    // 由 -DKMSSINK_TEST=ON 启用，默认仍走 waylandsink）
+#ifdef KMSSINK_TEST
+    videoSink_ = gst_element_factory_make("kmssink", "vsink");
+    if (!videoSink_) {
+        PLAYER_LOG("kmssink factory failed");
+        teardown();
+        return false;
+    }
+    // 关键：必须显式指定 driver-name=rockchip，否则 kmssink 驱动探测卡死
+    g_object_set(videoSink_, "driver-name", "rockchip", nullptr);
+    // 空闲 overlay plane（modetest 实测 plane 76, zpos=2，高于 UI primary z=0）
+    g_object_set(videoSink_, "plane-id", 76, nullptr);
+    // 不启用 vsync 等待，避免与 weston 的 DRM 提交互相等待
+    gboolean skip = true;
+    GParamSpec* skipPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "skip-vsync");
+    if (skipPspec) g_object_set(videoSink_, "skip-vsync", skip, nullptr);
+    PLAYER_LOG("kmssink created (plane-id=76 driver=rockchip)");
+    if (!rect.empty()) {
+        GParamSpec* pspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "render-rectangle");
+        if (pspec) {
+            gst_util_set_object_arg(G_OBJECT(videoSink_), "render-rectangle", rect.c_str());
+            PLAYER_LOG("kmssink render-rectangle set: %s", rect.c_str());
+        } else {
+            PLAYER_LOG("kmssink has no render-rectangle property");
+        }
+    }
+#else
     videoSink_ = gst_element_factory_make("waylandsink", "vsink");
     if (!videoSink_) {
         PLAYER_LOG("waylandsink factory failed");
@@ -233,6 +260,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
             PLAYER_LOG("render-rectangle set: %s", rect.c_str());
         }
     }
+#endif
 
     // 音频输出：alsasink（device=speaker）；audio=false 时用 fakesink 静音
     audioSink_ = audio
