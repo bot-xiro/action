@@ -1,6 +1,5 @@
 #include "GstPlayer.h"
 
-#include <cstdlib>
 #include <sstream>
 #include <syslog.h>
 
@@ -10,18 +9,8 @@
 //   plane 76 (Esmart1-win0, overlay)  : kmssink 视频，zpos=2（当前视频所在）
 //   plane 90 (Esmart2-win0, overlay)  : 空闲 zpos=3
 //   plane 104(Esmart3-win0, overlay)  : 空闲 zpos=4
-// 默认 zpos：视频(2) > UI(0) → 视频直接盖在 UI 之上，弹幕/控制栏被遮挡；
-// 需求"视频在页面最底层"：把 UI primary 提到 zpos=3（高于视频 2）。
-// zpos 属性实测可写且 weston 重绘(getcompositor)后不重置，播放前设置一次即可。
-static void raiseUiAboveVideoLayer()
-{
-    int rc = ::system("modetest -M rockchip -w 54:zpos:3 >/dev/null 2>&1");
-    if (rc != 0) {
-        // 部分固件 modetest 不在 PATH，尝试绝对路径
-        rc = ::system("/usr/bin/modetest -M rockchip -w 54:zpos:3 >/dev/null 2>&1");
-    }
-    syslog(LOG_ERR, "[gstplayer] raise UI primary zpos -> 3 (over video z=2): ret=%d", rc);
-}
+// 注意：不要再尝试把 UI primary 提到 zpos=3 做"视频垫底"（见 buildPipeline 注释，
+// weston 输出 XR24 无 alpha，洞透明在 KMS 层不生效，UI 会全屏盖住视频）。
 #endif
 
 using namespace JQUTIL_NS;
@@ -263,9 +252,12 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     g_object_set(videoSink_, "driver-name", "rockchip", nullptr);
     // 空闲 overlay plane（modetest 实测 plane 76, zpos=2，高于 UI primary z=0）
     g_object_set(videoSink_, "plane-id", 76, nullptr);
-    // 视频沉到页面最底层：提升 UI primary plane zpos 到 3（高于视频 plane 的 2），
-    // 使弹幕/控制栏浮在视频之上（每次 open 调用一次，天然幂等）
-    raiseUiAboveVideoLayer();
+    // 注意：不要尝试用 `modetest -w 54:zpos:3` 把 UI 提到视频之上来实现"视频垫底"。
+    // 实测（2026-08-08）weston 提交 UI 到 primary plane 的格式为 XR24（无 alpha 通道），
+    // 页面里"洞"区域的 alpha=0 在校验中虽真实存在，但 weston 合成输出时丢弃 alpha，
+    // 洞被当成不透明黑色 → UI 全屏不透明盖住下层视频 plane → 只有声音没有画面。
+    // 因此保持默认 zpos（视频 plane z=2 > UI z=0），视频在上层、矩形内直出，
+    // UI 的洞区域视觉上由视频覆盖，控制栏移到矩形外（y=0~100）避免遮挡。
     // 不启用 vsync 等待，避免与 weston 的 DRM 提交互相等待
     gboolean skip = true;
     GParamSpec* skipPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "skip-vsync");
