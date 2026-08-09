@@ -151,40 +151,65 @@ async function getVideoInfo(bvid) {
  * 播放地址（带缓存）
  * 用旧版 /x/player/playurl（非 wbi）：实测设备 http.request 不发送自定义 Referer，
  * 新版 wbi/playurl 无 Referer 时返回风控 v_voucher（无 durl）；旧版接口无此限制。
+ *
+ * 【编码固定策略】设备 mppvideodec 硬解仅支持 H.264/AVC（video_codecid=7）：
+ * HEVC/AV1（codecid=12/13）无硬解，走 decodebin 软解会卡顿/黑屏。
+ * 因此强制 qn=64（720P）+ fnval=1（MP4），返回后校验 video_codecid==7，
+ * 若非 H.264 则逐级降档（64→32→16）重试至拿到 H.264 流。
  * @param {string} bvid
  * @param {number|string} cid
- * @param {number} qn 清晰度 32/64/80/116
- * @param {number} fnval 16=DASH, 1=MP4
+ * @param {number} qn 期望清晰度（内部只用于起点，强制 720P 封顶）
+ * @param {number} fnval 忽略，恒用 1=MP4
  */
 let _playUrlCache = {}
 const PLAY_URL_TTL = 10 * 60 * 1000 // 地址 10 分钟有效，足够详情页停留期
+const H264_CODECID = 7 // B站 video_codecid: 7=AVC(H.264) 12=HEVC 13=AV1
 
 async function getPlayUrl(bvid, cid, qn, fnval) {
-  // 预取缓存命中直接返回，跳过网络 RTT（detail 页预取后 player 页秒开）
-  const key = bvid + '/' + cid + '/' + (qn || 64) + '/' + (fnval || 1)
-  const hit = _playUrlCache[key]
-  if (hit && Date.now() - hit.ts < PLAY_URL_TTL) {
-    console.warn('[api] playUrl cache hit: ' + key)
-    return hit.data
+  const startQn = qn || 64
+  const ladder = [64, 32, 16].filter(q => q <= startQn) // 720P 封顶，只降不升
+  let lastErr = null
+  for (const q of ladder) {
+    // 预取缓存命中直接返回，跳过网络 RTT（detail 页预取后 player 页秒开）
+    const key = bvid + '/' + cid + '/' + q + '/1'
+    const hit = _playUrlCache[key]
+    if (hit && Date.now() - hit.ts < PLAY_URL_TTL) {
+      console.warn('[api] playUrl cache hit: ' + key + ' codecid=' + hit.data.video_codecid)
+      return hit.data
+    }
+    const params = {
+      bvid: bvid,
+      cid: cid,
+      qn: q,
+      fnval: 1, // 固定 MP4(durl)，设备解码链基于单文件 durl
+      fourk: 0
+    }
+    const qs = Object.keys(params)
+      .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
+      .join('&')
+    const url = BASE + '/x/player/playurl?' + qs
+    try {
+      const data = await request(url, { timeout: 8 })
+      if (data && data.code === 0 && data.data && data.data.durl && data.data.durl.length > 0) {
+        const codecid = data.data.video_codecid || 0
+        if (codecid !== 0 && codecid !== H264_CODECID) {
+          // B站该 qn 档只下发 HEVC/AV1：降档重试拿 H.264
+          console.warn('[api] qn=' + q + ' codecid=' + codecid + ' !=7(H264) 降档重试')
+          lastErr = new Error('codecid=' + codecid + ' not h264 at qn=' + q)
+          continue
+        }
+        _playUrlCache[key] = { ts: Date.now(), data: data.data }
+        console.warn('[api] playUrl OK qn=' + q + '(720p) codecid=' + codecid + ' len=' + data.data.durl.length)
+        return data.data
+      }
+      console.warn('[api] getPlayUrl no durl: ' + url + ' :: ' + JSON.stringify(data).substring(0, 300))
+      lastErr = new Error('getPlayUrl failed: ' + (data ? data.code : 'no data') + ' msg=' + (data ? data.message : ''))
+    } catch (e) {
+      lastErr = e
+      console.warn('[api] playUrl qn=' + q + ' fail: ' + e.message)
+    }
   }
-  const params = {
-    bvid: bvid,
-    cid: cid,
-    qn: qn || 64,
-    fnval: fnval || 1,
-    fourk: 0
-  }
-  const qs = Object.keys(params)
-    .map(k => encodeURIComponent(k) + '=' + encodeURIComponent(params[k]))
-    .join('&')
-  const url = BASE + '/x/player/playurl?' + qs
-  const data = await request(url, { timeout: 8 })
-  if (data && data.code === 0 && data.data && data.data.durl && data.data.durl.length > 0) {
-    _playUrlCache[key] = { ts: Date.now(), data: data.data }
-    return data.data
-  }
-  console.warn('[api] getPlayUrl no durl: ' + url + ' :: ' + JSON.stringify(data).substring(0, 300))
-  throw new Error('getPlayUrl failed: ' + (data ? data.code : 'no data') + ' msg=' + (data ? data.message : ''))
+  throw lastErr || new Error('getPlayUrl failed: no h264 stream')
 }
 
 /**

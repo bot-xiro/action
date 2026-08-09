@@ -346,7 +346,7 @@ export default {
                 var data = await api.getPlayUrl(this.bvid, this.cid, 64, 1)
                 if (data && data.durl && data.durl.length > 0) {
                     this.playUrl = data.durl[0].url
-                    console.warn('[player] playUrl qn=' + (data.quality || '?') + ' len=' + this.playUrl.length + ' : ' + this.playUrl.substring(0, 80) + '...')
+                    console.warn('[player] playUrl qn=' + (data.quality || '?') + ' codecid=' + (data.video_codecid || '?') + '(7=H264) len=' + this.playUrl.length + ' : ' + this.playUrl.substring(0, 80) + '...')
                     this.tryPlay(this.playUrl)
                 } else {
                     this.error = '未获取到播放地址'
