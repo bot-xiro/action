@@ -250,7 +250,7 @@ import api from '../../utils/api.js'
 import { gstPlayer } from 'gstplayer'
 
 const CONTROLS_HIDE_MS = 5000   // 控制栏无操作自动隐藏延时（5 秒）
-const PROGRESS_POLL_MS = 500    // 进度轮询间隔（毫秒）
+const PROGRESS_POLL_MS = 1000   // 进度轮询间隔（毫秒）：500→1000 减半 JS-C++ 跨调用，RK3562 上降低 UI 线程开销
 const PROGRESS_BLOCKS = 40      // 轨道点击热区分段数（事件对象无坐标，分段定位）
 
 export default {

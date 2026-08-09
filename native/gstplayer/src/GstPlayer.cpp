@@ -420,7 +420,17 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         return false;
     }
 
+    // 网络队列缓冲上限（RK3562 内存带宽有限，防缓冲无限膨胀）。
+    // 注意 max-size-time 必须显式设为 0：默认 2s 会在加载慢时提前打满，
+    // 解码器反压到网络源导致首帧卡顿（历史踩坑，勿改）。
+    g_object_set(queue, "max-size-buffers", 200, nullptr);
+    g_object_set(queue, "max-size-bytes", 16 * 1024 * 1024, nullptr);
+    g_object_set(queue, "max-size-time", 0, nullptr);
+
     g_object_set(src, "location", uri.c_str(), nullptr);
+    // 网络读块 64KB：默认 4096 会在 RK3562 上产生频繁系统调用；
+    // 64KB 分块减少 ~16 倍 syscall 开销，长时间播放 CPU 占用显著下降
+    g_object_set(src, "blocksize", 65536, nullptr);
     g_object_set(src, "user-agent",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         nullptr);
