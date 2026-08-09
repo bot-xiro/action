@@ -139,15 +139,16 @@ void GstPlayer::open(JQFunctionInfo& info)
     std::string fill = jsGetString(ctx, opt, "fill");  // "fit"/"crop"/"stretch"，空=fit
 
 #ifdef KMSSINK_TEST
-    // KMSSINK 模式：前端传的是 weston UI 逻辑坐标（rotate-90 之后，播放页视口
-    // 960×266 内的矩形，如 <0, 0, 960, 266>），而 kmssink 的 render-rectangle
-    // 要的是物理 CRTC 坐标（480×960 竖屏）。必须在 C++ 层完成逻辑→物理换算，
-    // 否则矩形宽度 960 超出物理屏宽 480，被 kmssink 钳制到右半屏 → 画面错位。
-    // 换算公式见匿名命名空间 logicToCrtc()（rotate-90 逆时针映射：physX=ly, physY=lx）。
-    if (posW > 0 && posH > 0) {
-        KmsRect p = logicToCrtc(posX, posY, posW, posH);
-        PLAYER_LOG("kmss rect LOGIC(%d,%d,%d,%d) -> PHYS(%d,%d,%d,%d)",
-            posX, posY, posW, posH, p.x, p.y, p.w, p.h);
+    // KMSSINK 双平面模式：视频 plane 直接铺满【整个物理屏】（480×960），
+    // 不在 C++ 层做矩形换算——UI 可视区域由 WebView 层的 <hole> 挖洞决定：
+    // hole 区域（960×266）透明，KMS 视频平面从洞中透出，其余区域被 UI
+    // 平面覆盖，天然对齐，无偏移。
+    // 历史教训（勿回退）：曾用 logicToCrtc 把逻辑矩形换算成 266 宽物理竖条
+    // （x=0 上半屏、x=214 下半屏，两轮真机均反馈位置错误）——竖条方案
+    // 无法与 hole 对齐。全屏物理矩形 + hole 才是正确架构。
+    {
+        KmsRect p{0, 0, 480, 960};
+        PLAYER_LOG("kmss FULL-PHYS(%d,%d,%d,%d) covered by UI hole", p.x, p.y, p.w, p.h);
         posX = p.x;
         posY = p.y;
         posW = p.w;
