@@ -562,29 +562,35 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         teardown();
         return false;
     }
-    // 视频静态链预接：h264parse → mppvideodec → videoSink（qtdemux 视频 pad 动态挂到 vparse_ sink）
-    if (!gst_element_link_many(vparse_, vdec_, videoSink_, nullptr)) {
-        PLAYER_LOG("link vparse->vdec->sink failed");
+    // 视频链预接：h264parse → mppvideodec【不预连 videoSink_】。
+    // 关键：videoSink_ 必须留作动态分配——若此处预链占死 sink pad，
+    // 非 h264（av1/hevc 等）走 decodebin fallback 时 videoflip 无法再连 videoSink_
+    // （真机实证部分视频黑屏无法播放）。h264 pad 出现时（onQtdemuxPadAdded）再
+    // gst_element_link(vdec_, videoSink_) 动态接入；fallback 路径由 onDecodebinPadAdded 插 videoflip。
+    if (!gst_element_link(vparse_, vdec_)) {
+        PLAYER_LOG("link vparse->vdec failed");
         teardown();
         return false;
     }
 #ifdef KMSSINK_TEST
     // mppvideodec 硬件旋转（消灭 videoflip CPU 逐帧旋转 + 一次 DMA 拷贝）：
     // kmssink 直出物理 plane，不经 weston rotate-90 变换，所有视频必须顺时针转 90°
-    // 与 UI 同向。视频 fliper 方向校准：v2 曾用 method=1 逆时针被反馈"翻转错了"，
-    // 恢复 method=3（顺时针）；此处 mppvideodec rotation=90 语义需真机验证，
-    // 若方向反了改 270（日志标注了 mpp rotation 校准点）。
+    // 与 UI 同向。
+    // 【方向校准 2026-08-09 真机】rotation=90 实测画面颠倒 180°：
+    // mpp 的 rotation=90 语义是【逆时针 90°】（=videoflip method=1），而旧 videoflip
+    // method=3 是顺时针 90°，两者相差 180°（用户反馈"视频反了 180°"实证）。
+    // 因此顺时针 90° 必须写 rotation=270。编码器顺时针=CW90；mpp 语义 CCW90=270。
     {
         GParamSpec* rotPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(vdec_), "rotation");
         if (rotPspec) {
-            g_object_set(vdec_, "rotation", 90, nullptr);
-            PLAYER_LOG("mppvideodec rotation=90 set (hardware, was videoflip m3)");
+            g_object_set(vdec_, "rotation", 270, nullptr);
+            PLAYER_LOG("mppvideodec rotation=270 set (cw90, calibrated on device)");
         } else {
             PLAYER_LOG("mppvideodec has no rotation property (keep videoflip path?)");
         }
     }
 #else
-    // 非 KMSSINK：旋转默认 0，由 onQtdeluxPadAdded 按 h>w 竖屏动态设 90
+    // 非 KMSSINK：旋转默认 0，由 onQtdemuxPadAdded 按 h>w 竖屏动态设 270
 #endif
     g_signal_connect(demux_, "pad-added", G_CALLBACK(GstPlayer::qtdemuxPadAddedCb), this);
     // 音频解码链：decodebin（AAC/MP3 → raw）→ alsasink
@@ -634,19 +640,30 @@ void GstPlayer::onQtdemuxPadAdded(GstPad* pad)
         if (g_str_equal(media, "video/x-h264")) {
 #ifndef KMSSINK_TEST
             // waylandsink 路径：竖屏视频（高>宽）才旋转 90°，与旧 videoflip 行为一致
-            // （KMSSINK_TEST 下已在 buildPipeline 统一设 rotation=90，无需按尺寸判断）
+            // （KMSSINK_TEST 下已在 buildPipeline 统一设 rotation=270）
             gint w = 0, h = 0;
             gst_structure_get_int(s, "width", &w);
             gst_structure_get_int(s, "height", &h);
             if (h > w) {
                 GParamSpec* rotPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(vdec_), "rotation");
                 if (rotPspec) {
-                    g_object_set(vdec_, "rotation", 90, nullptr);
-                    PLAYER_LOG("mppvideodec rotation=90 (portrait h>w %dx%d)", w, h);
+                    g_object_set(vdec_, "rotation", 270, nullptr);
+                    PLAYER_LOG("mppvideodec rotation=270 (portrait h>w %dx%d)", w, h);
                 }
             }
 #endif
             sink = vparse_;
+            // h264 视频 pad 出现：此时才把 vdec → videoSink_ 动态接上
+            // （build 阶段不预链，避免占死 sink pad 导致非 h264 fallback 黑屏）
+            GstPad* vdecSrc = gst_element_get_static_pad(vdec_, "src");
+            if (vdecSrc && !gst_pad_is_linked(vdecSrc)) {
+                if (gst_element_link(vdec_, videoSink_)) {
+                    PLAYER_LOG("vdec->videoSink linked on h264 pad");
+                } else {
+                    PLAYER_LOG("vdec->videoSink link failed");
+                }
+            }
+            if (vdecSrc) gst_object_unref(vdecSrc);
             PLAYER_LOG("video/x-h264 -> h264parse (mpp hw chain)");
         } else {
             // 非 h264（av1/hevc 等）：decodebin 兜底；KMSSINK 下视频输出需与 UI 同向，
