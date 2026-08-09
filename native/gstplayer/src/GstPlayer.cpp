@@ -307,6 +307,20 @@ void GstPlayer::start(JQFunctionInfo& info)
     // 接管视频平面时不会重置它，层级策略不会被播放行为覆盖。
     setPlaneZpos(54, 3);
 #endif
+    // 【死锁红线 2026-08-09】open() 返回时 PAUSED 预滚仍是 ASYNC（ret=2），
+    // 若直接切 PLAYING，状态迁移会与流线程的 pad-added 动态链接（KMSSINK 下
+    // 音频 decodebin pad、h264 vdec 链）并发互斥，真机实证全线 futex 死锁：
+    // 画面冻结第一帧（15:37 /proc 线程快照：所有 GStreamer 线程 utime 零增长、
+    // mpp_dec_hal 0 CPU，wchan=futex_wait_queue_me）。
+    // 解法：start() 先同步等待预滚真正完成（gst_element_get_state 阻塞式），
+    // 所有动态 pad 就绪后再切 PLAYING；10s 超时以免永久挂起。
+    GstStateChangeReturn preroll = gst_element_get_state(
+        pipeline_, nullptr, nullptr, 10LL * GST_SECOND);
+    PLAYER_LOG("start wait preroll ret=%d", (int)preroll);
+    if (preroll == GST_STATE_CHANGE_FAILURE) {
+        info.GetReturnValue().ThrowInternalError("start: preroll failed");
+        return;
+    }
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
     PLAYER_LOG("start set PLAYING");
     info.GetReturnValue().Set(true);
@@ -410,23 +424,40 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     demux_ = gst_element_factory_make("qtdemux", "demux");       // mp4/m4s 解复用（B 站 CDN 均为 mp4 容器）
     vparse_ = gst_element_factory_make("h264parse", "vparse");   // avcC → byte-stream，补齐帧边界
     vdec_ = gst_element_factory_make("mppvideodec", "vdec");     // RK MPP 硬解，DMA-BUF 输出，硬件旋转
+    vqueue_ = gst_element_factory_make("queue", "vqueue");        // 视频后端入口缓冲（防 decode 动态接入反压网络源）
+    g_object_set(vqueue_, "max-size-buffers", 8, nullptr);
+    g_object_set(vqueue_, "max-size-bytes", 4 * 1024 * 1024, nullptr);
+    g_object_set(vqueue_, "max-size-time", 0, nullptr);
+    vconvert_ = gst_element_factory_make("videoconvert", "vconv"); // 格式协商缓冲（格式不匹配时兜底转换）
     decodebin_ = gst_element_factory_make("decodebin", "adec");  // 音频解码链（AAC/MP3 → raw）
-    if (!src || !queue || !demux_ || !vparse_ || !vdec_ || !decodebin_) {
-        PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparse=%d vdec=%d adec=%d",
+    aconvert_ = gst_element_factory_make("audioconvert", "aconv"); // 音频格式协商（raw caps 与 alsasink 解耦）
+    aresample_ = gst_element_factory_make("audioresample", "ares"); // 采样率协商（44.1k/48k 自适应）
+    if (!src || !queue || !demux_ || !vparse_ || !vdec_ || !vqueue_ || !vconvert_ ||
+        !decodebin_ || !aconvert_ || !aresample_) {
+        PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparsed=%d vdec=%d vqueue=%d vconv=%d adec=%d aconv=%d ares=%d",
             src ? 1 : 0, queue ? 1 : 0, demux_ ? 1 : 0,
-            vparse_ ? 1 : 0, vdec_ ? 1 : 0, decodebin_ ? 1 : 0);
+            vparse_ ? 1 : 0, vdec_ ? 1 : 0, vqueue_ ? 1 : 0, vconvert_ ? 1 : 0,
+            decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0);
         if (src) gst_object_unref(src);
         if (queue) gst_object_unref(queue);
         if (demux_) gst_object_unref(demux_);
         if (vparse_) gst_object_unref(vparse_);
         if (vdec_) gst_object_unref(vdec_);
+        if (vqueue_) gst_object_unref(vqueue_);
+        if (vconvert_) gst_object_unref(vconvert_);
         if (decodebin_) gst_object_unref(decodebin_);
+        if (aconvert_) gst_object_unref(aconvert_);
+        if (aresample_) gst_object_unref(aresample_);
         gst_object_unref(pipeline_);
         pipeline_ = nullptr;
         demux_ = nullptr;
         vparse_ = nullptr;
         vdec_ = nullptr;
+        vqueue_ = nullptr;
+        vconvert_ = nullptr;
         decodebin_ = nullptr;
+        aconvert_ = nullptr;
+        aresample_ = nullptr;
         return false;
     }
 
@@ -553,22 +584,35 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     PLAYER_LOG("audio-sink created: %s", audio ? "alsasink" : "fakesink");
 
     // 组装：src → queue → qtdemux（动态 pad 分流：
-    //   video/x-h264 → h264parse → mppvideodec(硬件旋转) → videoSink_
-    //   audio/*      → decodebin(音频解码) → audioSink_）
+    //   video/x-h264 → h264parse → mppvideodec(硬件旋转) → vqueue → videoconvert → videoSink_
+    //   audio/*      → decodebin(音频解码) → audioconvert → audioresample → audioSink_）
+    // 【协商缓冲红线 2026-08-09 用户诊断】前版把 videoconvert/audioresample 一并
+    // 精简掉，动态管线直接 mppvideodec(DMABuf NV12) → kmssink、decodebin raw →
+    // alsasink：caps 协商过于刚性，任何格式不匹配都会让 preroll 卡死（真机
+    // 15:37 卡第一帧实证：线程全线 futex、mpp_dec_hal 零 CPU 不消费）。
+    // 恢复 videoconvert + audioconvert + audioresample 作为协商缓冲：
+    // 格式匹配时 GStreamer 内部直通（零拷贝），不匹配时兜底转换，100% 协商成功。
+    // 【静态后端+动态前端（用户方案）】后端链全部在 build 时静态链接，
+    // pad-added 回调只做动态 pad → 静态后端入口（vqueue/aconvert）的 pad 级
+    // 连接，绝不在 PLAYING/PAUSED 切换途中做元素级 gst_element_link——
+    // 那会与状态迁移抢锁（3fc0948 lazy-link 实测死锁，回退该方案）。
     gst_bin_add_many(GST_BIN(pipeline_), src, queue, demux_, vparse_, vdec_,
-        decodebin_, videoSink_, audioSink_, nullptr);
+        vqueue_, vconvert_, decodebin_, aconvert_, aresample_, videoSink_, audioSink_, nullptr);
     if (!gst_element_link_many(src, queue, demux_, nullptr)) {
         PLAYER_LOG("link src->qtdemux failed");
         teardown();
         return false;
     }
-    // 视频链预接：h264parse → mppvideodec【不预连 videoSink_】。
-    // 关键：videoSink_ 必须留作动态分配——若此处预链占死 sink pad，
-    // 非 h264（av1/hevc 等）走 decodebin fallback 时 videoflip 无法再连 videoSink_
-    // （真机实证部分视频黑屏无法播放）。h264 pad 出现时（onQtdemuxPadAdded）再
-    // gst_element_link(vdec_, videoSink_) 动态接入；fallback 路径由 onDecodebinPadAdded 插 videoflip。
-    if (!gst_element_link(vparse_, vdec_)) {
-        PLAYER_LOG("link vparse->vdec failed");
+    // 视频后端链静态预链接（sink pad 空闲等动态 pad 接入）：
+    // vparse → vdec → vqueue → videoconvert → kmssink，qtdemux h264 pad 出现时只连 vparse sink。
+    if (!gst_element_link_many(vparse_, vdec_, vqueue_, vconvert_, videoSink_, nullptr)) {
+        PLAYER_LOG("link vparse->vdec->vqueue->vconv->sink failed");
+        teardown();
+        return false;
+    }
+    // 音频后端链静态预链接：decodebin 音频 pad 出现时连 aconvert sink。
+    if (!gst_element_link_many(aconvert_, aresample_, audioSink_, nullptr)) {
+        PLAYER_LOG("link aconv->ares->asink failed");
         teardown();
         return false;
     }
@@ -593,9 +637,9 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     // 非 KMSSINK：旋转默认 0，由 onQtdemuxPadAdded 按 h>w 竖屏动态设 270
 #endif
     g_signal_connect(demux_, "pad-added", G_CALLBACK(GstPlayer::qtdemuxPadAddedCb), this);
-    // 音频解码链：decodebin（AAC/MP3 → raw）→ alsasink
+    // 音频解码链：decodebin（AAC/MP3 → raw）→ audioconvert → audioresample → alsasink
     g_signal_connect(decodebin_, "pad-added", G_CALLBACK(GstPlayer::decodebinPadAddedCb), this);
-    PLAYER_LOG("pipeline linked (qtdemux>h264parse>mppvideodec:kmssink | audio>decodebin>alsasink)");
+    PLAYER_LOG("pipeline linked (qtdemux>vparse>mppvideodec>vqueue>videoconvert:kmssink | audio>decodebin>audioconvert>audioresample>alsasink)");
 
     // bus 轮询线程（不用 GLib 主循环，规避设备 GLib 差异）
     stopping_ = false;
@@ -653,18 +697,13 @@ void GstPlayer::onQtdemuxPadAdded(GstPad* pad)
             }
 #endif
             sink = vparse_;
-            // h264 视频 pad 出现：此时才把 vdec → videoSink_ 动态接上
-            // （build 阶段不预链，避免占死 sink pad 导致非 h264 fallback 黑屏）
-            GstPad* vdecSrc = gst_element_get_static_pad(vdec_, "src");
-            if (vdecSrc && !gst_pad_is_linked(vdecSrc)) {
-                if (gst_element_link(vdec_, videoSink_)) {
-                    PLAYER_LOG("vdec->videoSink linked on h264 pad");
-                } else {
-                    PLAYER_LOG("vdec->videoSink link failed");
-                }
-            }
-            if (vdecSrc) gst_object_unref(vdecSrc);
-            PLAYER_LOG("video/x-h264 -> h264parse (mpp hw chain)");
+            // 【静态后端+动态前端（用户方案 2026-08-09）】vparse→vdec→vqueue→
+            // videoconvert→videoSink 已在 buildPipeline 静态链接完毕，此处只做
+            // pad 级连接。绝不复用 3fc0948 的 lazy-link（vdec→videoSink 在
+            // PAUSED/PLAYING 状态切换途中元素级链接 → 真机全线 futex 死锁、
+            // 画面冻结第一帧）。非 h264 fallback 路径（decodebin）亦静态指向
+            // vqueue，两条视频路径共用同一条静态后端，互不占用彼此 sink pad。
+            PLAYER_LOG("video/x-h264 -> h264parse (mpp hw chain, static backend)");
         } else {
             // 非 h264（av1/hevc 等）：decodebin 兜底；KMSSINK 下视频输出需与 UI 同向，
             // onDecodebinPadAdded 的 video 分支会按需插 videoflip（与硬解链互斥，只此路径触发）
@@ -709,59 +748,20 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
     PLAYER_LOG("pad-added: %s", media ? media : "?");
     GstElement* sink = nullptr;
     if (media && g_str_has_prefix(media, "video/")) {
-        // 竖屏视频（高>宽）顺时针旋转 90°，横过来利用超宽屏空间：
-        // 动态插入 videoflip（纯旋转不改格式/尺寸，不会引发协商失败），解码 pad → videoflip → waylandsink
+        // 非 h264 fallback 视频：接入静态视频后端入口 vqueue_（vqueue→videoconvert→
+        // kmssink 已在 buildPipeline 静态链接）。旋转由 mppvideodec 硬链负责；
+        // fallback（av1/hevc 软解）极少触发（API 已锁 codecid=7），保持直通即可。
         gint w = 0, h = 0;
         gst_structure_get_int(s, "width", &w);
         gst_structure_get_int(s, "height", &h);
-#ifdef KMSSINK_TEST
-        // kmssink 直出物理 plane（480x960 竖屏），不经过 weston 的 rotate 变换；
-        // UI 是 rotate-90（顺时针）后的逻辑画面，所以所有视频内容都必须旋转
-        // 与 UI 同向才不至于画面颠倒。
-        // method=3 即 CLOCKWISE（顺时针 90°），与 weston rotate-90 同向。
-        // 注：v2 曾改用 method=1（逆时针）+ 逆时针坐标公式，真机反馈"翻转错了"，
-        // 2026-08-09 第二轮校准：恢复 method=3（顺时针）+ 顺时针坐标公式。
-        if (true) {
-#else
-        if (h > w) {
-#endif
-            GstElement* flip = gst_element_factory_make("videoflip", "vflip");
-            if (flip) {
-                gst_bin_add(GST_BIN(pipeline_), flip);
-                if (gst_element_link(flip, videoSink_)) {
-                    // method=3 即 CLOCKWISE（GstVideoFlipMethod 枚举：
-                    // 0=none, 1=counterclockwise, 2=rotate-180, 3=clockwise）。
-                    // kmssink 走物理 plane，须与 weston rotate-90（顺时针）同向；
-                    // 2026-08-09 真机第二轮校准：恢复 method=3。
-                    g_object_set(flip, "method", 3, nullptr);
-                    // 动态添加的元素必须同步到父管线状态，否则数据流被阻塞
-                    gst_element_sync_state_with_parent(flip);
-                    videoFlip_ = flip;
-                    sink = flip;
-                    PLAYER_LOG("video %dx%d -> videoflip inserted (cw=m3, kmssink all-flip)", w, h);
-                } else {
-                    gst_bin_remove(GST_BIN(pipeline_), flip);
-                    gst_object_unref(flip);
-                    sink = videoSink_;
-                    PLAYER_LOG("videoflip link failed, keep as-is");
-                }
-            } else {
-                sink = videoSink_;
-                PLAYER_LOG("videoflip factory failed, keep as-is");
-            }
-#ifdef KMSSINK_TEST
-        } else {
-            sink = videoSink_;
-            PLAYER_LOG("video %dx%d -> direct kmssink", w, h);
-        }
-#else
-        } else {
-            sink = videoSink_;
-            PLAYER_LOG("video landscape %dx%d -> direct waylandsink", w, h);
-        }
-#endif
+        sink = vqueue_;
+        PLAYER_LOG("video %dx%d fallback -> vqueue (static backend)", w, h);
     } else if (media && g_str_has_prefix(media, "audio/")) {
-        sink = audioSink_;
+        // 音频解码输出 → 静态音频后端入口 aconvert_（aconvert→audioresample→
+        // alsasink 已在 buildPipeline 静态链接；audioresample 保证 44.1k/48k
+        // 采样率不匹配时也能协商成功，杜绝 alsasink preroll 卡死）。
+        sink = aconvert_;
+        PLAYER_LOG("audio raw -> aconvert (static backend)");
     }
     if (sink) {
         GstPad* sinkPad = gst_element_get_static_pad(sink, "sink");
@@ -793,7 +793,11 @@ void GstPlayer::teardown()
     demux_ = nullptr;
     vparse_ = nullptr;
     vdec_ = nullptr;
+    vqueue_ = nullptr;
+    vconvert_ = nullptr;
     decodebin_ = nullptr;
+    aconvert_ = nullptr;
+    aresample_ = nullptr;
     videoSink_ = nullptr;
     audioSink_ = nullptr;
     videoFlip_ = nullptr;

@@ -60,7 +60,11 @@ private:
     GstElement* demux_ = nullptr;        // qtdemux（mp4/m4s 解复用，B 站 CDN 均为 mp4 容器）
     GstElement* vparse_ = nullptr;       // h264parse（avcC → byte-stream，节帧边界）
     GstElement* vdec_ = nullptr;         // mppvideodec（RK MPP 硬解，rotation 硬件旋转，DMA-BUF 输出）
-    GstElement* decodebin_ = nullptr;    // 音频解码器（AAC → raw，输出接 alsasink）
+    GstElement* vqueue_ = nullptr;       // 视频缓冲 queue（静态后端入口；动态 pad（h264/fallback）统一接此）
+    GstElement* vconvert_ = nullptr;     // videoconvert（格式协商缓冲：解码 DMA-BUF → sink 可接受格式）
+    GstElement* decodebin_ = nullptr;    // 音频解码器（AAC → raw，输出接 audioconvert → alsasink）
+    GstElement* aconvert_ = nullptr;     // audioconvert（音频格式协商，防 raw caps 与 alsasink 不匹配卡 preroll）
+    GstElement* aresample_ = nullptr;    // audioresample（采样率协商，防 44.1k/48k 不匹配卡 preroll）
     GstElement* videoSink_ = nullptr;    // waylandsink
     GstElement* audioSink_ = nullptr;    // alsasink
     GstElement* videoFlip_ = nullptr;    // 遗留：videoflip 已淘汰（mppvideodec rotation 替代），保留指针置空兼容 teardown
