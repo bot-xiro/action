@@ -412,6 +412,62 @@ void GstPlayer::seek(JQFunctionInfo& info)
     info.GetReturnValue().Set(ok);
 }
 
+// ---- 双指缩放：播放中动态修改渲染区域（render-rectangle） ----
+//
+// KMS 双平面架构下 UI 层 CSS 无法缩放视频（视频由 DRM 硬件直接合成），
+// 前端只能捕捉双指手势 → 计算缩放后的逻辑矩形 → 调本接口动态更新 sink
+// 的 render-rectangle 属性，Rockchip DRM 在硬件层面瞬间完成重缩放与位移。
+// 入参: setRect(x, y, w, h) —— UI 逻辑坐标（与 open 的 pos_* 同坐标系），
+// 内部按 KMSSINK 逆时针 rotate-90 换算为物理 CRTC 坐标。
+void GstPlayer::setRect(JQFunctionInfo& info)
+{
+    if (info.Length() < 4) {
+        info.GetReturnValue().ThrowTypeError("setRect: x,y,w,h required");
+        return;
+    }
+    int lx = 0, ly = 0, lw = 0, lh = 0;
+    if (JS_ToInt32(info.GetContext(), &lx, info[0]) != 0 ||
+        JS_ToInt32(info.GetContext(), &ly, info[1]) != 0 ||
+        JS_ToInt32(info.GetContext(), &lw, info[2]) != 0 ||
+        JS_ToInt32(info.GetContext(), &lh, info[3]) != 0) {
+        info.GetReturnValue().ThrowTypeError("setRect: invalid numbers");
+        return;
+    }
+    if (!videoSink_) {
+        PLAYER_LOG("setRect failed: video sink is null");
+        info.GetReturnValue().Set(false);
+        return;
+    }
+    if (lw <= 0 || lh <= 0 || lx < 0 || ly < 0) {
+        PLAYER_LOG("setRect rejected: invalid rect (%d,%d,%d,%d)", lx, ly, lw, lh);
+        info.GetReturnValue().Set(false);
+        return;
+    }
+
+#ifdef KMSSINK_TEST
+    // KMSSINK 双平面：逻辑坐标 → 物理 CRTC 坐标（逆时针 rotate-90，复用 open 同款换算）
+    KmsRect p = logicToCrtc(lx, ly, lw, lh);
+    PLAYER_LOG("setRect LOGIC(%d,%d,%d,%d) -> PHYS(%d,%d,%d,%d)", lx, ly, lw, lh, p.x, p.y, p.w, p.h);
+    lx = p.x; ly = p.y; lw = p.w; lh = p.h;
+#else
+    PLAYER_LOG("setRect LOGIC(%d,%d,%d,%d) -> waylandsink same coords", lx, ly, lw, lh);
+#endif
+
+    // render-rectangle 是 GstValueArray of gint（Write only），g_object_set 传 C 字符串
+    // 会触发 GLib 类型不匹配崩溃；必须 gst_util_set_object_arg 解析 "<x, y, w, h>"。
+    std::ostringstream rect;
+    rect << "<" << lx << ", " << ly << ", " << lw << ", " << lh << ">";
+    GParamSpec* pspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "render-rectangle");
+    if (!pspec) {
+        PLAYER_LOG("setRect failed: sink has no render-rectangle property");
+        info.GetReturnValue().Set(false);
+        return;
+    }
+    gst_util_set_object_arg(G_OBJECT(videoSink_), "render-rectangle", rect.str().c_str());
+    PLAYER_LOG("setRect applied: %s", rect.str().c_str());
+    info.GetReturnValue().Set(true);
+}
+
 // ---- 管线构建（手动管线：souphttpsrc → queue → decodebin → 音视频分流）----
 
 bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::string& rect, const std::string& fill)
@@ -904,6 +960,7 @@ static JSValue createGstPlayer(JQModuleEnv* env)
     tpl->SetProtoMethod("getDuration", &GstPlayer::getDuration);
     tpl->SetProtoMethod("getPosition", &GstPlayer::getPosition);
     tpl->SetProtoMethod("seek", &GstPlayer::seek);
+    tpl->SetProtoMethod("setRect", &GstPlayer::setRect);
 
     // JS 侧: gstPlayer.stateChanged.on(cb) / .off(cb)
     tpl->InstanceTemplate()->Set("stateChanged", &GstPlayer::stateChanged);

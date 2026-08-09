@@ -8,7 +8,7 @@
 
         <!-- 双平面播放器工作区：
              WebView UI 平面（本页）+ 原生视频窗口（waylandsink/kmssink，平面叠加） -->
-        <div v-else class="stage" @click="onScreenTap">
+        <div v-else class="stage" @click="onScreenTap" @touchstart="onPinchStart" @touchmove="onPinchMove" @touchend="onPinchEnd">
             <!-- holE 挖洞：绝对定位铺满页面视口 960×266，使 WebView 画布在该区域完全
                  透明——底层视频层帧直接"透"上来，实现沉浸画面。
                  注意：hole 尺寸必须与 JS 传入 gstPlayer.open 的 pos 参数一致（960×266），
@@ -271,7 +271,10 @@ import { gstPlayer } from 'gstplayer'
 const CONTROLS_HIDE_MS = 5000   // 控制栏无操作自动隐藏延时（5 秒）
 const PROGRESS_POLL_MS = 1000   // 进度轮询间隔（毫秒）：500→1000 减半 JS-C++ 跨调用，RK3562 上降低 UI 线程开销
 const PROGRESS_BLOCKS = 40      // 轨道点击热区分段数（事件对象无坐标，分段定位）
-const SEEK_STEP_MS = 10000      // 快进/回退单步时长（10 秒，毫秒）
+const SEEK_STEP_MS = 10000       // 快进/回退单步时长（10 秒，毫秒）
+const PINCH_MIN_SCALE = 0.5      // 双指缩放下限（相对初始矩形）
+const PINCH_MAX_SCALE = 2.0      // 双指缩放上限（放大 2 倍后宽度超出屏幕，可平移查看细节）
+const PINCH_THROTTLE_MS = 40     // touchmove→setRect 调用节流间隔（JS→C++ 跨调用，减少 UI 线程开销）
 
 export default {
     name: 'player',
@@ -292,7 +295,11 @@ export default {
             progressTimer: null,       // 进度轮询定时器句柄
             mPlayer: null,
             stateCb: null,
-            hideTimer: null           // 自动隐藏定时器句柄
+            hideTimer: null,           // 自动隐藏定时器句柄
+            // 双指缩放：当前渲染矩形（逻辑坐标，与 open pos_* 同坐标系，初始即 open 参数）
+            videoRect: { x: 0, y: 107, w: 960, h: 266 },
+            pinch: null,               // 活跃捏合快照 {dist, x, y, w, h}；null=未捏合
+            pinchTapGuard: false       // 捏合结束后的下一个 click 吞噬标志
         }
     },
     mounted() {
@@ -427,10 +434,15 @@ export default {
                 }, CONTROLS_HIDE_MS)
             }
         },
-        onScreenTap() {
+onScreenTap() {
             // 屏幕点击 toggle 控制栏：隐藏时点击唤出；显示时点击空白区域隐藏。
             // 按钮点击通过 btnTapJustOccurred 标志短路（框架事件冒泡，不支持 .stop 修饰符）
             if (!this.ready) return
+            // 双指捏合刚结束：吞掉随之派生的一次 click，避免误toggle 控制栏
+            if (this.pinchTapGuard) {
+                this.pinchTapGuard = false
+                return
+            }
             if (this.btnTapJustOccurred) {
                 this.btnTapJustOccurred = false
                 return
@@ -536,6 +548,105 @@ export default {
             var t = e && e.touches && e.touches[0]
             console.warn('[player] track touchstart keys=' + (e ? Object.keys(e).join(',') : 'null')
                 + (t ? ' touchKeys=' + Object.keys(t).join(',') : ''))
+        },
+        // ---- 双指缩放（捏合） ----
+        // 手势流程：touchstart 记录起始矩形与双指间距 → touchmove 按间距比例
+        // 缩放（锚定两指中心）+ 平移 → 节流调用原生 setRect 动态更新渲染区域 →
+        // touchend 复位。坐标依赖框架 touch 事件是否携带 points 数据，
+        // 设备日志可确认（见 onTrackTouch）。
+        onPinchStart(e) {
+            var ts = e && e.touches
+            if (!ts || ts.length < 2) return
+            var t0 = ts[0]
+            var t1 = ts[1]
+            var p0 = t0 && t0.point ? t0.point : t0
+            var p1 = t1 && t1.point ? t1.point : t1
+            if (!p0 || !p1 ||
+                typeof p0.x !== 'number' || typeof p0.y !== 'number' ||
+                typeof p1.x !== 'number' || typeof p1.y !== 'number') {
+                console.warn('[player] pinch start: no touch coords, keys='
+                    + (t0 ? Object.keys(t0).join(',') : 'null'))
+                this.pinch = null
+                return
+            }
+            var dx = p1.x - p0.x
+            var dy = p1.y - p0.y
+            this.pinch = {
+                dist: Math.sqrt(dx * dx + dy * dy),
+                x: this.videoRect.x,
+                y: this.videoRect.y,
+                w: this.videoRect.w,
+                h: this.videoRect.h
+            }
+            console.log('[player] pinch start dist=' + this.pinch.dist
+                + ' rect=' + this.videoRect.x + ',' + this.videoRect.y + ','
+                + this.videoRect.w + ',' + this.videoRect.h)
+        },
+        onPinchMove(e) {
+            if (!this.pinch) return
+            var t = e && e.touches
+            if (!t || t.length < 2) return
+            var t0 = t[0]
+            var t1 = t[1]
+            var p0 = t0 && t0.point ? t0.point : t0
+            var p1 = t1 && t1.point ? t1.point : t1
+            if (!p0 || !p1 ||
+                typeof p0.x !== 'number' || typeof p1.x !== 'number') return
+            var dx = p1.x - p0.x
+            var dy = p1.y - p0.y
+            var dist = Math.sqrt(dx * dx + dy * dy)
+            var p = this.pinch
+            if (p.dist <= 0) return
+            var scale = dist / p.dist   // 相对起始间距的比例
+            if (scale < PINCH_MIN_SCALE) scale = PINCH_MIN_SCALE
+            if (scale > PINCH_MAX_SCALE) scale = PINCH_MAX_SCALE
+            var cxp = (p0.x + p1.x) / 2   // 两指当前中心（逻辑坐标）
+            var cyp = (p0.y + p1.y) / 2
+            var w = Math.round(p.w * scale)
+            var h = Math.round(p.h * scale)
+            // 以两指中心为锚：新中心 = 手势中心；矩形左上角随之移动
+            var x = Math.round(cxp - w / 2)
+            var y = Math.round(cyp - h / 2)
+            // 边界钳制：始终保留 80×40 可见（放大超屏后可平移，不可完全移出）
+            var minX = 80 - w
+            var minY = 40 - h
+            var maxX = 960 - 80
+            var maxY = 266 - 40
+            if (x < minX) x = minX
+            if (x > maxX) x = maxX
+            if (y < minY) y = minY
+            if (y > maxY) y = maxY
+            // 节流：避免每帧跨 JS→C++ 调用（40ms 一次已足够顺滑）
+            var now = Date.now()
+            if (now - (this._pinchLastT || 0) < PINCH_THROTTLE_MS) return
+            this._pinchLastT = now
+            this.applyVideoRect(x, y, w, h)
+        },
+        onPinchEnd() {
+            if (!this.pinch) return
+            this.pinch = null
+            this._pinchLastT = 0
+            // 捏合触发的 touchend 后框架可能派发一次 click，置 guard 吞掉；
+            // 若未派发 click（guard 无人消费），500ms 后自动复位防卡死
+            this.pinchTapGuard = true
+            var self = this
+            setTimeout(function () {
+                if (self.pinchTapGuard) {
+                    self.pinchTapGuard = false
+                    console.log('[player] pinch guard auto-reset')
+                }
+            }, 500)
+            console.log('[player] pinch end')
+        },
+        applyVideoRect(x, y, w, h) {
+            if (!this.mPlayer) return
+            try {
+                this.mPlayer.setRect(x, y, w, h)
+                this.videoRect = { x: x, y: y, w: w, h: h }
+                console.log('[player] setRect ' + x + ',' + y + ',' + w + ',' + h)
+            } catch (err) {
+                console.warn('[player] setRect error: ' + err.message)
+            }
         },
         // ---- 快进 / 回退（相对当前播放位置 ±10s） ----
         onSeekForward() {

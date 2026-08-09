@@ -43,6 +43,9 @@ public:
     void getPosition(JQUTIL_NS::JQFunctionInfo& info);
     void seek(JQUTIL_NS::JQFunctionInfo& info);
 
+    // 双指缩放支持：播放中动态更新渲染区域（逻辑坐标，内部换算物理 CRTC）
+    void setRect(JQUTIL_NS::JQFunctionInfo& info);
+
     // ---- JS 信号：gstPlayer.stateChanged.on(cb) / .off(cb) ----
     JQUTIL_NS::JQSignal<std::string> stateChanged;
 
