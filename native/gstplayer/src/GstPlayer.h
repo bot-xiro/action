@@ -50,15 +50,20 @@ private:
     void teardown();
     void busLoop();
     void emitState(const std::string& state);
-    void onDecodebinPadAdded(GstPad* pad);
+    void onQtdemuxPadAdded(GstPad* pad);          // qtdemux 动态 pad：video→显式硬解链 / audio→音频解码
+    void onDecodebinPadAdded(GstPad* pad);        // 音频解码 decodebin 输出 → alsasink
 
+    static void qtdemuxPadAddedCb(GstElement* element, GstPad* pad, gpointer userdata);
     static void decodebinPadAddedCb(GstElement* element, GstPad* pad, gpointer userdata);
 
     GstElement* pipeline_ = nullptr;     // gst_pipeline
-    GstElement* decodebin_ = nullptr;    // decodebin（保留引用以便 teardown 前分流结束）
+    GstElement* demux_ = nullptr;        // qtdemux（mp4/m4s 解复用，B 站 CDN 均为 mp4 容器）
+    GstElement* vparse_ = nullptr;       // h264parse（avcC → byte-stream，节帧边界）
+    GstElement* vdec_ = nullptr;         // mppvideodec（RK MPP 硬解，rotation 硬件旋转，DMA-BUF 输出）
+    GstElement* decodebin_ = nullptr;    // 音频解码器（AAC → raw，输出接 alsasink）
     GstElement* videoSink_ = nullptr;    // waylandsink
     GstElement* audioSink_ = nullptr;    // alsasink
-    GstElement* videoFlip_ = nullptr;    // videoflip（竖屏视频顺时针旋转 90°，横屏为 nullptr）
+    GstElement* videoFlip_ = nullptr;    // 遗留：videoflip 已淘汰（mppvideodec rotation 替代），保留指针置空兼容 teardown
 
     std::thread busThread_;
     std::atomic<bool> stopping_{false};

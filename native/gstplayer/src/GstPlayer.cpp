@@ -407,15 +407,25 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
 
     GstElement* src = gst_element_factory_make("souphttpsrc", "src");
     GstElement* queue = gst_element_factory_make("queue", "qsrc");
-    decodebin_ = gst_element_factory_make("decodebin", "decode");
-    if (!src || !queue || !decodebin_) {
-        PLAYER_LOG("factory failed src=%d queue=%d decodebin=%d",
-            src ? 1 : 0, queue ? 1 : 0, decodebin_ ? 1 : 0);
+    demux_ = gst_element_factory_make("qtdemux", "demux");       // mp4/m4s 解复用（B 站 CDN 均为 mp4 容器）
+    vparse_ = gst_element_factory_make("h264parse", "vparse");   // avcC → byte-stream，补齐帧边界
+    vdec_ = gst_element_factory_make("mppvideodec", "vdec");     // RK MPP 硬解，DMA-BUF 输出，硬件旋转
+    decodebin_ = gst_element_factory_make("decodebin", "adec");  // 音频解码链（AAC/MP3 → raw）
+    if (!src || !queue || !demux_ || !vparse_ || !vdec_ || !decodebin_) {
+        PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparse=%d vdec=%d adec=%d",
+            src ? 1 : 0, queue ? 1 : 0, demux_ ? 1 : 0,
+            vparse_ ? 1 : 0, vdec_ ? 1 : 0, decodebin_ ? 1 : 0);
         if (src) gst_object_unref(src);
         if (queue) gst_object_unref(queue);
+        if (demux_) gst_object_unref(demux_);
+        if (vparse_) gst_object_unref(vparse_);
+        if (vdec_) gst_object_unref(vdec_);
         if (decodebin_) gst_object_unref(decodebin_);
         gst_object_unref(pipeline_);
         pipeline_ = nullptr;
+        demux_ = nullptr;
+        vparse_ = nullptr;
+        vdec_ = nullptr;
         decodebin_ = nullptr;
         return false;
     }
@@ -542,15 +552,44 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     }
     PLAYER_LOG("audio-sink created: %s", audio ? "alsasink" : "fakesink");
 
-    // 组装：src → queue → decodebin（动态 pad 分流到 videoSink_/audioSink_）
-    gst_bin_add_many(GST_BIN(pipeline_), src, queue, decodebin_, videoSink_, audioSink_, nullptr);
-    if (!gst_element_link_many(src, queue, decodebin_, nullptr)) {
-        PLAYER_LOG("link src->decodebin failed");
+    // 组装：src → queue → qtdemux（动态 pad 分流：
+    //   video/x-h264 → h264parse → mppvideodec(硬件旋转) → videoSink_
+    //   audio/*      → decodebin(音频解码) → audioSink_）
+    gst_bin_add_many(GST_BIN(pipeline_), src, queue, demux_, vparse_, vdec_,
+        decodebin_, videoSink_, audioSink_, nullptr);
+    if (!gst_element_link_many(src, queue, demux_, nullptr)) {
+        PLAYER_LOG("link src->qtdemux failed");
         teardown();
         return false;
     }
+    // 视频静态链预接：h264parse → mppvideodec → videoSink（qtdemux 视频 pad 动态挂到 vparse_ sink）
+    if (!gst_element_link_many(vparse_, vdec_, videoSink_, nullptr)) {
+        PLAYER_LOG("link vparse->vdec->sink failed");
+        teardown();
+        return false;
+    }
+#ifdef KMSSINK_TEST
+    // mppvideodec 硬件旋转（消灭 videoflip CPU 逐帧旋转 + 一次 DMA 拷贝）：
+    // kmssink 直出物理 plane，不经 weston rotate-90 变换，所有视频必须顺时针转 90°
+    // 与 UI 同向。视频 fliper 方向校准：v2 曾用 method=1 逆时针被反馈"翻转错了"，
+    // 恢复 method=3（顺时针）；此处 mppvideodec rotation=90 语义需真机验证，
+    // 若方向反了改 270（日志标注了 mpp rotation 校准点）。
+    {
+        GParamSpec* rotPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(vdec_), "rotation");
+        if (rotPspec) {
+            g_object_set(vdec_, "rotation", 90, nullptr);
+            PLAYER_LOG("mppvideodec rotation=90 set (hardware, was videoflip m3)");
+        } else {
+            PLAYER_LOG("mppvideodec has no rotation property (keep videoflip path?)");
+        }
+    }
+#else
+    // 非 KMSSINK：旋转默认 0，由 onQtdeluxPadAdded 按 h>w 竖屏动态设 90
+#endif
+    g_signal_connect(demux_, "pad-added", G_CALLBACK(GstPlayer::qtdemuxPadAddedCb), this);
+    // 音频解码链：decodebin（AAC/MP3 → raw）→ alsasink
     g_signal_connect(decodebin_, "pad-added", G_CALLBACK(GstPlayer::decodebinPadAddedCb), this);
-    PLAYER_LOG("pipeline linked");
+    PLAYER_LOG("pipeline linked (qtdemux>h264parse>mppvideodec:kmssink | audio>decodebin>alsasink)");
 
     // bus 轮询线程（不用 GLib 主循环，规避设备 GLib 差异）
     stopping_ = false;
@@ -566,6 +605,72 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     }
 
     return true;
+}
+
+// qtdemux pad-added 静态回调 → 转成员函数（userdata=this）
+void GstPlayer::qtdemuxPadAddedCb(GstElement* element, GstPad* pad, gpointer userdata)
+{
+    GstPlayer* self = static_cast<GstPlayer*>(userdata);
+    self->onQtdemuxPadAdded(pad);
+}
+
+// qtdemux 动态 pad 分流：
+//   video/x-h264 → vparse_(h264parse) 的静态预链（vparse→vdec→videoSink 已在 buildPipeline 接好）
+//   video/* 其它（av1/hevc/vp9 等）→ 交给 decodebin_ 兜底解码（其 pad-added 再分流到 sink）
+//   audio/*       → decodebin_（AAC → raw → alsasink）
+void GstPlayer::onQtdemuxPadAdded(GstPad* pad)
+{
+    GstCaps* caps = gst_pad_get_current_caps(pad);
+    if (!caps) {
+        PLAYER_LOG("qtdemux pad-added: no caps");
+        return;
+    }
+    const GstStructure* s = gst_caps_get_structure(caps, 0);
+    const gchar* media = s ? gst_structure_get_name(s) : nullptr;  // "video/x-h264" / "audio/mpeg"
+    PLAYER_LOG("qtdemux pad-added: %s", media ? media : "?");
+    GstElement* sink = nullptr;
+    if (media && g_str_has_prefix(media, "video/")) {
+        // H.264 → 显式硬解链（mppvideodec rotation 硬件旋转，KMSSINK 下已在 build 时设 90）
+        if (g_str_equal(media, "video/x-h264")) {
+#ifndef KMSSINK_TEST
+            // waylandsink 路径：竖屏视频（高>宽）才旋转 90°，与旧 videoflip 行为一致
+            // （KMSSINK_TEST 下已在 buildPipeline 统一设 rotation=90，无需按尺寸判断）
+            gint w = 0, h = 0;
+            gst_structure_get_int(s, "width", &w);
+            gst_structure_get_int(s, "height", &h);
+            if (h > w) {
+                GParamSpec* rotPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(vdec_), "rotation");
+                if (rotPspec) {
+                    g_object_set(vdec_, "rotation", 90, nullptr);
+                    PLAYER_LOG("mppvideodec rotation=90 (portrait h>w %dx%d)", w, h);
+                }
+            }
+#endif
+            sink = vparse_;
+            PLAYER_LOG("video/x-h264 -> h264parse (mpp hw chain)");
+        } else {
+            // 非 h264（av1/hevc 等）：decodebin 兜底；KMSSINK 下视频输出需与 UI 同向，
+            // onDecodebinPadAdded 的 video 分支会按需插 videoflip（与硬解链互斥，只此路径触发）
+            sink = decodebin_;
+            PLAYER_LOG("video %s -> decodebin fallback", media);
+        }
+    } else if (media && g_str_has_prefix(media, "audio/")) {
+        sink = decodebin_;
+        PLAYER_LOG("audio %s -> decodebin", media);
+    }
+    if (sink) {
+        GstPad* sinkPad = gst_element_get_static_pad(sink, "sink");
+        if (sinkPad) {
+            GstPadLinkReturn r = gst_pad_link(pad, sinkPad);
+            PLAYER_LOG("qtdemux pad link ret=%d", r);
+            gst_object_unref(sinkPad);
+        } else {
+            PLAYER_LOG("sink pad not found for %s", media ? media : "?");
+        }
+    } else {
+        PLAYER_LOG("no sink for %s", media ? media : "?");
+    }
+    gst_caps_unref(caps);
 }
 
 // decodebin pad-added 静态回调 → 转成员函数（userdata=this）
@@ -668,6 +773,9 @@ void GstPlayer::teardown()
         gst_object_unref(pipeline_);
     }
     pipeline_ = nullptr;
+    demux_ = nullptr;
+    vparse_ = nullptr;
+    vdec_ = nullptr;
     decodebin_ = nullptr;
     videoSink_ = nullptr;
     audioSink_ = nullptr;
