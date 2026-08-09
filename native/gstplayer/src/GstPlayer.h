@@ -31,6 +31,7 @@ public:
     virtual ~GstPlayer();
 
     // ---- JS 方法（SetProtoMethod 绑定）----
+    void preheat(JQUTIL_NS::JQFunctionInfo& info);  // 播放路径外的一次性预热（UI 平面层级等）
     void open(JQUTIL_NS::JQFunctionInfo& info);
     void start(JQUTIL_NS::JQFunctionInfo& info);
     void pause(JQUTIL_NS::JQFunctionInfo& info);

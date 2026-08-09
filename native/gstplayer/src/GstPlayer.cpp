@@ -293,6 +293,21 @@ void GstPlayer::open(JQFunctionInfo& info)
     info.GetReturnValue().Set(true);
 }
 
+void GstPlayer::preheat(JQFunctionInfo& info)
+{
+    // 【闪烁修复 2026-08-09 用户诊断】zpos 层级设置必须移出播放路径：
+    // 播放器 open/start 时改 plane 层级会与 UI 平面夺层，导致合成器混乱闪烁。
+    // 本方法由 app.js onLaunch 启动时全局调用一次（幂等），此后播放不再碰 zpos。
+    static std::atomic<bool> done{false};
+    if (!done.exchange(true)) {
+#ifdef KMSSINK_TEST
+        setPlaneZpos(54, 3);  // UI 主平面 54 zpos=0→3（视频 overlay 平面 76 默认 z=2 < 3）
+#endif
+        PLAYER_LOG("preheat: UI plane zpos lifted once (startup-only, out of play path)");
+    }
+    info.GetReturnValue().Set(true);
+}
+
 void GstPlayer::start(JQFunctionInfo& info)
 {
     PLAYER_LOG("start enter");
@@ -300,13 +315,6 @@ void GstPlayer::start(JQFunctionInfo& info)
         info.GetReturnValue().ThrowInternalError("start: not opened");
         return;
     }
-#ifdef KMSSINK_TEST
-    // 播放前再提一次 UI 主平面层级（幂等）：视频 overlay 平面 76(Esmart1)
-    // 默认 zpos=2 > UI 主平面 54(Esmart0) zpos=0 → 视频盖 UI。
-    // 这里把 54 提至 3，UI 永远在视频之上；且 54 由 weston 独占，kmssink
-    // 接管视频平面时不会重置它，层级策略不会被播放行为覆盖。
-    setPlaneZpos(54, 3);
-#endif
     // 【死锁红线 2026-08-09】open() 返回时 PAUSED 预滚仍是 ASYNC（ret=2），
     // 若直接切 PLAYING，状态迁移会与流线程的 pad-added 动态链接（KMSSINK 下
     // 音频 decodebin pad、h264 vdec 链）并发互斥，真机实证全线 futex 死锁：
@@ -516,15 +524,17 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     // 76(Esmart1, overlay, z=2) / 90(Esmart2, overlay, z=3) / 104(Esmart3, overlay, z=4)
     // —— 不存在 plane 75！之前用 75 导致 kmssink 报 "Could not find a plane
     // for crtc" 打开失败。76 与历史实验中实测可用的 overlay 平面一致，选用之。
-    g_object_set(videoSink_, "plane-id", 76, nullptr);
-    // 层级控制：kmssink 【没有 zpos 属性】（设备实证 "kmssink has no zpos
-    // property"），g_object_set 永不生效。必须通过 libdrm 直接设置 zpos：
-    // 本机视频 plane 76(Esmart1) 默认 zpos=2 高于 UI 主平面 54(Esmart0,z=0)
-    // → 视频盖 UI。解法：把 UI 主平面 54 的 zpos 提升到 3，UI 盖过视频；
-    // 54 由 weston 独占，kmssink 播放时不会重置它（比压视频平面更稳）。
-    setPlaneZpos(54, 3);
-    // 不启用 vsync 等待，避免与 weston 的 DRM 提交互相等待
-    gboolean skip = true;
+g_object_set(videoSink_, "plane-id", 76, nullptr);
+    // 层级控制说明：kmssink【没有 zpos 属性】（设备实证 "kmssink has no zpos
+    // property"），g_object_set 永不生效。UI 主平面 54(Esmart0) 的 zpos 提升
+    // 已【移出播放路径】——由 app.js onLaunch 调用 gstPlayer.preheat() 启动时
+    // 全局执行一次（闪烁修复 2026-08-09：播放中动 zpos 会与合成器竞争闪屏）。
+    // 视频 plane 76(Esmart1, z=2) < UI 主平面 54(z=3)：UI 永远盖在视频之上。
+    // 恢复 VSYNC 约束（闪烁修复 2026-08-09 用户诊断）：skip-vsync=true 会让
+    // 视频帧绕过垂直同步直接提交，与 weston 主平面叠加时高频撕裂闪烁。
+    // 管线死锁已由静态后端+preroll 等待修复（1cb2b3b），此处改回 false。
+    // 若关闭后重新出现状态切换失败，再回退 true 并排查 sync 时钟（备选方案）。
+    gboolean skip = false;
     GParamSpec* skipPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "skip-vsync");
     if (skipPspec) g_object_set(videoSink_, "skip-vsync", skip, nullptr);
     // 保持视频原始比例（force-aspect-ratio 默认 true）：KMS 硬件在
@@ -885,6 +895,7 @@ static JSValue createGstPlayer(JQModuleEnv* env)
         return player;
     });
 
+    tpl->SetProtoMethod("preheat", &GstPlayer::preheat);
     tpl->SetProtoMethod("open", &GstPlayer::open);
     tpl->SetProtoMethod("start", &GstPlayer::start);
     tpl->SetProtoMethod("pause", &GstPlayer::pause);
