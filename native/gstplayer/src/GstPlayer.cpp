@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
+#include <dlfcn.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 #endif
@@ -39,53 +40,92 @@ void ensureGstInit()
 // property"），因此 g_object_set(videoSink_, "zpos", 0) 从不生效；而 Rockchip
 // DRM 里 video overlay plane（本设备 plane 76, Esmart1）默认 zpos=2，高于
 // UI 主平面（plane 54, Esmart0, zpos=0）→ 视频必然盖住 UI。
-// 解法：用 libdrm 打开 /dev/dri/card0，直接对目标 plane 设 zpos 属性，
-// 把视频层压到最低（0），UI 主平面自然在上；WebView hole 挖洞处透出视频。
+// 解法：用 libdrm 打开 /dev/dri/card0，把【UI 主平面 54】的 zpos 提升到 3，
+// UI 自然盖过视频；WebView hole 挖洞处透出视频。54 由 weston 独占，
+// kmssink 播放接管视频平面时不会重置它，层级策略稳定。
 // 调用时机：open() 建好后立即设一次（此时 plane 尚未启用，属性可写），
-// 若 kmssink 播放时才接管 plane，start() 时再补设一次（幂等）。
+// start() 播放前再补设一次（幂等）。
+//
+// 崩溃红线：本 .so 交叉编译自 x86 宿主，若直接链接 libdrm 符号会因
+// undefined symbol 在运行时解析失败导致 miniapp 闪退（12:37 三进程崩溃实证）。
+// 必须 dlopen("libdrm.so") + dlsym 动态取函数指针，全部失败则安全降级
+// （仅记录日志，不崩溃、不影响播放主链路）。
 static bool setPlaneZpos(int planeId, uint32_t zpos)
 {
+    void* drmLib = dlopen("libdrm.so.2", RTLD_NOW | RTLD_GLOBAL);
+    if (!drmLib) drmLib = dlopen("libdrm.so", RTLD_NOW | RTLD_GLOBAL);
+    if (!drmLib) {
+        PLAYER_LOG("setPlaneZpos: dlopen libdrm.so failed: %s", dlerror());
+        return false;
+    }
+    // libdrm 函数签名与 xf86drmMode.h 一致，这里用 typedef 取函数指针
+    typedef drmModeObjectPropertiesPtr (*GetPropsFn)(int, uint32_t, uint32_t);
+    typedef void (*FreePropsFn)(drmModeObjectPropertiesPtr);
+    typedef drmModePropertyPtr (*GetPropFn)(int, uint32_t);
+    typedef void (*FreePropFn)(drmModePropertyPtr);
+    typedef int (*SetPropFn)(int, uint32_t, uint32_t, uint32_t, uint64_t);
+    typedef void* (*AtomicAllocFn)();
+    typedef void (*AtomicFreeFn)(void*);
+    typedef int (*AtomicAddFn)(void*, uint32_t, uint32_t, uint64_t);
+    typedef int (*AtomicCommitFn)(int, void*, uint32_t, void*);
+
+    auto pGetProps = (GetPropsFn)dlsym(drmLib, "drmModeObjectGetProperties");
+    auto pFreeProps = (FreePropsFn)dlsym(drmLib, "drmModeFreeObjectProperties");
+    auto pGetProp = (GetPropFn)dlsym(drmLib, "drmModeGetProperty");
+    auto pFreeProp = (FreePropFn)dlsym(drmLib, "drmModeFreeProperty");
+    auto pSetProp = (SetPropFn)dlsym(drmLib, "drmModeObjectSetProperty");
+    auto pAtomicAlloc = (AtomicAllocFn)dlsym(drmLib, "drmModeAtomicAlloc");
+    auto pAtomicFree = (AtomicFreeFn)dlsym(drmLib, "drmModeAtomicFree");
+    auto pAtomicAdd = (AtomicAddFn)dlsym(drmLib, "drmModeAtomicAddProperty");
+    auto pAtomicCommit = (AtomicCommitFn)dlsym(drmLib, "drmModeAtomicCommit");
+
+    if (!pGetProps || !pFreeProps || !pGetProp || !pFreeProp || !pSetProp ||
+        !pAtomicAlloc || !pAtomicFree || !pAtomicAdd || !pAtomicCommit) {
+        PLAYER_LOG("setPlaneZpos: libdrm symbol missing (get=%p free=%p prop=%p set=%p)",
+            (void*)pGetProps, (void*)pFreeProps, (void*)pGetProp, (void*)pSetProp);
+        dlclose(drmLib);
+        return false;
+    }
     int fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
     if (fd < 0) {
         PLAYER_LOG("setPlaneZpos: open /dev/dri/card0 failed: %s", strerror(errno));
+        dlclose(drmLib);
         return false;
     }
 
-    // 查找目标的 zpos 属性 id
+    // 1) 查找目标的 zpos 属性 id
     uint32_t zpropId = 0;
     drmModeObjectPropertiesPtr props =
-        drmModeObjectGetProperties(fd, planeId, DRM_MODE_OBJECT_PLANE);
-    if (!props) {
-        PLAYER_LOG("setPlaneZpos: drmModeObjectGetProperties failed: %s", strerror(errno));
-        close(fd);
-        return false;
-    }
-    for (uint32_t i = 0; i < props->count_props && !zpropId; i++) {
-        drmModePropertyPtr prop = drmModeGetProperty(fd, props->props[i]);
-        if (prop) {
-            if (strcmp(prop->name, "zpos") == 0) zpropId = prop->prop_id;
-            drmModeFreeProperty(prop);
+        pGetProps(fd, planeId, DRM_MODE_OBJECT_PLANE);
+    if (props) {
+        for (uint32_t i = 0; i < props->count_props && !zpropId; i++) {
+            drmModePropertyPtr prop = pGetProp(fd, props->props[i]);
+            if (prop) {
+                if (strcmp(prop->name, "zpos") == 0) zpropId = prop->prop_id;
+                pFreeProp(prop);
+            }
         }
+        pFreeProps(props);
     }
-    drmModeFreeObjectProperties(props);
     if (!zpropId) {
         PLAYER_LOG("setPlaneZpos: plane %d has no zpos property", planeId);
         close(fd);
+        dlclose(drmLib);
         return false;
     }
 
-    // legacy set property（部分驱动仅支持 atomic，两者都试）
-    int ret = drmModeObjectSetProperty(fd, planeId, DRM_MODE_OBJECT_PLANE, zpropId, zpos);
+    // 2) legacy 设置（绝大多数驱动支持）；失败则 atomic 兜底
+    int ret = pSetProp(fd, planeId, DRM_MODE_OBJECT_PLANE, zpropId, zpos);
     if (ret != 0) {
-        // atomic 尝试
-        drmModeAtomicReq* req = drmModeAtomicAlloc();
+        void* req = pAtomicAlloc();
         if (req) {
-            drmModeAtomicAddProperty(req, planeId, zpropId, zpos);
-            ret = drmModeAtomicCommit(fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, nullptr);
-            drmModeAtomicFree(req);
+            pAtomicAdd(req, planeId, zpropId, zpos);
+            ret = pAtomicCommit(fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, nullptr);
+            pAtomicFree(req);
         }
     }
     close(fd);
+    dlclose(drmLib);
     if (ret != 0) {
         PLAYER_LOG("setPlaneZpos: plane %d set zpos=%u failed: %s", planeId, zpos, strerror(errno));
         return false;
@@ -261,9 +301,11 @@ void GstPlayer::start(JQFunctionInfo& info)
         return;
     }
 #ifdef KMSSINK_TEST
-    // 播放接管 plane 前再强制一次 zpos=0（幂等）：确保视频 Overlay 平面
-    // 在 UI 主平面之下，防止 kmssink 打开 plane 时重置层级导致视频盖 UI
-    setPlaneZpos(76, 0);
+    // 播放前再提一次 UI 主平面层级（幂等）：视频 overlay 平面 76(Esmart1)
+    // 默认 zpos=2 > UI 主平面 54(Esmart0) zpos=0 → 视频盖 UI。
+    // 这里把 54 提至 3，UI 永远在视频之上；且 54 由 weston 独占，kmssink
+    // 接管视频平面时不会重置它，层级策略不会被播放行为覆盖。
+    setPlaneZpos(54, 3);
 #endif
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
     PLAYER_LOG("start set PLAYING");
@@ -373,10 +415,11 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     // for crtc" 打开失败。76 与历史实验中实测可用的 overlay 平面一致，选用之。
     g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 层级控制：kmssink 【没有 zpos 属性】（设备实证 "kmssink has no zpos
-    // property"），g_object_set 永不生效。必须通过 libdrm 直接设置目标
-    // plane 的 zpos：本机 plane 76(Esmart1) 默认 zpos=2 高于 UI 主平面
-    // 54(Esmart0, z=0) → 视频盖 UI。下面把视频 plane 压到 0。
-    setPlaneZpos(76, 0);
+    // property"），g_object_set 永不生效。必须通过 libdrm 直接设置 zpos：
+    // 本机视频 plane 76(Esmart1) 默认 zpos=2 高于 UI 主平面 54(Esmart0,z=0)
+    // → 视频盖 UI。解法：把 UI 主平面 54 的 zpos 提升到 3，UI 盖过视频；
+    // 54 由 weston 独占，kmssink 播放时不会重置它（比压视频平面更稳）。
+    setPlaneZpos(54, 3);
     // 不启用 vsync 等待，避免与 weston 的 DRM 提交互相等待
     gboolean skip = true;
     GParamSpec* skipPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "skip-vsync");
