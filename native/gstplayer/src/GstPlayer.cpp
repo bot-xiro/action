@@ -281,8 +281,12 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     }
     // 关键：必须显式指定 driver-name=rockchip，否则 kmssink 驱动探测卡死
     g_object_set(videoSink_, "driver-name", "rockchip", nullptr);
-    // 双平面架构指定视频 Overlay 平面（此 plane 空闲且可用）
-    g_object_set(videoSink_, "plane-id", 75, nullptr);
+    // 双平面架构指定视频 Overlay 平面。
+    // 真机 modetest 平面普查（2026-08-09）：可用平面为 54(primary z=1) /
+    // 76(overlay z=2) / 90(overlay z=3) / 104(overlay z=4) —— 不存在 plane 75！
+    // 之前用 75 导致 kmssink 报 "Could not find a plane for crtc" 打开失败。
+    // 76 与历史实验中实测可用的 overlay 平面一致，选用之。
+    g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 层级控制：设置 zpos 让视频 Overlay 平面处于较低层级，UI 主平面（weston）
     // 必须在视频之上，控制栏才能悬浮显示且不被视频遮挡。
     // 越低越靠下；0 为 primary 同级值，若目标 plane 的 zpos 本就高于主平面，
@@ -298,7 +302,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     gboolean skip = true;
     GParamSpec* skipPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "skip-vsync");
     if (skipPspec) g_object_set(videoSink_, "skip-vsync", skip, nullptr);
-    PLAYER_LOG("kmssink created (plane-id=75 driver=rockchip)");
+    PLAYER_LOG("kmssink created (plane-id=76 driver=rockchip)");
     if (!rect.empty()) {
         // 致命红线：render-rectangle 是 GstValueArray of gint（Write only），
         // g_object_set 传 C 字符串 → GLib 类型不匹配 abort 崩溃！
