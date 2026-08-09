@@ -3,7 +3,10 @@
         <!-- 顶部标题栏 -->
         <div class="topbar">
             <text class="topbar-title">Bilibili 热门</text>
-            <text class="topbar-status">{{ statusText }}</text>
+            <div class="topbar-right">
+                <text class="topbar-status">{{ statusText }}</text>
+                <text class="topbar-search" @click="openSearch">搜索</text>
+            </div>
         </div>
 
         <!-- 加载中 -->
@@ -57,6 +60,23 @@
     font-size: 20px;
     color: #ffffff;
     opacity: 0.9;
+}
+
+.topbar-right {
+    flex-direction: row;
+    align-items: center;
+}
+
+.topbar-search {
+    margin-left: 14px;
+    font-size: 20px;
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.25);
+    border-radius: 4px;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 3px;
+    padding-bottom: 3px;
 }
 
 .center {
@@ -172,6 +192,10 @@ export default {
         openVideo(item) {
             console.log('[index] open: ' + item.bvid)
             $falcon.navTo('detail', { bvid: item.bvid })
+        },
+        openSearch() {
+            console.log('[index] openSearch')
+            $falcon.navTo('search', {})
         }
     }
 }
