@@ -286,6 +286,7 @@ export default {
             paused: false,
             error: '',
             controlsVisible: false,   // 控制栏显隐状态（默认隐藏）
+            btnTapJustOccurred: false, // 按钮点击标志：短路 onScreenTap 的 toggle（防按钮点击冒泡误隐藏）
             duration: 0,               // 总时长（毫秒，getDuration）
             currentPosition: 0,        // 当前播放位置（毫秒，getPosition 轮询）
             progressTimer: null,       // 进度轮询定时器句柄
@@ -427,17 +428,30 @@ export default {
             }
         },
         onScreenTap() {
-            // 任意点击屏幕：唤出控制栏并重置自动隐藏计时（限已就绪状态）
+            // 屏幕点击 toggle 控制栏：隐藏时点击唤出；显示时点击空白区域隐藏。
+            // 按钮点击通过 btnTapJustOccurred 标志短路（框架事件冒泡，不支持 .stop 修饰符）
             if (!this.ready) return
+            if (this.btnTapJustOccurred) {
+                this.btnTapJustOccurred = false
+                return
+            }
+            if (this.controlsVisible) {
+                this.hideControls()
+            } else {
+                this.showControls()
+            }
+        },
+        hideControls() {
             if (this.hideTimer) {
                 clearTimeout(this.hideTimer)
                 this.hideTimer = null
             }
-            this.showControls()
+            this.controlsVisible = false
         },
         onTogglePlay() {
             // 防御：控制栏隐藏/未渲染时不响应（框架若不支持 pointer-events 则防误触）
             if (!this.controlsVisible || !this.mPlayer) return
+            this.btnTapJustOccurred = true   // 按钮点击，短路 stage onClick 的隐藏 toggle
             this.togglePlay()
         },
         togglePlay() {
@@ -503,6 +517,7 @@ export default {
         onBlockTap(i) {
             // 分段热区点击：直接 seek 到该段对应的进度位置
             if (!this.controlsVisible || !this.mPlayer || !this.duration) return
+            this.btnTapJustOccurred = true   // 进度条点击，短路 stage onClick 的隐藏 toggle
             var pct = (i - 0.5) / PROGRESS_BLOCKS
             if (pct < 0) pct = 0
             if (pct > 1) pct = 1
@@ -526,10 +541,12 @@ export default {
         onSeekForward() {
             // 防御：控制栏隐藏/未渲染时不响应
             if (!this.controlsVisible || !this.mPlayer) return
+            this.btnTapJustOccurred = true   // 按钮点击，短路 stage onClick 的隐藏 toggle
             this.seekBy(SEEK_STEP_MS)
         },
         onSeekBack() {
             if (!this.controlsVisible || !this.mPlayer) return
+            this.btnTapJustOccurred = true   // 按钮点击，短路 stage onClick 的隐藏 toggle
             this.seekBy(-SEEK_STEP_MS)
         },
         seekBy(deltaMs) {
