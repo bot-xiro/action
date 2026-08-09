@@ -29,6 +29,10 @@ add_definitions(-D__DEBUG -DHAASUI_LOG_TO_SYSLOG -D_GNU_SOURCE)
 option(KMSSINK_TEST "Use kmssink overlay-plane video output (experimental)" OFF)
 if(KMSSINK_TEST)
     add_definitions(-DKMSSINK_TEST)
+    # libdrm（仅头文件）：KMSSINK 分支用 drmModeObjectSetProperty 直接控制视频
+    # plane 的 zpos，绕开 kmssink 缺失的 zpos 属性（运行时符号从设备解析）
+    pkg_check_modules(DRM REQUIRED libdrm)
+    include_directories(${DRM_INCLUDE_DIRS})
 endif()
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -include pthread.h")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include pthread.h")

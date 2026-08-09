@@ -2,6 +2,15 @@
 
 #include <sstream>
 #include <syslog.h>
+#include <cstring>
+
+#ifdef KMSSINK_TEST
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
+#include <xf86drm.h>
+#include <xf86drmMode.h>
+#endif
 
 using namespace JQUTIL_NS;
 
@@ -22,6 +31,69 @@ void ensureGstInit()
         inited = true;
     }
 }
+
+#ifdef KMSSINK_TEST
+// ---- 通过 libdrm 直接设置 DRM plane 的 zpos（KMSSINK 双平面层级控制） ----
+//
+// 背景：kmssink 元素【没有】zpos 属性（设备日志实证 "kmssink has no zpos
+// property"），因此 g_object_set(videoSink_, "zpos", 0) 从不生效；而 Rockchip
+// DRM 里 video overlay plane（本设备 plane 76, Esmart1）默认 zpos=2，高于
+// UI 主平面（plane 54, Esmart0, zpos=0）→ 视频必然盖住 UI。
+// 解法：用 libdrm 打开 /dev/dri/card0，直接对目标 plane 设 zpos 属性，
+// 把视频层压到最低（0），UI 主平面自然在上；WebView hole 挖洞处透出视频。
+// 调用时机：open() 建好后立即设一次（此时 plane 尚未启用，属性可写），
+// 若 kmssink 播放时才接管 plane，start() 时再补设一次（幂等）。
+static bool setPlaneZpos(int planeId, uint32_t zpos)
+{
+    int fd = open("/dev/dri/card0", O_RDWR | O_CLOEXEC);
+    if (fd < 0) {
+        PLAYER_LOG("setPlaneZpos: open /dev/dri/card0 failed: %s", strerror(errno));
+        return false;
+    }
+
+    // 查找目标的 zpos 属性 id
+    uint32_t zpropId = 0;
+    drmModeObjectPropertiesPtr props =
+        drmModeObjectGetProperties(fd, planeId, DRM_MODE_OBJECT_PLANE);
+    if (!props) {
+        PLAYER_LOG("setPlaneZpos: drmModeObjectGetProperties failed: %s", strerror(errno));
+        close(fd);
+        return false;
+    }
+    for (uint32_t i = 0; i < props->count_props && !zpropId; i++) {
+        drmModePropertyPtr prop = drmModeGetProperty(fd, props->props[i]);
+        if (prop) {
+            if (strcmp(prop->name, "zpos") == 0) zpropId = prop->prop_id;
+            drmModeFreeProperty(prop);
+        }
+    }
+    drmModeFreeObjectProperties(props);
+    if (!zpropId) {
+        PLAYER_LOG("setPlaneZpos: plane %d has no zpos property", planeId);
+        close(fd);
+        return false;
+    }
+
+    // legacy set property（部分驱动仅支持 atomic，两者都试）
+    int ret = drmModeObjectSetProperty(fd, planeId, DRM_MODE_OBJECT_PLANE, zpropId, zpos);
+    if (ret != 0) {
+        // atomic 尝试
+        drmModeAtomicReq* req = drmModeAtomicAlloc();
+        if (req) {
+            drmModeAtomicAddProperty(req, planeId, zpropId, zpos);
+            ret = drmModeAtomicCommit(fd, req, DRM_MODE_ATOMIC_ALLOW_MODESET, nullptr);
+            drmModeAtomicFree(req);
+        }
+    }
+    close(fd);
+    if (ret != 0) {
+        PLAYER_LOG("setPlaneZpos: plane %d set zpos=%u failed: %s", planeId, zpos, strerror(errno));
+        return false;
+    }
+    PLAYER_LOG("setPlaneZpos: plane %d zpos=%u OK (video below UI)", planeId, zpos);
+    return true;
+}
+#endif  // KMSSINK_TEST
 
 // ---- JS 参数解析辅助 ----
 std::string jsGetString(JSContext* ctx, JSValueConst obj, const char* key)
@@ -188,6 +260,11 @@ void GstPlayer::start(JQFunctionInfo& info)
         info.GetReturnValue().ThrowInternalError("start: not opened");
         return;
     }
+#ifdef KMSSINK_TEST
+    // 播放接管 plane 前再强制一次 zpos=0（幂等）：确保视频 Overlay 平面
+    // 在 UI 主平面之下，防止 kmssink 打开 plane 时重置层级导致视频盖 UI
+    setPlaneZpos(76, 0);
+#endif
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
     PLAYER_LOG("start set PLAYING");
     info.GetReturnValue().Set(true);
@@ -290,22 +367,16 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     // 关键：必须显式指定 driver-name=rockchip，否则 kmssink 驱动探测卡死
     g_object_set(videoSink_, "driver-name", "rockchip", nullptr);
     // 双平面架构指定视频 Overlay 平面。
-    // 真机 modetest 平面普查（2026-08-09）：可用平面为 54(primary z=1) /
-    // 76(overlay z=2) / 90(overlay z=3) / 104(overlay z=4) —— 不存在 plane 75！
-    // 之前用 75 导致 kmssink 报 "Could not find a plane for crtc" 打开失败。
-    // 76 与历史实验中实测可用的 overlay 平面一致，选用之。
+    // 真机 modetest 平面普查（2026-08-09）：54(Esmart0, primary, z=0) /
+    // 76(Esmart1, overlay, z=2) / 90(Esmart2, overlay, z=3) / 104(Esmart3, overlay, z=4)
+    // —— 不存在 plane 75！之前用 75 导致 kmssink 报 "Could not find a plane
+    // for crtc" 打开失败。76 与历史实验中实测可用的 overlay 平面一致，选用之。
     g_object_set(videoSink_, "plane-id", 76, nullptr);
-    // 层级控制：设置 zpos 让视频 Overlay 平面处于较低层级，UI 主平面（weston）
-    // 必须在视频之上，控制栏才能悬浮显示且不被视频遮挡。
-    // 越低越靠下；0 为 primary 同级值，若目标 plane 的 zpos 本就高于主平面，
-    // 此设置可让硬件按“视频在下、UI 在上”合成。
-    GParamSpec* zpspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "zpos");
-    if (zpspec) {
-        g_object_set(videoSink_, "zpos", 0, nullptr);
-        PLAYER_LOG("kmssink zpos set: 0");
-    } else {
-        PLAYER_LOG("kmssink has no zpos property");
-    }
+    // 层级控制：kmssink 【没有 zpos 属性】（设备实证 "kmssink has no zpos
+    // property"），g_object_set 永不生效。必须通过 libdrm 直接设置目标
+    // plane 的 zpos：本机 plane 76(Esmart1) 默认 zpos=2 高于 UI 主平面
+    // 54(Esmart0, z=0) → 视频盖 UI。下面把视频 plane 压到 0。
+    setPlaneZpos(76, 0);
     // 不启用 vsync 等待，避免与 weston 的 DRM 提交互相等待
     gboolean skip = true;
     GParamSpec* skipPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "skip-vsync");
