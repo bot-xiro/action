@@ -311,16 +311,12 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     gboolean skip = true;
     GParamSpec* skipPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "skip-vsync");
     if (skipPspec) g_object_set(videoSink_, "skip-vsync", skip, nullptr);
-    // 【真机物证 2026-08-09】force-aspect-ratio 默认 true：720x1280 视频等比
-    // fit 进 266 宽 render-rectangle 后只渲染出 266x472（crtc-pos 实测），
-    // 上下 244px 黑边 = 用户看到的"只显示一半视频"。
-    // 必须设为 false 强制拉伸铺满整个 render-rectangle（266x960 全高）。
-    GParamSpec* arPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "force-aspect-ratio");
-    if (arPspec) {
-        g_object_set(videoSink_, "force-aspect-ratio", FALSE, nullptr);
-        PLAYER_LOG("kmssink force-aspect-ratio=false (stretch fill)");
-    }
-    PLAYER_LOG("kmssink created (plane-id=76 driver=rockchip)");
+    // 保持视频原始比例（force-aspect-ratio 默认 true）：KMS 硬件在
+    // render-rectangle 划定的物理矩形内等比缩放并居中，不拉伸变形。
+    // 注意：16:9 视频放进 266×960 竖条矩形时会等比缩至 472 高、上下留黑边，
+    // 这是预期行为（用户方案：只修正坐标对位，不改变画面比例）。
+    // 此属性保持默认 true，无需显式设置——绝不设 false（避免强制拉伸变形）。
+    PLAYER_LOG("kmssink created (plane-id=76 driver=rockchip, keep-aspect-ratio)");
     if (!rect.empty()) {
         // 致命红线：render-rectangle 是 GstValueArray of gint（Write only），
         // g_object_set 传 C 字符串 → GLib 类型不匹配 abort 崩溃！

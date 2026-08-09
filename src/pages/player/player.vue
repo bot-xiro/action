@@ -74,23 +74,27 @@
     to { transform: rotate(360deg); }
 }
 
-/* ---- 播放器工作区：覆盖全视口，相对定位承载 hole 与悬浮控制栏 ---- */
+/* ---- 播放器工作区：覆盖全视口，absolute 脱离文档流承载 hole 与悬浮控制栏 ---- */
 .stage {
-    position: relative;
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 960px;
     height: 266px;
     background-color: #000000;
+    overflow: hidden;
 }
 
-/* 挖洞区域：绝对定位铺满整个 960×266 视区，
-   与 gstPlayer.open({ pos_x: 0, pos_y: 0, pos_w: 960, pos_h: 266 }) 严格一致。
-   此区域 WebView 画布全透明，KMS 视频平面透出。 */
+/* 挖洞区域：绝对定位铺满整个 960×266 视区，z-index 1 在控制栏之下，
+    与 gstPlayer.open({ pos_x: 0, pos_y: 0, pos_w: 960, pos_h: 266 }) 严格一致。
+    此区域 WebView 画布全透明，KMS 视频平面透出。 */
 .video-hole {
     position: absolute;
     top: 0;
     left: 0;
     width: 960px;
     height: 266px;
+    z-index: 1;
 }
 
 /* ---- 悬浮控制栏通用样式：默认隐藏，显示时半透明黑底 ---- */
