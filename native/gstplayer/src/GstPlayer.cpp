@@ -62,9 +62,9 @@ int jsGetInt(JSContext* ctx, JSValueConst obj, const char* key, int def)
 //
 // 两套坐标系的来源（详见 docs/X6PRO_ENV.txt 与 docs/PROJECT_SUMMARY.md 8.1 节）：
 //   1) UI 逻辑坐标（JS 层/WebView）：weston 合成器对物理屏做了 rotate-90 变换，
-//      逻辑全屏为 960×480，播放页视口占据其上部的 960×266 区域。
+//      逻辑全屏为 960×480，播放页即全屏视区（hole 挖洞覆盖整个 960×480）。
 //      前端调用 gstPlayer.open({ pos_x, pos_y, pos_w, pos_h }) 传入的即此坐标系中
-//      的视频矩形（本页面全屏: <0, 0, 960, 266>）。
+//      的视频矩形（本页全屏: <0, 0, 960, 480>）。
 //   2) 物理 CRTC 坐标（kmssink render-rectangle 需要）：未旋转的硬件原生坐标，
 //      宽 480 × 高 960（竖屏）。
 //      注意：kmssink 直出物理 plane，不经 weston 的 rotate-90 变换，
@@ -82,13 +82,17 @@ int jsGetInt(JSContext* ctx, JSValueConst obj, const char* key, int def)
 // 此前误按顺时针计算 physX = 480-(ly+lh) = 214，画面落到物理右缘
 // (214~480)，逆时针旋转回逻辑后映射到逻辑底部 → 用户反馈"视频偏下"。
 //
-// 代入本方案（pos_x=0, pos_y=0, pos_w=960, pos_h=266）：
+// 代入全屏方案（pos_x=0, pos_y=0, pos_w=960, pos_h=480）：
 //     physX = ly = 0
 //     physY = lx = 0
-//     physW = 266
-//     physH = 960
-// 物理矩形 <0, 0, 266, 960>：对齐物理左上角整列竖条；逆时针旋转回逻辑后
-// 恰好铺满逻辑顶部 960×266 区域 —— 不再偏下、完美对齐。
+//     physW = lh = 480
+//     physH = lw = 960
+// 物理矩形 <0, 0, 480, 960>：正好铺满整块物理面板 —— 播放页全屏无偏移。
+//
+// 历史踩坑（勿回退）：曾把逻辑矩形换算成 266 宽物理竖条（pos_h=266 时
+// physW=266 → x=0 上置偏上、x=214(顺时针误算) 偏下，真机两轮均错位）。
+// 根因是前端视区高度写死 266（只占逻辑屏上半），现已统一改为 480 全屏：
+// 前端 hole/pos 必须 960×480，原生换算自然得到物理全屏。
 struct KmsRect { int x, y, w, h; };
 
 static KmsRect logicToCrtc(int lx, int ly, int lw, int lh)
@@ -139,16 +143,16 @@ void GstPlayer::open(JQFunctionInfo& info)
     std::string fill = jsGetString(ctx, opt, "fill");  // "fit"/"crop"/"stretch"，空=fit
 
 #ifdef KMSSINK_TEST
-    // KMSSINK 双平面模式：视频 plane 直接铺满【整个物理屏】（480×960），
-    // 不在 C++ 层做矩形换算——UI 可视区域由 WebView 层的 <hole> 挖洞决定：
-    // hole 区域（960×266）透明，KMS 视频平面从洞中透出，其余区域被 UI
-    // 平面覆盖，天然对齐，无偏移。
-    // 历史教训（勿回退）：曾用 logicToCrtc 把逻辑矩形换算成 266 宽物理竖条
-    // （x=0 上半屏、x=214 下半屏，两轮真机均反馈位置错误）——竖条方案
-    // 无法与 hole 对齐。全屏物理矩形 + hole 才是正确架构。
-    {
-        KmsRect p{0, 0, 480, 960};
-        PLAYER_LOG("kmss FULL-PHYS(%d,%d,%d,%d) covered by UI hole", p.x, p.y, p.w, p.h);
+    // KMSSINK 双平面模式：前端传逻辑全屏矩形（960×480），换算为物理坐标。
+    // 前端 hole（960×480 全屏挖洞）与 render-rectangle 必须一致，UI 可视区域
+    // 由 WebView 层 hole 决定：hole 区域透明，KMS 视频平面透出，其余被 UI 覆盖。
+    // 历史教训（勿回退）：曾用 logicToCrtc 把 266 高竖条换算成物理竖条
+    // （x=0 上半屏、x=214 下半屏，两轮真机均反馈位置错误）——根因是前端
+    // 视区高度写死 266（只占逻辑屏上半）。现前端统一 960×480 全屏传参。
+    if (posW > 0 && posH > 0) {
+        KmsRect p = logicToCrtc(posX, posY, posW, posH);
+        PLAYER_LOG("kmss rect LOGIC(%d,%d,%d,%d) -> PHYS(%d,%d,%d,%d)",
+            posX, posY, posW, posH, p.x, p.y, p.w, p.h);
         posX = p.x;
         posY = p.y;
         posW = p.w;

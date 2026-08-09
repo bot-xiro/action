@@ -9,9 +9,9 @@
         <!-- 双平面播放器工作区：
              WebView UI 平面（本页）+ KMS 硬件叠加视频平面（kmssink, plane-id=75） -->
         <div v-else class="stage" @click="onScreenTap">
-            <!-- holE 挖洞：绝对定位铺满整个 960×266 视区，使 WebView 画布在该区域完全
+            <!-- holE 挖洞：绝对定位铺满整个 960×480 屏幕，使 WebView 画布在该区域完全
                  透明——底层 KMS Overlay 视频帧直接“透”上来，实现全屏沉浸画面。
-                 注意：hole 尺寸必须与 JS 传入 gstPlayer.open 的 pos 参数一致，
+                 注意：hole 尺寸必须与 JS 传入 gstPlayer.open 的 pos 参数一致（960×480），
                  否则挖洞区域与 kmssink render-rectangle 错位，画面会漏出一圈黑边。 -->
             <hole class="video-hole"></hole>
 
@@ -32,7 +32,7 @@
 </template>
 
 <style scoped>
-/* 外层容器：铺满 960×266，背景纯黑（视频之外的区域保持黑边效果） */
+/* 外层容器：铺满 960×480 全屏，背景纯黑（视频之外的区域保持黑边效果） */
 .page {
     flex: 1;
     background-color: #000000;
@@ -45,7 +45,7 @@
     top: 0;
     left: 0;
     width: 960px;
-    height: 266px;
+    height: 480px;
     align-items: center;
     justify-content: center;
     background-color: #000000;
@@ -74,26 +74,26 @@
     to { transform: rotate(360deg); }
 }
 
-/* ---- 播放器工作区：覆盖全视口，absolute 脱离文档流承载 hole 与悬浮控制栏 ---- */
+/* ---- 播放器工作区：覆盖全屏视口 960×480，absolute 脱离文档流承载 hole 与悬浮控制栏 ---- */
 .stage {
     position: absolute;
     top: 0;
     left: 0;
     width: 960px;
-    height: 266px;
+    height: 480px;          /* 全屏高度：逻辑屏幕 960×480（rotate-90 后） */
     background-color: #000000;
     overflow: hidden;
 }
 
-/* 挖洞区域：绝对定位铺满整个 960×266 视区，z-index 1 在控制栏之下，
-    与 gstPlayer.open({ pos_x: 0, pos_y: 0, pos_w: 960, pos_h: 266 }) 严格一致。
+/* 挖洞区域：绝对定位铺满整个 960×480 屏幕，z-index 1 在控制栏之下，
+    与 gstPlayer.open({ pos_x: 0, pos_y: 0, pos_w: 960, pos_h: 480 }) 严格一致。
     此区域 WebView 画布全透明，KMS 视频平面透出。 */
 .video-hole {
     position: absolute;
     top: 0;
     left: 0;
     width: 960px;
-    height: 266px;
+    height: 480px;
     z-index: 1;
 }
 
@@ -103,7 +103,7 @@
     position: absolute;
     left: 0;
     width: 960px;
-    height: 56px;
+    height: 60px;
     z-index: 999;               /* DOM 最顶层，保证盖在 hole 之上 */
     flex-direction: row;
     align-items: center;
@@ -261,7 +261,7 @@ export default {
         },
         tryPlay(url) {
             // gstplayer 为单例，直接方法调用；open/start 为同步方法。
-            // 注意：KMS 双平面模式下 pos 传逻辑坐标（960×266 视区），
+            // 注意：KMS 双平面模式下 pos 传逻辑坐标（960×480 全屏视区），
             // 由原生层内部换算为物理 CRTC 坐标（480×960）再设 render-rectangle。
             this.mPlayer = gstPlayer
             try {
@@ -271,7 +271,7 @@ export default {
                     pos_x: 0,
                     pos_y: 0,
                     pos_w: 960,
-                    pos_h: 266,
+                    pos_h: 480,
                     // fill 在 KMS 模式下无意义（几何由 render-rectangle 决定），不传
                     loop: 0
                 })
