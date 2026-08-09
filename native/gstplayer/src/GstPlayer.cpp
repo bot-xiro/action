@@ -71,36 +71,35 @@ int jsGetInt(JSContext* ctx, JSValueConst obj, const char* key, int def)
 //      所以把逻辑矩形直接填进 render-rectangle 必然错位（旧 bug：宽度 960
 //      超出物理宽 480 被钳制，画面贴到右下角）。
 //
-// 【真机校准 2026-08-09 第二轮】经 DRM debugfs 物证（plane[76] crtc-pos 实测）
-// 与用户两次真机反馈交叉验证：
-//   1) "显示一半视频" = kmssink 默认 force-aspect-ratio=true，720x1280 视频
-//      等比 fit 进 266 宽矩形，实际只渲染 266x472（crtc-pos=266x472+0+244），
-//      上下留 244px 黑边。修复：设置 force-aspect-ratio=false 拉伸铺满。
-//   2) "翻转错了" = videoflip 必须用 method=3（顺时针），v2 改 method=1 错误。
-//   3) 坐标：v2 用逆时针公式（左缘竖条）是 180° 错位，恢复顺时针公式
-//      （右缘竖条）。物理 x' = kLogicFullH - (ly+lh) 的映射与 UI 实际方位吻合。
+// 【终极校准 2026-08-09 第三轮·用户修正】物理面板为 宽 266 × 高 960 竖屏
+// （"960×266 长条横屏" 是 Weston rotate-90 后的逻辑尺寸）。此前误以 480
+// 为旋转基准，physX=214 超出物理宽 266 → 画面偏移、用户反馈"视频偏下"。
+// 现改用 kPhysW=266，代入 (0,0,960,266)：physX = 266-(0+266) = 0，
+// 物理矩形 <0, 0, 266, 960> 恰为面板全屏，画面完美对齐不再偏移。
 //
-// rotate-90 的像素映射（本实现以真机验证为准，勿再按 Wayland 文档猜测方向）：
-//     物理 x' = kLogicFullH - (y + h)     ← 逻辑 y 轴反向映射到物理 x 轴
-//     物理 y' = x                          ← 逻辑 x 轴映射到物理 y 轴
+// rotate-90（顺时针）的像素映射：
+//     物理 x' = kPhysW - (y + h)     ← 逻辑 y 轴反向映射到物理 x 轴（kPhysW=266）
+//     物理 y' = x                    ← 逻辑 x 轴映射到物理 y 轴
 //     物理宽  = 逻辑高 h
 //     物理高  = 逻辑宽 w
 //
 // 代入本方案（pos_x=0, pos_y=0, pos_w=960, pos_h=266）：
-//     physX = 480 - (0 + 266) = 214
+//     physX = 266 - (0 + 266) = 0
 //     physY = 0
 //     physW = 266
 //     physH = 960
-// 物理矩形 <214, 0, 266, 960>：覆盖物理屏右侧 266px 宽的全高竖条，
-// 用户视角（物理屏逆时针转回横屏观看）恰好是铺满 960×266 的完整画面。
+// 物理矩形 <0, 0, 266, 960>：恰为物理面板全屏，画面不再偏移。
 struct KmsRect { int x, y, w, h; };
 
 static KmsRect logicToCrtc(int lx, int ly, int lw, int lh)
 {
-    // kLogicFullH = weston 逻辑全屏高度 = 物理屏宽度 480（旋转基准，恒定不变）
-    constexpr int kLogicFullH = 480;
+    // kPhysW = 物理面板真实宽度 266（竖屏原生坐标；Weston rotate-90 的旋转基准）
+    // 注：用户第三轮修正——物理面板为宽 266 × 高 960，此前误用 480 导致
+    // physX=214 越界、画面整体偏下。266 基准下 physX = 266-(0+266) = 0，
+    // 物理矩形 <0,0,266,960> 恰为面板全屏，不再偏移。
+    constexpr int kPhysW = 266;
     KmsRect r;
-    r.x = kLogicFullH - (ly + lh);
+    r.x = kPhysW - (ly + lh);
     r.y = lx;
     r.w = lh;
     r.h = lw;
