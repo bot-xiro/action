@@ -71,28 +71,33 @@ int jsGetInt(JSContext* ctx, JSValueConst obj, const char* key, int def)
 //      所以把逻辑矩形直接填进 render-rectangle 必然错位（旧 bug：宽度 960
 //      超出物理宽 480 被钳制，画面贴到右下角）。
 //
-// rotate-90（顺时针）的像素映射：
-//     物理 x' = kLogicFullH - (y + h)     ← 逻辑 y 轴反向映射到物理 x 轴
-//     物理 y' = x                          ← 逻辑 x 轴映射到物理 y 轴
-//     物理宽  = 逻辑高 h
-//     物理高  = 逻辑宽 w
+// 【真机校准 2026-08-09】weston.ini 为 transform=rotate-90，Wayland 协议中
+// WL_OUTPUT_TRANSFORM_90 定义为【逆时针 90°】（counter-clockwise）：
+//     物理 x' = ly                      ← 逻辑 y 轴正向 → 物理 x 轴正向
+//     物理 y' = kPhysH - (lx + lw)      ← 逻辑 x 轴正向 → 物理 y 轴反向
+//     物理宽  = 逻辑高 lh
+//     物理高  = 逻辑宽 lw
+// 注：旧实现曾用"顺时针"公式 physX = 480-(ly+lh)（画面贴物理右缘竖条），
+// 真机实测映射回逻辑视角后视频跑到了视口下半部（用户反馈"视频偏下"）。
+// 两套公式相差 180°，必须配套旋转 videoflip（见 onDecodebinPadAdded 的
+// method 选择：KMSSINK 分支用 method=1 逆时针，与 UI 同向）。
 //
 // 代入本方案（pos_x=0, pos_y=0, pos_w=960, pos_h=266）：
-//     physX = 480 - (0 + 266) = 214
-//     physY = 0
+//     physX = 0
+//     physY = 960 - (0 + 960) = 0
 //     physW = 266
 //     physH = 960
-// 物理矩形 <214, 0, 266, 960>：覆盖物理屏右侧 266px 宽的全高竖条，
-// 用户视角（物理屏逆时针转回横屏观看）恰好是铺满 960×266 的完整画面。
+// 物理矩形 <0, 0, 266, 960>：覆盖物理屏左侧 266px 宽的全高竖条，
+// 逆时针旋转回逻辑视角恰好铺满 960×266 完整视口。
 struct KmsRect { int x, y, w, h; };
 
 static KmsRect logicToCrtc(int lx, int ly, int lw, int lh)
 {
-    // kLogicFullH = weston 逻辑全屏高度 = 物理屏宽度 480（旋转基准，恒定不变）
-    constexpr int kLogicFullH = 480;
+    // kPhysH = 物理 CRTC 高度（未旋转原生坐标 960）；旋转基准恒定不变
+    constexpr int kPhysH = 960;
     KmsRect r;
-    r.x = kLogicFullH - (ly + lh);
-    r.y = lx;
+    r.x = ly;
+    r.y = kPhysH - (lx + lw);
     r.w = lh;
     r.h = lw;
     return r;
@@ -404,9 +409,13 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
         gst_structure_get_int(s, "width", &w);
         gst_structure_get_int(s, "height", &h);
 #ifdef KMSSINK_TEST
-        // kmssink 直出物理 plane（480x960 竖屏），不经过 weston 的 rotate-90 变换；
-        // UI 是旋转过的，所以所有视频内容都必须顺时针转 90° 才能与 UI 同向显示
-        // （横屏视频转成竖向填进物理竖条，用户视角旋转回来看就是横屏）。
+        // kmssink 直出物理 plane（480x960 竖屏），不经过 weston 的 rotate 变换；
+        // UI 是 rotate-90（逆时针）后的逻辑画面，所以所有视频内容都必须旋转
+        // 与 UI 同向才不至于画面颠倒。
+        // method=1 即 COUNTERCLOCKWISE（逆时针 90°），与 weston rotate-90 同向。
+        // 注：旧实现用 method=3（顺时针）+ 旧坐标公式，二者相差 180° 恰好抵消；
+        // 2026-08-09 真机校准坐标公式后（物理 x' = ly），旋转必须同步改为
+        // method=1，否则画面会上下颠倒 / 左右镜像。
         if (true) {
 #else
         if (h > w) {
@@ -415,17 +424,17 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
             if (flip) {
                 gst_bin_add(GST_BIN(pipeline_), flip);
                 if (gst_element_link(flip, videoSink_)) {
-                    // method=3 即 CLOCKWISE（GstVideoFlipMethod 枚举：
+                    // method=1 即 COUNTERCLOCKWISE（GstVideoFlipMethod 枚举：
                     // 0=none, 1=counterclockwise, 2=rotate-180, 3=clockwise）。
-                    // 与 waylandsink 分支（method=1）方向相反；kmssink 走的是
-                    // 物理 plane（weston rotate-90 已生效方向相反的旋转），
-                    // 实测 method=1 -> method=3 画面翻转 180° 修正。
-                    g_object_set(flip, "method", 3, nullptr);
+                    // kmssink 走物理 plane，须与 weston rotate-90（逆时针）同向；
+                    // 旧实现 method=3 + 顺时针坐标公式，二者 180° 恰好抵消，
+                    // 2026-08-09 坐标公式校准后必须同步改为 method=1。
+                    g_object_set(flip, "method", 1, nullptr);
                     // 动态添加的元素必须同步到父管线状态，否则数据流被阻塞
                     gst_element_sync_state_with_parent(flip);
                     videoFlip_ = flip;
                     sink = flip;
-                    PLAYER_LOG("video %dx%d -> videoflip inserted (clockwise=m3, kmssink all-flip)", w, h);
+                    PLAYER_LOG("video %dx%d -> videoflip inserted (ccw=m1, kmssink all-flip)", w, h);
                 } else {
                     gst_bin_remove(GST_BIN(pipeline_), flip);
                     gst_object_unref(flip);
