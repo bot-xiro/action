@@ -38,9 +38,14 @@
                     </div>
                     <text class="time-text">{{ fmtTime(currentPosition) }} / {{ fmtTime(duration) }}</text>
                 </div>
-                <div class="btn-row">
-                    <text class="play-btn" @click="onTogglePlay">{{ paused ? '▶ 播放' : '⏸ 暂停' }}</text>
-                </div>
+            </div>
+
+            <!-- 屏幕中央播放/暂停大按钮：绝对定位视口几何中心（960×266 → 中心 480,133），
+                 z-index 999 在 hole 之上，与上下控制栏共用显隐状态：
+                 暂停时常驻便于再次点击播放；播放中随控制栏自动隐藏。
+                 容器铺满视口会拦截点击，故空白处点击透传给 onScreenTap（唤出/重置控制栏）。 -->
+            <div class="ctrl-center" :class="{ 'ctrl-visible': controlsVisible }" @click="onScreenTap">
+                <text class="center-play-btn" @click="onTogglePlay">{{ paused ? '▶ 播放' : '⏸ 暂停' }}</text>
             </div>
         </div>
     </div>
@@ -139,12 +144,12 @@
     align-items: center;
 }
 
-/* 底部控制栏改两行布局：上=进度条行，下=播放按钮行 */
+/* 底部控制栏：单行——进度条行（播放/暂停按钮已移至屏幕中央） */
 .ctrl-bottom {
     bottom: 0;
-    height: 104px;
-    flex-direction: column;
-    justify-content: center;
+    height: 56px;
+    flex-direction: row;
+    align-items: center;
 }
 
 /* 进度条行：轨道(可点击) + 时间文本 */
@@ -200,11 +205,35 @@
     color: #ffffff;
 }
 
-.btn-row {
-    flex-direction: row;
-    align-items: center;
-    margin-top: 14px;
-    width: 928px;
+/* ---- 屏幕中央播放/暂停大按钮 ---- */
+.ctrl-center {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 960px;
+    height: 266px;
+    z-index: 999;               /* DOM 最顶层，盖在 hole 之上 */
+    align-items: center;        /* flex 垂直居中（位于 266/2=133，即视口中央） */
+    justify-content: center;    /* flex 水平居中（位于 960/2=480） */
+    opacity: 0;                 /* 默认透明，与控制栏同步显隐 */
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+
+/* 播放/暂停按钮：圆形大按钮（bilibili 粉红），暂停时常驻（paused 时控制栏不自动隐藏，
+   播放中随控制栏 5 秒自动隐藏），点击触发 togglePlay。
+   （框架只支持单类名选择器，不可写 .ctrl-center .center-play-btn 后代选择器） */
+.center-play-btn {
+    font-size: 26px;
+    color: #ffffff;
+    padding-top: 26px;
+    padding-right: 34px;
+    padding-bottom: 26px;
+    padding-left: 34px;
+    border-radius: 48px;
+    background-color: rgba(251, 114, 153, 0.9);  /* bilibili 粉红半透明 */
+    border-width: 2px;
+    border-color: rgba(255, 255, 255, 0.5);
 }
 
 /* 唤出状态：完全不透明、可交互 */
@@ -231,17 +260,6 @@
     font-size: 20px;
     color: #ffffff;
     lines: 1;
-}
-
-.play-btn {
-    font-size: 20px;
-    color: #ffffff;
-    padding-top: 8px;
-    padding-right: 18px;
-    padding-bottom: 8px;
-    padding-left: 18px;
-    border-radius: 4px;
-    background-color: #fb7299;  /* bilibili 粉红点缀 */
 }
 </style>
 
@@ -511,7 +529,14 @@ export default {
                 try { this.mPlayer.close() } catch (e) { }
                 this.mPlayer = null
             }
-            $falcon.closePage()
+            // 返回前一个页面：page.finish() 关闭当前页面（框架文档确认：
+            // $falcon.closePage() 不存在，closePageByName/ById 仅系统级应用可用；
+            // 普通应用正确返回方式是 this.$page.finish()）。
+            try {
+                this.$page.finish()
+            } catch (e) {
+                console.warn('[player] finish error: ' + (e ? e.message : e))
+            }
         }
     }
 }
