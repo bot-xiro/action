@@ -58,6 +58,46 @@ int jsGetInt(JSContext* ctx, JSValueConst obj, const char* key, int def)
     return result;
 }
 
+// ---- KMSSINK 双平面坐标系换算（核心红线，勿改） ----
+//
+// 两套坐标系的来源（详见 docs/X6PRO_ENV.txt 与 docs/PROJECT_SUMMARY.md 8.1 节）：
+//   1) UI 逻辑坐标（JS 层/WebView）：weston 合成器对物理屏做了 rotate-90 变换，
+//      逻辑全屏为 960×480，播放页视口占据其上部的 960×266 区域。
+//      前端调用 gstPlayer.open({ pos_x, pos_y, pos_w, pos_h }) 传入的即此坐标系中
+//      的视频矩形（本页面全屏: <0, 0, 960, 266>）。
+//   2) 物理 CRTC 坐标（kmssink render-rectangle 需要）：未旋转的硬件原生坐标，
+//      宽 480 × 高 960（竖屏）。
+//      注意：kmssink 直出物理 plane，不经 weston 的 rotate-90 变换，
+//      所以把逻辑矩形直接填进 render-rectangle 必然错位（旧 bug：宽度 960
+//      超出物理宽 480 被钳制，画面贴到右下角）。
+//
+// rotate-90（顺时针）的像素映射：
+//     物理 x' = kLogicFullH - (y + h)     ← 逻辑 y 轴反向映射到物理 x 轴
+//     物理 y' = x                          ← 逻辑 x 轴映射到物理 y 轴
+//     物理宽  = 逻辑高 h
+//     物理高  = 逻辑宽 w
+//
+// 代入本方案（pos_x=0, pos_y=0, pos_w=960, pos_h=266）：
+//     physX = 480 - (0 + 266) = 214
+//     physY = 0
+//     physW = 266
+//     physH = 960
+// 物理矩形 <214, 0, 266, 960>：覆盖物理屏右侧 266px 宽的全高竖条，
+// 用户视角（物理屏逆时针转回横屏观看）恰好是铺满 960×266 的完整画面。
+struct KmsRect { int x, y, w, h; };
+
+static KmsRect logicToCrtc(int lx, int ly, int lw, int lh)
+{
+    // kLogicFullH = weston 逻辑全屏高度 = 物理屏宽度 480（旋转基准，恒定不变）
+    constexpr int kLogicFullH = 480;
+    KmsRect r;
+    r.x = kLogicFullH - (ly + lh);
+    r.y = lx;
+    r.w = lh;
+    r.h = lw;
+    return r;
+}
+
 }  // namespace
 
 GstPlayer::GstPlayer() = default;
@@ -96,24 +136,19 @@ void GstPlayer::open(JQFunctionInfo& info)
     std::string fill = jsGetString(ctx, opt, "fill");  // "fit"/"crop"/"stretch"，空=fit
 
 #ifdef KMSSINK_TEST
-    // KMSSINK 模式坐标换算：前端传的是 weston UI 逻辑坐标（960x480 横屏，
-    // transform=rotate-90 之后的坐标系，如 <0,100,960,266>），而 kmssink 的
-    // render-rectangle 是物理 CRTC 坐标（480x960 竖屏）。
-    // 不换算时矩形宽度 960 超出物理屏宽 480，被 kmssink 钳制到右半屏 → 右下角。
-    // rotate-90（顺时针）映射：物理 x' = LOGIC_H - (y + h)，物理 y' = 逻辑 x，
-    // 物理宽 = 逻辑高，物理高 = 逻辑宽。
+    // KMSSINK 模式：前端传的是 weston UI 逻辑坐标（rotate-90 之后，播放页视口
+    // 960×266 内的矩形，如 <0, 0, 960, 266>），而 kmssink 的 render-rectangle
+    // 要的是物理 CRTC 坐标（480×960 竖屏）。必须在 C++ 层完成逻辑→物理换算，
+    // 否则矩形宽度 960 超出物理屏宽 480，被 kmssink 钳制到右半屏 → 画面错位。
+    // 换算公式见匿名命名空间 logicToCrtc()（rotate-90 顺时针映射 + 常量 480）。
     if (posW > 0 && posH > 0) {
-        constexpr int kLogicHeight = 480;  // weston 逻辑屏高（物理屏宽 480x960 旋转 90° 后）
-        int physX = kLogicHeight - (posY + posH);
-        int physY = posX;
-        int physW = posH;
-        int physH = posW;
+        KmsRect p = logicToCrtc(posX, posY, posW, posH);
         PLAYER_LOG("kmss rect LOGIC(%d,%d,%d,%d) -> PHYS(%d,%d,%d,%d)",
-            posX, posY, posW, posH, physX, physY, physW, physH);
-        posX = physX;
-        posY = physY;
-        posW = physW;
-        posH = physH;
+            posX, posY, posW, posH, p.x, p.y, p.w, p.h);
+        posX = p.x;
+        posY = p.y;
+        posW = p.w;
+        posH = p.h;
     }
 #endif
 
@@ -236,6 +271,8 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     // 视频输出：kmssink（KMS overlay 双平面直出，Lilo 方案；临时实验分支，
     // 由 -DKMSSINK_TEST=ON 启用，默认仍走 waylandsink）
 #ifdef KMSSINK_TEST
+    // 视频输出：kmssink → Rockchip DRM Overlay 平面，KMS 双平面直出
+    // （UI 走 weston 主平面，视频走硬件叠加平面，两者由 DRM 硬件合成）
     videoSink_ = gst_element_factory_make("kmssink", "vsink");
     if (!videoSink_) {
         PLAYER_LOG("kmssink factory failed");
@@ -244,14 +281,29 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     }
     // 关键：必须显式指定 driver-name=rockchip，否则 kmssink 驱动探测卡死
     g_object_set(videoSink_, "driver-name", "rockchip", nullptr);
-    // 空闲 overlay plane（modetest 实测 plane 76, zpos=2，高于 UI primary z=0）
-    g_object_set(videoSink_, "plane-id", 76, nullptr);
+    // 双平面架构指定视频 Overlay 平面（此 plane 空闲且可用）
+    g_object_set(videoSink_, "plane-id", 75, nullptr);
+    // 层级控制：设置 zpos 让视频 Overlay 平面处于较低层级，UI 主平面（weston）
+    // 必须在视频之上，控制栏才能悬浮显示且不被视频遮挡。
+    // 越低越靠下；0 为 primary 同级值，若目标 plane 的 zpos 本就高于主平面，
+    // 此设置可让硬件按“视频在下、UI 在上”合成。
+    GParamSpec* zpspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "zpos");
+    if (zpspec) {
+        g_object_set(videoSink_, "zpos", 0, nullptr);
+        PLAYER_LOG("kmssink zpos set: 0");
+    } else {
+        PLAYER_LOG("kmssink has no zpos property");
+    }
     // 不启用 vsync 等待，避免与 weston 的 DRM 提交互相等待
     gboolean skip = true;
     GParamSpec* skipPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "skip-vsync");
     if (skipPspec) g_object_set(videoSink_, "skip-vsync", skip, nullptr);
-    PLAYER_LOG("kmssink created (plane-id=76 driver=rockchip)");
+    PLAYER_LOG("kmssink created (plane-id=75 driver=rockchip)");
     if (!rect.empty()) {
+        // 致命红线：render-rectangle 是 GstValueArray of gint（Write only），
+        // g_object_set 传 C 字符串 → GLib 类型不匹配 abort 崩溃！
+        // 必须用 gst_util_set_object_arg 解析 "<x, y, w, h>" 字符串为值数组。
+        // 此处 rect 已是换算后的物理 CRTC 坐标（如 "<214, 0, 266, 960>"）。
         GParamSpec* pspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "render-rectangle");
         if (pspec) {
             gst_util_set_object_arg(G_OBJECT(videoSink_), "render-rectangle", rect.c_str());
