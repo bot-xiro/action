@@ -71,35 +71,30 @@ int jsGetInt(JSContext* ctx, JSValueConst obj, const char* key, int def)
 //      所以把逻辑矩形直接填进 render-rectangle 必然错位（旧 bug：宽度 960
 //      超出物理宽 480 被钳制，画面贴到右下角）。
 //
-// 【终极校准 2026-08-09 第三轮·用户修正】物理面板为 宽 266 × 高 960 竖屏
-// （"960×266 长条横屏" 是 Weston rotate-90 后的逻辑尺寸）。此前误以 480
-// 为旋转基准，physX=214 超出物理宽 266 → 画面偏移、用户反馈"视频偏下"。
-// 现改用 kPhysW=266，代入 (0,0,960,266)：physX = 266-(0+266) = 0，
-// 物理矩形 <0, 0, 266, 960> 恰为面板全屏，画面完美对齐不再偏移。
+// 【终极校准 2026-08-09 第四轮·用户修正】Weston transform=rotate-90 实际为
+// 【逆时针 90°】旋转。逆时针坐标系映射（物理面板 宽 480 × 高 960）：
+//     逻辑屏幕顶部 (y=0~266) ↔ 物理屏幕左侧 (x=0~266)
+//     物理 x' = ly                     ← 逻辑 y 轴正向 → 物理 x 轴正向（不反转！）
+//     物理 y' = lx                     ← 逻辑 x 轴正向 → 物理 y 轴正向
+//     物理宽  = 逻辑高 lh
+//     物理高  = 逻辑宽 lw
 //
-// rotate-90（顺时针）的像素映射：
-//     物理 x' = kPhysW - (y + h)     ← 逻辑 y 轴反向映射到物理 x 轴（kPhysW=266）
-//     物理 y' = x                    ← 逻辑 x 轴映射到物理 y 轴
-//     物理宽  = 逻辑高 h
-//     物理高  = 逻辑宽 w
+// 此前误按顺时针计算 physX = 480-(ly+lh) = 214，画面落到物理右缘
+// (214~480)，逆时针旋转回逻辑后映射到逻辑底部 → 用户反馈"视频偏下"。
 //
 // 代入本方案（pos_x=0, pos_y=0, pos_w=960, pos_h=266）：
-//     physX = 266 - (0 + 266) = 0
-//     physY = 0
+//     physX = ly = 0
+//     physY = lx = 0
 //     physW = 266
 //     physH = 960
-// 物理矩形 <0, 0, 266, 960>：恰为物理面板全屏，画面不再偏移。
+// 物理矩形 <0, 0, 266, 960>：对齐物理左上角整列竖条；逆时针旋转回逻辑后
+// 恰好铺满逻辑顶部 960×266 区域 —— 不再偏下、完美对齐。
 struct KmsRect { int x, y, w, h; };
 
 static KmsRect logicToCrtc(int lx, int ly, int lw, int lh)
 {
-    // kPhysW = 物理面板真实宽度 266（竖屏原生坐标；Weston rotate-90 的旋转基准）
-    // 注：用户第三轮修正——物理面板为宽 266 × 高 960，此前误用 480 导致
-    // physX=214 越界、画面整体偏下。266 基准下 physX = 266-(0+266) = 0，
-    // 物理矩形 <0,0,266,960> 恰为面板全屏，不再偏移。
-    constexpr int kPhysW = 266;
     KmsRect r;
-    r.x = kPhysW - (ly + lh);
+    r.x = ly;
     r.y = lx;
     r.w = lh;
     r.h = lw;
@@ -148,7 +143,7 @@ void GstPlayer::open(JQFunctionInfo& info)
     // 960×266 内的矩形，如 <0, 0, 960, 266>），而 kmssink 的 render-rectangle
     // 要的是物理 CRTC 坐标（480×960 竖屏）。必须在 C++ 层完成逻辑→物理换算，
     // 否则矩形宽度 960 超出物理屏宽 480，被 kmssink 钳制到右半屏 → 画面错位。
-    // 换算公式见匿名命名空间 logicToCrtc()（rotate-90 顺时针映射 + 常量 480）。
+    // 换算公式见匿名命名空间 logicToCrtc()（rotate-90 逆时针映射：physX=ly, physY=lx）。
     if (posW > 0 && posH > 0) {
         KmsRect p = logicToCrtc(posX, posY, posW, posH);
         PLAYER_LOG("kmss rect LOGIC(%d,%d,%d,%d) -> PHYS(%d,%d,%d,%d)",
