@@ -7,12 +7,12 @@
         </div>
 
         <!-- 双平面播放器工作区：
-             WebView UI 平面（本页）+ KMS 硬件叠加视频平面（kmssink, plane-id=75） -->
+             WebView UI 平面（本页）+ 原生视频窗口（waylandsink/kmssink，平面叠加） -->
         <div v-else class="stage" @click="onScreenTap">
-            <!-- holE 挖洞：绝对定位铺满整个 960×480 屏幕，使 WebView 画布在该区域完全
-                 透明——底层 KMS Overlay 视频帧直接“透”上来，实现全屏沉浸画面。
-                 注意：hole 尺寸必须与 JS 传入 gstPlayer.open 的 pos 参数一致（960×480），
-                 否则挖洞区域与 kmssink render-rectangle 错位，画面会漏出一圈黑边。 -->
+            <!-- holE 挖洞：绝对定位铺满页面视口 960×266，使 WebView 画布在该区域完全
+                 透明——底层视频层帧直接"透"上来，实现沉浸画面。
+                 注意：hole 尺寸必须与 JS 传入 gstPlayer.open 的 pos 参数一致（960×266），
+                 否则挖洞区域与 render-rectangle 错位，画面会漏出一圈黑边。 -->
             <hole class="video-hole"></hole>
 
             <!-- 顶部控制栏（返回 + 标题）：absolute 悬浮，z-index 999 保证在 DOM 最顶层。
@@ -22,9 +22,15 @@
                 <text class="bar-title" :lines="1">{{ title }}</text>
             </div>
 
-            <!-- 底部控制栏（播放/暂停 + 进度条）：同样绝对定位悬浮，半透明黑底，
-                 与顶部栏共用同一显隐状态。 -->
+            <!-- 底部控制栏（按钮行 + 进度条）：绝对定位悬浮，半透明黑底，
+                 与顶部栏共用同一显隐状态。
+                 【布局】两行：上=按钮行（左回退 / 中播放暂停 / 右快进），下=进度条+时间。 -->
             <div class="ctrl-bottom" :class="{ 'ctrl-visible': controlsVisible }">
+                <div class="btn-row">
+                    <text class="seek-btn" @click="onSeekBack">回退</text>
+                    <text class="mini-play-btn" @click="onTogglePlay">{{ paused ? '▶ 播放' : '⏸ 暂停' }}</text>
+                    <text class="seek-btn" @click="onSeekForward">快进</text>
+                </div>
                 <div class="progress-row">
                     <div class="progress-track">
                         <!-- 点击热区：40 等分段（每段 928/40=23.2px），
@@ -38,14 +44,6 @@
                     </div>
                     <text class="time-text">{{ fmtTime(currentPosition) }} / {{ fmtTime(duration) }}</text>
                 </div>
-            </div>
-
-            <!-- 屏幕中央播放/暂停大按钮：绝对定位视口几何中心（960×266 → 中心 480,133），
-                 z-index 999 在 hole 之上，与上下控制栏共用显隐状态：
-                 暂停时常驻便于再次点击播放；播放中随控制栏自动隐藏。
-                 容器铺满视口会拦截点击，故空白处点击透传给 onScreenTap（唤出/重置控制栏）。 -->
-            <div class="ctrl-center" :class="{ 'ctrl-visible': controlsVisible }" @click="onScreenTap">
-                <text class="center-play-btn" @click="onTogglePlay">{{ paused ? '▶ 播放' : '⏸ 暂停' }}</text>
             </div>
         </div>
     </div>
@@ -144,12 +142,46 @@
     align-items: center;
 }
 
-/* 底部控制栏：单行——进度条行（播放/暂停按钮已移至屏幕中央） */
+/* 底部控制栏：两行——上=按钮行（回退/播放暂停/快进），下=进度条+时间 */
 .ctrl-bottom {
     bottom: 0;
-    height: 56px;
+    height: 108px;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* 按钮行：回退 / 播放暂停 / 快进 均匀分布（进度条上方） */
+.btn-row {
     flex-direction: row;
     align-items: center;
+    justify-content: space-between;
+    width: 928px;               /* 960 - 左右 padding 16*2 */
+}
+
+/* 快进/回退按钮：小字按钮 */
+.seek-btn {
+    font-size: 18px;
+    color: #ffffff;
+    padding-top: 6px;
+    padding-right: 22px;
+    padding-bottom: 6px;
+    padding-left: 22px;
+    border-radius: 4px;
+    background-color: #2a2a2a;
+    border-width: 1px;
+    border-color: #444444;
+}
+
+/* 播放/暂停小按钮：bilibili 粉红，位于按钮行中间 */
+.mini-play-btn {
+    font-size: 18px;
+    color: #ffffff;
+    padding-top: 6px;
+    padding-right: 26px;
+    padding-bottom: 6px;
+    padding-left: 26px;
+    border-radius: 4px;
+    background-color: #fb7299;  /* bilibili 粉红 */
 }
 
 /* 进度条行：轨道(可点击) + 时间文本 */
@@ -205,37 +237,6 @@
     color: #ffffff;
 }
 
-/* ---- 屏幕中央播放/暂停大按钮 ---- */
-.ctrl-center {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 960px;
-    height: 266px;
-    z-index: 999;               /* DOM 最顶层，盖在 hole 之上 */
-    align-items: center;        /* flex 垂直居中（位于 266/2=133，即视口中央） */
-    justify-content: center;    /* flex 水平居中（位于 960/2=480） */
-    opacity: 0;                 /* 默认透明，与控制栏同步显隐 */
-    pointer-events: none;
-    transition: opacity 0.3s;
-}
-
-/* 播放/暂停按钮：圆形大按钮（bilibili 粉红），暂停时常驻（paused 时控制栏不自动隐藏，
-   播放中随控制栏 5 秒自动隐藏），点击触发 togglePlay。
-   （框架只支持单类名选择器，不可写 .ctrl-center .center-play-btn 后代选择器） */
-.center-play-btn {
-    font-size: 26px;
-    color: #ffffff;
-    padding-top: 26px;
-    padding-right: 34px;
-    padding-bottom: 26px;
-    padding-left: 34px;
-    border-radius: 48px;
-    background-color: rgba(251, 114, 153, 0.9);  /* bilibili 粉红半透明 */
-    border-width: 2px;
-    border-color: rgba(255, 255, 255, 0.5);
-}
-
 /* 唤出状态：完全不透明、可交互 */
 .ctrl-visible {
     opacity: 1;
@@ -270,6 +271,7 @@ import { gstPlayer } from 'gstplayer'
 const CONTROLS_HIDE_MS = 5000   // 控制栏无操作自动隐藏延时（5 秒）
 const PROGRESS_POLL_MS = 1000   // 进度轮询间隔（毫秒）：500→1000 减半 JS-C++ 跨调用，RK3562 上降低 UI 线程开销
 const PROGRESS_BLOCKS = 40      // 轨道点击热区分段数（事件对象无坐标，分段定位）
+const SEEK_STEP_MS = 10000      // 快进/回退单步时长（10 秒，毫秒）
 
 export default {
     name: 'player',
@@ -519,6 +521,30 @@ export default {
             var t = e && e.touches && e.touches[0]
             console.warn('[player] track touchstart keys=' + (e ? Object.keys(e).join(',') : 'null')
                 + (t ? ' touchKeys=' + Object.keys(t).join(',') : ''))
+        },
+        // ---- 快进 / 回退（相对当前播放位置 ±10s） ----
+        onSeekForward() {
+            // 防御：控制栏隐藏/未渲染时不响应
+            if (!this.controlsVisible || !this.mPlayer) return
+            this.seekBy(SEEK_STEP_MS)
+        },
+        onSeekBack() {
+            if (!this.controlsVisible || !this.mPlayer) return
+            this.seekBy(-SEEK_STEP_MS)
+        },
+        seekBy(deltaMs) {
+            if (!this.mPlayer) return
+            var base = typeof this.currentPosition === 'number' ? this.currentPosition : 0
+            var target = base + deltaMs
+            if (target < 0) target = 0
+            if (this.duration && target > this.duration) target = this.duration
+            try {
+                this.mPlayer.seek(target)
+                this.currentPosition = target   // 立即更新进度条，不等下轮轮询
+                console.warn('[player] seekBy ' + deltaMs + 'ms -> ' + target + 'ms')
+            } catch (err) {
+                console.warn('[player] seek error: ' + err.message)
+            }
         },
         goPlayerBack() {
             if (!this.controlsVisible) return
