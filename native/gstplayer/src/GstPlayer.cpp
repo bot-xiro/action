@@ -338,6 +338,58 @@ void GstPlayer::close(JQFunctionInfo& info)
     info.GetReturnValue().Set(true);
 }
 
+// ---- 进度条支持：时长/位置查询（ms），seek 跳转（ms）----
+
+void GstPlayer::getDuration(JQFunctionInfo& info)
+{
+    if (!pipeline_) {
+        info.GetReturnValue().Set(0);
+        return;
+    }
+    gint64 dur = 0;
+    if (gst_element_query_duration(pipeline_, GST_FORMAT_TIME, &dur) && dur > 0) {
+        info.GetReturnValue().Set(static_cast<double>(dur) / 1000000.0);   // ns -> ms
+    } else {
+        info.GetReturnValue().Set(0);
+    }
+}
+
+void GstPlayer::getPosition(JQFunctionInfo& info)
+{
+    if (!pipeline_) {
+        info.GetReturnValue().Set(0);
+        return;
+    }
+    gint64 pos = 0;
+    if (gst_element_query_position(pipeline_, GST_FORMAT_TIME, &pos) && pos > 0) {
+        info.GetReturnValue().Set(static_cast<double>(pos) / 1000000.0);   // ns -> ms
+    } else {
+        info.GetReturnValue().Set(0);
+    }
+}
+
+void GstPlayer::seek(JQFunctionInfo& info)
+{
+    if (!pipeline_) {
+        info.GetReturnValue().Set(false);
+        return;
+    }
+    if (info.Length() < 1 || !JS_IsNumber(info[0])) {
+        info.GetReturnValue().Set(false);
+        return;
+    }
+    double ms = 0;
+    if (JS_ToFloat64(info.GetContext(), &ms, info[0]) != 0) {
+        info.GetReturnValue().Set(false);
+        return;
+    }
+    gint64 ns = static_cast<gint64>(ms * 1000000.0);   // ms -> ns
+    if (ns < 0) ns = 0;
+    bool ok = gst_element_seek_simple(pipeline_, GST_FORMAT_TIME,
+        static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT), ns);
+    info.GetReturnValue().Set(ok);
+}
+
 // ---- 管线构建（手动管线：souphttpsrc → queue → decodebin → 音视频分流）----
 
 bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::string& rect, const std::string& fill)
@@ -699,6 +751,9 @@ static JSValue createGstPlayer(JQModuleEnv* env)
     tpl->SetProtoMethod("pause", &GstPlayer::pause);
     tpl->SetProtoMethod("resume", &GstPlayer::resume);
     tpl->SetProtoMethod("close", &GstPlayer::close);
+    tpl->SetProtoMethod("getDuration", &GstPlayer::getDuration);
+    tpl->SetProtoMethod("getPosition", &GstPlayer::getPosition);
+    tpl->SetProtoMethod("seek", &GstPlayer::seek);
 
     // JS 侧: gstPlayer.stateChanged.on(cb) / .off(cb)
     tpl->InstanceTemplate()->Set("stateChanged", &GstPlayer::stateChanged);

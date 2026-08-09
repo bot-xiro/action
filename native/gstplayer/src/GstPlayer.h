@@ -37,6 +37,11 @@ public:
     void resume(JQUTIL_NS::JQFunctionInfo& info);
     void close(JQUTIL_NS::JQFunctionInfo& info);
 
+    // 进度条支持（返回值均为毫秒，double；seek 入参为毫秒）
+    void getDuration(JQUTIL_NS::JQFunctionInfo& info);
+    void getPosition(JQUTIL_NS::JQFunctionInfo& info);
+    void seek(JQUTIL_NS::JQFunctionInfo& info);
+
     // ---- JS 信号：gstPlayer.stateChanged.on(cb) / .off(cb) ----
     JQUTIL_NS::JQSignal<std::string> stateChanged;
 
