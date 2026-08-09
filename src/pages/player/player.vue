@@ -45,7 +45,7 @@
     top: 0;
     left: 0;
     width: 960px;
-    height: 480px;
+    height: 266px;
     align-items: center;
     justify-content: center;
     background-color: #000000;
@@ -74,24 +74,28 @@
     to { transform: rotate(360deg); }
 }
 
-/* ---- 播放器工作区：覆盖全屏视口 960×480，absolute 脱离文档流承载 hole 与悬浮控制栏 ---- */
+/* ---- 播放器工作区：覆盖播放页视口 960×266（设备真实视口，见 cap_index_33.png
+     物证），absolute 脱离文档流承载 hole 与悬浮控制栏 ---- */
 .stage {
     position: absolute;
     top: 0;
     left: 0;
     width: 960px;
-    height: 480px;          /* 全屏高度：逻辑屏幕 960×480（rotate-90 后） */
+    height: 266px;          /* 视口高度：页面恒为 960×266 长条屏 */
     background-color: #000000;
     overflow: hidden;
 }
 
-/* 挖洞区域：逻辑坐标覆盖视频实际显示区 —— 视频保持原始尺寸（物理竖条 266 宽，
-   不放大画面），物理 x=107 位置居中 → 逻辑 y=107 起、高 266（屏幕中心）。
-   与 gstPlayer.open({ pos_x: 0, pos_y: 107, pos_w: 960, pos_h: 266 }) 严格一致。
+/* 挖洞区域：覆盖整个视口（top:0 是页面坐标；页面视口 960×266 正好对应
+   逻辑全屏 y=107~373 的视频条——物理竖条 266 宽居中，逻辑高 266。
+   严禁再偏移 top:107px：那会在视口内显示成"下半截洞"，上半部成黑块）
+   与 gstPlayer.open({ pos_x: 0, pos_y: 107, pos_w: 960, pos_h: 266 }) 对应：
+   pos_y=107 是【逻辑全屏】坐标（视频在 480 高逻辑屏中垂直居中），
+   页面在逻辑屏中的位置是 y=107 起，故洞用页面坐标 top:0、高 266。
    此区域 WebView 画布全透明，KMS 视频平面透出。 */
 .video-hole {
     position: absolute;
-    top: 107px;
+    top: 0;
     left: 0;
     width: 960px;
     height: 266px;
