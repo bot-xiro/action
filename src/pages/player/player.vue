@@ -85,15 +85,16 @@
     overflow: hidden;
 }
 
-/* 挖洞区域：绝对定位铺满整个 960×480 屏幕，z-index 1 在控制栏之下，
-    与 gstPlayer.open({ pos_x: 0, pos_y: 0, pos_w: 960, pos_h: 480 }) 严格一致。
-    此区域 WebView 画布全透明，KMS 视频平面透出。 */
+/* 挖洞区域：逻辑坐标覆盖视频实际显示区 —— 视频保持原始尺寸（物理竖条 266 宽，
+   不放大画面），物理 x=107 位置居中 → 逻辑 y=107 起、高 266（屏幕中心）。
+   与 gstPlayer.open({ pos_x: 0, pos_y: 107, pos_w: 960, pos_h: 266 }) 严格一致。
+   此区域 WebView 画布全透明，KMS 视频平面透出。 */
 .video-hole {
     position: absolute;
-    top: 0;
+    top: 107px;
     left: 0;
     width: 960px;
-    height: 480px;
+    height: 266px;
     z-index: 1;
 }
 
@@ -261,17 +262,20 @@ export default {
         },
         tryPlay(url) {
             // gstplayer 为单例，直接方法调用；open/start 为同步方法。
-            // 注意：KMS 双平面模式下 pos 传逻辑坐标（960×480 全屏视区），
-            // 由原生层内部换算为物理 CRTC 坐标（480×960）再设 render-rectangle。
+            // 注意：KMS 双平面模式下 pos 传逻辑坐标。
+            // 【画面尺寸不变原则】：不传 960×480 全屏（会把视频放大），
+            // 保持 960×266 视口尺寸（视频等比 fit，画面不变大），
+            // pos_y=107 使物理竖条 x=107 居中 → 逻辑 y=107~373 垂直居中，
+            // 画面既不偏上也不偏下。
             this.mPlayer = gstPlayer
             try {
                 var ok = this.mPlayer.open({
                     uri: url,
                     audio: true,
                     pos_x: 0,
-                    pos_y: 0,
+                    pos_y: 107,
                     pos_w: 960,
-                    pos_h: 480,
+                    pos_h: 266,
                     // fill 在 KMS 模式下无意义（几何由 render-rectangle 决定），不传
                     loop: 0
                 })
