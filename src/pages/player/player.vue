@@ -26,7 +26,13 @@
                  与顶部栏共用同一显隐状态。 -->
             <div class="ctrl-bottom" :class="{ 'ctrl-visible': controlsVisible }">
                 <div class="progress-row">
-                    <div class="progress-track" @click="onProgressTap">
+                    <div class="progress-track">
+                        <!-- 点击热区：40 等分段（每段 928/40=23.2px），
+                             事件对象无坐标字段（实测 event keys=type），
+                             无法算绝对点击位置，改用分段块直接定位 seek 百分比 -->
+                        <div class="progress-hit" v-for="(i, idx) in PROGRESS_BLOCKS" :key="i"
+                            :style="{ left: progressHitLeft(i) + '%' }" @click="onBlockTap(i)"
+                            @touchstart="onTrackTouch"></div>
                         <div class="progress-fill" :style="{ width: progressPct() + '%' }"></div>
                         <div class="progress-thumb" :style="{ left: progressPct() + '%' }"></div>
                     </div>
@@ -157,6 +163,17 @@
     background-color: rgba(255, 255, 255, 0.3);
 }
 
+/* 点击热区块：透明覆盖整条轨道，事件对象无坐标（实测只有 type），
+   无法读取点击位置，故用等分块各自响应 seek 到对应百分比 */
+.progress-hit {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2.5%;                /* 100% / 40 段 */
+    background-color: transparent;
+    z-index: 2;                 /* 盖在 fill 之上，保证点击命中热区 */
+}
+
 /* 已播放填充条：宽度由 JS 轮询进度动态设置 */
 .progress-fill {
     position: absolute;
@@ -234,8 +251,7 @@ import { gstPlayer } from 'gstplayer'
 
 const CONTROLS_HIDE_MS = 5000   // 控制栏无操作自动隐藏延时（5 秒）
 const PROGRESS_POLL_MS = 500    // 进度轮询间隔（毫秒）
-const TRACK_LEFT = 16           // 进度条轨道左缘（页面坐标，与 padding 一致）
-const TRACK_W = 928             // 轨道可视宽度 = 960 - 2*16 padding
+const PROGRESS_BLOCKS = 40      // 轨道点击热区分段数（事件对象无坐标，分段定位）
 
 export default {
     name: 'player',
@@ -460,33 +476,31 @@ export default {
             function pad(n) { return n < 10 ? '0' + n : '' + n }
             return (h > 0 ? pad(h) + ':' : '') + pad(m) + ':' + pad(s)
         },
-        onProgressTap(e) {
-            // 点击进度条跳转：事件坐标格式因 WebView 子集而异，
-            // 优先 offsetX（相对轨道自身），退化到 pageX/clientX（页面坐标减轨道左缘）。
-            // 若事件对象无任何坐标字段，降级为不跳转（打印事件键便于真机适配）。
+        progressHitLeft(i) {
+            // 第 i 段热区的 left 百分比（宽 2.5%/段）
+            return (i - 1) * 2.5
+        },
+        onBlockTap(i) {
+            // 分段热区点击：直接 seek 到该段对应的进度位置
             if (!this.controlsVisible || !this.mPlayer || !this.duration) return
-            var x = -1
-            if (e) {
-                if (typeof e.offsetX === 'number') x = e.offsetX
-                else if (typeof e.layerX === 'number') x = e.layerX
-                else if (typeof e.pageX === 'number') x = e.pageX - TRACK_LEFT
-                else if (typeof e.clientX === 'number') x = e.clientX - TRACK_LEFT
-            }
-            if (x < 0) {
-                console.warn('[player] progress tap: no coords, event keys=' + (e ? Object.keys(e).join(',') : 'null'))
-                return
-            }
-            var pct = x / TRACK_W
+            var pct = (i - 0.5) / PROGRESS_BLOCKS
             if (pct < 0) pct = 0
             if (pct > 1) pct = 1
             var target = Math.round(this.duration * pct)
             try {
                 this.mPlayer.seek(target)
                 this.currentPosition = target   // 点击后立即更新进度条，不等下轮轮询
-                console.warn('[player] seek ' + target + 'ms (pct=' + Math.round(pct * 100) + '%)')
+                console.warn('[player] block seek block=' + i + '/' + PROGRESS_BLOCKS + ' target=' + target + 'ms')
             } catch (err) {
                 console.warn('[player] seek error: ' + err.message)
             }
+        },
+        onTrackTouch(e) {
+            // 探测触摸事件是否携带坐标（用于判断未来能否实现拖动手势）：
+            // 打印事件键与首个 touch 点的坐标字段。
+            var t = e && e.touches && e.touches[0]
+            console.warn('[player] track touchstart keys=' + (e ? Object.keys(e).join(',') : 'null')
+                + (t ? ' touchKeys=' + Object.keys(t).join(',') : ''))
         },
         goPlayerBack() {
             if (!this.controlsVisible) return
