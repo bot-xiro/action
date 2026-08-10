@@ -292,8 +292,22 @@ export default {
                 })
         },
         openVideo(v) {
-            console.warn('[detail] open(click): ' + v.bvid)
-            $falcon.navTo('detail', { bvid: v.bvid })
+            console.warn('[detail] open(click): ' + v.bvid + ' now=' + this.bvid)
+            this.gotoVideo(v.bvid)
+        },
+        // 详情页内点击相关推荐：框架 navTo 到同一页面不重建（复用实例仅回调 onNewOptions，Vue 层收不到），
+        // 故原地重载新 bvid（等价于"跳转"效果），避免同页导航黑洞
+        gotoVideo(bvid) {
+            if (!bvid || bvid === this.bvid) {
+                console.warn('[detail] gotoVideo skip same: ' + bvid)
+                return
+            }
+            this.bvid = bvid
+            this.video = null
+            this.related = []
+            this.error = ''
+            this.loading = true
+            this.loadDetail()
         },
         // 记录右栏滚动偏移（touch 点击判定依据）
         onRelScroll(e) {
@@ -313,7 +327,7 @@ export default {
             console.warn('[detail] r-item touchend: ' + v.bvid + (rt ? ' scrolled=' + scrolled + ' dt=' + (Date.now() - rt.t) : ''))
             if (rt && rt.v === v && !scrolled && Date.now() - rt.t < 400) {
                 console.warn('[detail] open(touch): ' + v.bvid)
-                $falcon.navTo('detail', { bvid: v.bvid })
+                this.gotoVideo(v.bvid)
             }
         },
         openPlayer(v) {
