@@ -200,15 +200,18 @@
     background-color: rgba(255, 255, 255, 0.3);
 }
 
-/* 点击热区块：透明覆盖整条轨道，事件对象无坐标（实测只有 type），
-   无法读取点击位置，故用等分块各自响应 seek 到对应百分比 */
+/* 点击热区块：覆盖整条轨道，事件对象无坐标（实测只有 type），
+   无法读取点击位置，故用等分块各自响应 seek 到对应百分比。
+   【接触面积】宽 4% 且左右重叠 1.5%（共 40 块覆盖 40 段进度），
+   高 40px 向上外扩 15px 覆盖整行——保证手指任意落点必命中热区
+   （窄条 2.5%×10px 真机实测经常落空，事件冒泡到 stage 导致控制栏误隐藏） */
 .progress-hit {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 2.5%;                /* 100% / 40 段 */
-    background-color: transparent;
-    z-index: 2;                 /* 盖在 fill 之上，保证点击命中热区 */
+    top: -15px;
+    height: 40px;
+    width: 4%;                /* 40 段 × 4% = 160%，重叠覆盖消除间隙 */
+    background-color: rgba(255, 255, 255, 0.01);   /* 近乎透明：既命中又不遮视觉 */
+    z-index: 2;               /* 盖在 fill 之上，保证点击命中热区 */
 }
 
 /* 已播放填充条：宽度由 JS 轮询进度动态设置 */
@@ -530,8 +533,12 @@ onScreenTap() {
             return (h > 0 ? pad(h) + ':' : '') + pad(m) + ':' + pad(s)
         },
         progressHitLeft(i) {
-            // 第 i 段热区的 left 百分比（宽 2.5%/段）
-            return (i - 1) * 2.5
+            // 第 i 段热区左缘：以段中心 (i-0.5)*2.5% 为中心、宽 4% → 左缘 = 中心 - 2
+            // （40 块 × 4% 相互重叠，消除窄条间隙，保证任意落点命中）
+            var left = (i - 0.5) * 2.5 - 2
+            if (left < 0) left = 0
+            if (left > 96) left = 96   // 右缘 clamp：宽 4% → 96+4=100 不溢出轨道
+            return left
         },
         onBlockTap(i) {
             // 分段热区点击：直接 seek 到该段对应的进度位置
@@ -567,12 +574,15 @@ onScreenTap() {
         //       若重派发到相邻块则按"滑动路径"即时 seek；无坐标无法做连续拖动，用块级跳变近似
         onTrackStart(i, e) {
             var now = Date.now()
-            if (this.track && now - this.track.t < 600 && this.track.i !== i) {
-                // 同一手势滑到新块：即时 seek（滑动路径）
-                this.track.i = i
-                this.track.sliding = true
-                console.warn('[player] track slide block=' + i)
-                this.seekToBlock(i)
+            if (this.track && now - this.track.t < 600) {
+                // 同一手势内的 touchstart 重派发：换块 → 滑动路径即时 seek
+                if (this.track.i !== i) {
+                    this.track.i = i
+                    this.track.sliding = true
+                    console.warn('[player] track slide block=' + i)
+                    this.seekToBlock(i)
+                }
+                this.track.t = now   // 刷新时间（同块重派发不重置 sliding 标志）
                 return
             }
             this.track = { i: i, t: now, sliding: false }
@@ -605,7 +615,7 @@ onScreenTap() {
                 }, 500)
                 return
             }
-            if (dt < 400) {
+            if (dt < 600) {
                 // 时序模拟点击：短时抬起 = 点击该段块（click 事件在深层 div 不可靠）
                 this.onBlockTap(i)
             }
