@@ -281,6 +281,7 @@ const PINCH_THROTTLE_MS = 40     // touchmove→setRect 调用节流间隔（JS�
 const TRACK_SCREEN_LEFT = 16     // 轨道左缘屏幕/页面坐标（ctrl-bottom padding-left，进度条 x=16 起）
 const TRACK_WIDTH = 928          // 轨道全宽（960 - 左右 padding 16*2，与 .progress-track 保持一致）
 const TRACK_MOVE_THROTTLE_MS = 60 // 拖动 seek 节流：touchmove 高频触发时限制 JS→C++ 跨调用
+const LOGIC_TOP = 107            // 页面左上角在逻辑屏中的 y（open pos_y=107：页面 y → 逻辑 y = +107）
 
 export default {
     name: 'player',
@@ -631,20 +632,32 @@ onScreenTap() {
         // ---- 双指缩放（捏合） ----
         // 手势流程：touchstart 记录起始矩形与双指间距 → touchmove 按间距比例
         // 缩放（锚定两指中心）+ 平移 → 节流调用原生 setRect 动态更新渲染区域 →
-        // touchend 复位。坐标依赖框架 touch 事件是否携带 point 坐标数据，
-        // 设备日志可确认（pinch start 无坐标时会警告）。
+        // touchend 复位。
+        // 【坐标字段】探测版(3ba1c87)证实 touch 点携带 pageX/pageY（changedTouches[0]
+        // keys=pageX,pageY,screenX,screenY）——此前读 point.x/.x 与框架实际字段不匹配，
+        // 坐标永远为 undefined → pinch=null 手势无法启动（用户反馈双指缩放不可用）。
+        // 【坐标系】pageX/pageY 是页面坐标（960×266 视口）；open/setRect 用逻辑坐标
+        // （页面左上角 = 逻辑 y=107）→ 手势中心 y 需 +107 换算；x 页面=逻辑（同为 960 宽）。
+        // 【日志】全 warn 级（设备丢弃 console.log，此前捏合全链路日志不可见）。
+        pinchPoint(t) {
+            // 取 touch 点坐标：优先 pageX/pageY（框架实际字段），兼容 point.x / x 形态
+            if (!t) return null
+            if (typeof t.pageX === 'number' && typeof t.pageY === 'number') {
+                return { x: t.pageX, y: t.pageY }
+            }
+            var p = t.point
+            if (p && typeof p.x === 'number' && typeof p.y === 'number') return p
+            if (typeof t.x === 'number' && typeof t.y === 'number') return { x: t.x, y: t.y }
+            return null
+        },
         onPinchStart(e) {
             var ts = e && e.touches
             if (!ts || ts.length < 2) return
-            var t0 = ts[0]
-            var t1 = ts[1]
-            var p0 = t0 && t0.point ? t0.point : t0
-            var p1 = t1 && t1.point ? t1.point : t1
-            if (!p0 || !p1 ||
-                typeof p0.x !== 'number' || typeof p0.y !== 'number' ||
-                typeof p1.x !== 'number' || typeof p1.y !== 'number') {
-                console.warn('[player] pinch start: no touch coords, keys='
-                    + (t0 ? Object.keys(t0).join(',') : 'null'))
+            var p0 = this.pinchPoint(ts[0])
+            var p1 = this.pinchPoint(ts[1])
+            if (!p0 || !p1) {
+                console.warn('[player] pinch start: no touch coords, touches='
+                    + (ts[0] ? JSON.stringify(ts[0]).substring(0, 200) : 'null'))
                 this.pinch = null
                 return
             }
@@ -657,7 +670,7 @@ onScreenTap() {
                 w: this.videoRect.w,
                 h: this.videoRect.h
             }
-            console.log('[player] pinch start dist=' + this.pinch.dist
+            console.warn('[player] pinch start dist=' + this.pinch.dist
                 + ' rect=' + this.videoRect.x + ',' + this.videoRect.y + ','
                 + this.videoRect.w + ',' + this.videoRect.h)
         },
@@ -665,12 +678,9 @@ onScreenTap() {
             if (!this.pinch) return
             var t = e && e.touches
             if (!t || t.length < 2) return
-            var t0 = t[0]
-            var t1 = t[1]
-            var p0 = t0 && t0.point ? t0.point : t0
-            var p1 = t1 && t1.point ? t1.point : t1
-            if (!p0 || !p1 ||
-                typeof p0.x !== 'number' || typeof p1.x !== 'number') return
+            var p0 = this.pinchPoint(t[0])
+            var p1 = this.pinchPoint(t[1])
+            if (!p0 || !p1) return
             var dx = p1.x - p0.x
             var dy = p1.y - p0.y
             var dist = Math.sqrt(dx * dx + dy * dy)
@@ -679,18 +689,18 @@ onScreenTap() {
             var scale = dist / p.dist   // 相对起始间距的比例
             if (scale < PINCH_MIN_SCALE) scale = PINCH_MIN_SCALE
             if (scale > PINCH_MAX_SCALE) scale = PINCH_MAX_SCALE
-            var cxp = (p0.x + p1.x) / 2   // 两指当前中心（逻辑坐标）
-            var cyp = (p0.y + p1.y) / 2
+            var cxp = (p0.x + p1.x) / 2   // 两指当前中心（页面 x = 逻辑 x，同为 960 宽）
+            var cyp = (p0.y + p1.y) / 2 + LOGIC_TOP   // 页面 y → 逻辑 y：页面左上角在逻辑 y=107
             var w = Math.round(p.w * scale)
             var h = Math.round(p.h * scale)
             // 以两指中心为锚：新中心 = 手势中心；矩形左上角随之移动
             var x = Math.round(cxp - w / 2)
             var y = Math.round(cyp - h / 2)
-            // 边界钳制：始终保留 80×40 可见（放大超屏后可平移，不可完全移出）
+            // 边界钳制（逻辑坐标 960×480）：始终保留 80×40 可见（放大超屏后可平移，不可完全移出）
             var minX = 80 - w
             var minY = 40 - h
             var maxX = 960 - 80
-            var maxY = 266 - 40
+            var maxY = 480 - 40
             if (x < minX) x = minX
             if (x > maxX) x = maxX
             if (y < minY) y = minY
@@ -699,6 +709,7 @@ onScreenTap() {
             var now = Date.now()
             if (now - (this._pinchLastT || 0) < PINCH_THROTTLE_MS) return
             this._pinchLastT = now
+            console.warn('[player] pinch move scale=' + scale.toFixed(2) + ' c=' + cxp + ',' + cyp + ' -> ' + x + ',' + y + ',' + w + ',' + h)
             this.applyVideoRect(x, y, w, h)
         },
         onPinchEnd() {
@@ -712,17 +723,17 @@ onScreenTap() {
             setTimeout(function () {
                 if (self.pinchTapGuard) {
                     self.pinchTapGuard = false
-                    console.log('[player] pinch guard auto-reset')
+                    console.warn('[player] pinch guard auto-reset')
                 }
             }, 500)
-            console.log('[player] pinch end')
+            console.warn('[player] pinch end')
         },
         applyVideoRect(x, y, w, h) {
             if (!this.mPlayer) return
             try {
                 this.mPlayer.setRect(x, y, w, h)
                 this.videoRect = { x: x, y: y, w: w, h: h }
-                console.log('[player] setRect ' + x + ',' + y + ',' + w + ',' + h)
+                console.warn('[player] setRect ' + x + ',' + y + ',' + w + ',' + h)
             } catch (err) {
                 console.warn('[player] setRect error: ' + err.message)
             }
