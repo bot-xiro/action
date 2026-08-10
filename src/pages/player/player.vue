@@ -32,11 +32,17 @@
                          自身绑定 touch 系事件——探测版已证实 track(实背景)可命中且
                          changedTouches[0] 携带 pageX/pageY/screenX/screenY 坐标。
                          点击 = touchstart 立即按绝对坐标 seek；拖动 = touchmove 按相对起始
-                         startX 的位移增量 seek（不依赖轨道绝对左缘，拖动跟随精确）。 -->
+                         startX 的位移增量 seek（不依赖轨道绝对左缘，拖动跟随精确）。
+                         【命中区/视觉分离】外层 progress-track 高 36px 黑底(0.3 alpha)——
+                         命中区 2.5×（框架近透明不可命中，故命中容器必须有背景色；黑底与
+                         ctrl-bottom 同色系视觉近乎不可见）；内层 progress-track-line 高 14px
+                         白灰细条承载视觉（含 fill/thumb），显示与 14px 时代完全一致。 -->
                     <div class="progress-track" @touchstart="onTrackStart($event)"
                         @touchmove="onTrackMove($event)" @touchend="onTrackEnd($event)">
-                        <div class="progress-fill" :style="{ width: progressPct() + '%' }"></div>
-                        <div class="progress-thumb" :style="{ left: progressThumbLeft() + '%' }"></div>
+                        <div class="progress-track-line">
+                            <div class="progress-fill" :style="{ width: progressPct() + '%' }"></div>
+                            <div class="progress-thumb" :style="{ left: progressThumbLeft() + '%' }"></div>
+                        </div>
                     </div>
                     <text class="time-text">{{ fmtTime(currentPosition) }} / {{ fmtTime(duration) }}</text>
                 </div>
@@ -195,21 +201,32 @@
     width: 928px;               /* 960 - 左右 padding 16*2 */
 }
 
-/* 轨道：全宽 928px、高 14px 细轨道（正常手机端播放器样式，不再是 36px 宽灰带）。
-   实背景 rgba(255,255,255,0.3)——探测版证实实背景元素可命中 touch，
-   近透明 div 无法命中（见 DEV_LOG 2026-08-10）。touch 系事件直接绑在轨道上。
-   说明：fill/thumb 等宽高收窄视觉条居中，轨道背景即进度条灰底（细条，非宽灰带）。 */
+/* 轨道命中容器：高 36px——识别区 2.5× 扩大（用户要求：识别区域大一点，显示不要变大）。
+   背景 rgba(0,0,0,0.3)：与 ctrl-bottom 黑底同色系，视觉上几乎不可见，但满足框架
+   "实背景才可命中"的约束（近透明 div 无法命中，见 DEV_LOG 2026-08-10）。
+   命中区和视觉条分离：手指可触摸上下 11px 的盲区，看到的仍是中间 14px 细条。 */
 .progress-track {
+    position: relative;
+    width: 928px;
+    height: 36px;
+    justify-content: center;    /* 内部视觉条垂直居中 */
+    background-color: rgba(0, 0, 0, 0.3);
+}
+
+/* 视觉轨道：14px 白灰细条（居中于 36px 命中容器），承载 fill/thumb 视觉。
+   实背景 rgba(255,255,255,0.3)——探测版证实实背景元素可命中 touch；
+   近透明 div 无法命中。 */
+.progress-track-line {
     position: relative;
     width: 928px;
     height: 14px;
     border-radius: 7px;
     background-color: rgba(255, 255, 255, 0.3);
-    justify-content: center;    /* 内部 fill/thumb 视觉居中 */
 }
 
 /* 已播放填充条：绝对定位，宽度由 JS 轮询进度动态设置。
-   pointer-events:none——不拦截触摸，保证触摸命中统一落到 track 上 */
+   pointer-events:none——不拦截触摸，保证触摸命中统一落到 track 上。
+   相对 14px 视觉条定位：top/bottom 各 5px 得 4px 视觉条。 */
 .progress-fill {
     position: absolute;
     left: 0;
@@ -221,7 +238,7 @@
 }
 
 /* 进度圆点：中心对齐进度位置（left = pct% 时实际圆点左缘，用负 margin 回移半宽）。
-   pointer-events:none——同 fill，不拦截触摸 */
+   pointer-events:none——同 fill，不拦截触摸。相对 14px 视觉条垂直居中。 */
 .progress-thumb {
     position: absolute;
     top: -1px;                  /* (14-16)/2 垂直居中，微超轨上缘 */
@@ -633,12 +650,23 @@ onScreenTap() {
         // 手势流程：touchstart 记录起始矩形与双指间距 → touchmove 按间距比例
         // 缩放（锚定两指中心）+ 平移 → 节流调用原生 setRect 动态更新渲染区域 →
         // touchend 复位。
+        // 【根因·设备日志 2026-08-10】框架 touch 事件对象 keys 仅 {changedTouches, type}
+        // （探测版 3ba1c87 证实），不存在 e.touches 聚合数组 → 旧实现读 e.touches 得
+        // undefined，!ts 静默 return，捏合全链路日志 0 条（连 "no touch coords" 警告
+        // 都没有），双指缩放从未真正启动。
+        // 【修复】改用手动触点集合 this._tp（key=identifier，value=坐标）：
+        // touchstart/touchmove/touchend 时从 changedTouches 逐点增/改/删，
+        // 集合 ≥2 即进入捏合。兼容两种派发模型：
+        //   ① 一次事件携带多指（changedTouches 含 2 点）→ 直接启动；
+        //   ② 多次事件各携带一指（逐指 touchstart）→ 集合累积到 2 后启动。
+        // 【验证日志】双指按下时打印 "touch start n=" 集合大小——若框架底层仅上报单指
+        // （n 恒为 1，第二指事件被吞），日志即为铁证（区别于此前静默失败）。
         // 【坐标字段】探测版(3ba1c87)证实 touch 点携带 pageX/pageY（changedTouches[0]
         // keys=pageX,pageY,screenX,screenY）——此前读 point.x/.x 与框架实际字段不匹配，
         // 坐标永远为 undefined → pinch=null 手势无法启动（用户反馈双指缩放不可用）。
         // 【坐标系】pageX/pageY 是页面坐标（960×266 视口）；open/setRect 用逻辑坐标
         // （页面左上角 = 逻辑 y=107）→ 手势中心 y 需 +107 换算；x 页面=逻辑（同为 960 宽）。
-        // 【日志】全 warn 级（设备丢弃 console.log，此前捏合全链路日志不可见）。
+        // 【日志】pinch 关键链 warn 级（设备丢弃 console.log），单指 touch 用 log 避免刷屏。
         pinchPoint(t) {
             // 取 touch 点坐标：优先 pageX/pageY（框架实际字段），兼容 point.x / x 形态
             if (!t) return null
@@ -650,21 +678,47 @@ onScreenTap() {
             if (typeof t.x === 'number' && typeof t.y === 'number') return { x: t.x, y: t.y }
             return null
         },
+        // 从事件 changedTouches 更新触点集合；返回集合大小
+        touchMapApply(e, mode) {
+            var ct = e && e.changedTouches
+            if (!ct || !ct.length) return -1
+            var tp = this._tp || (this._tp = {})
+            for (var i = 0; i < ct.length; i++) {
+                var p = this.pinchPoint(ct[i])
+                if (!p) continue
+                if (mode === 'end') {
+                    delete tp[ct[i].identifier]
+                } else {
+                    tp[ct[i].identifier] = p
+                }
+            }
+            return Object.keys(tp).length
+        },
         onPinchStart(e) {
-            var ts = e && e.touches
-            if (!ts || ts.length < 2) return
-            var p0 = this.pinchPoint(ts[0])
-            var p1 = this.pinchPoint(ts[1])
-            if (!p0 || !p1) {
-                console.warn('[player] pinch start: no touch coords, touches='
-                    + (ts[0] ? JSON.stringify(ts[0]).substring(0, 200) : 'null'))
-                this.pinch = null
+            var n = this.touchMapApply(e, 'start')
+            if (n < 0) {
+                console.warn('[player] touch start: no changedTouches keys=' + Object.keys(e || {}).join(','))
                 return
             }
+            if (n === 2) {
+                console.warn('[player] touch start n=' + n + ' PINCH READY')
+            } else {
+                console.log('[player] touch start n=' + n)
+            }
+            if (n < 2 || this.pinch) return   // 单指或已有捏合：不重复启动
+            var tp = this._tp
+            var ids = Object.keys(tp)
+            var p0 = tp[ids[0]]
+            var p1 = tp[ids[1]]
             var dx = p1.x - p0.x
             var dy = p1.y - p0.y
+            var dist = Math.sqrt(dx * dx + dy * dy)
+            if (dist <= 0) {
+                console.warn('[player] pinch start: zero dist, ids=' + ids.join(','))
+                return
+            }
             this.pinch = {
-                dist: Math.sqrt(dx * dx + dy * dy),
+                dist: dist,
                 x: this.videoRect.x,
                 y: this.videoRect.y,
                 w: this.videoRect.w,
@@ -675,11 +729,32 @@ onScreenTap() {
                 + this.videoRect.w + ',' + this.videoRect.h)
         },
         onPinchMove(e) {
-            if (!this.pinch) return
-            var t = e && e.touches
-            if (!t || t.length < 2) return
-            var p0 = this.pinchPoint(t[0])
-            var p1 = this.pinchPoint(t[1])
+            var n = this.touchMapApply(e, 'move')
+            if (n < 0 || n < 2) return
+            if (!this.pinch) {
+                // 兜底：若 touchstart 阶段未凑齐两指（如第二指事件异常），move 时按当前
+                // 两指间距补建基线，避免手势永远无法启动
+                var tp0 = this._tp
+                var ids0 = Object.keys(tp0)
+                var q0 = tp0[ids0[0]]
+                var q1 = tp0[ids0[1]]
+                var qdx = q1.x - q0.x
+                var qdy = q1.y - q0.y
+                var qdist = Math.sqrt(qdx * qdx + qdy * qdy)
+                if (qdist <= 0) return
+                this.pinch = {
+                    dist: qdist,
+                    x: this.videoRect.x,
+                    y: this.videoRect.y,
+                    w: this.videoRect.w,
+                    h: this.videoRect.h
+                }
+                console.warn('[player] pinch start (deferred on move) dist=' + qdist)
+            }
+            var tp = this._tp
+            var ids = Object.keys(tp)
+            var p0 = tp[ids[0]]
+            var p1 = tp[ids[1]]
             if (!p0 || !p1) return
             var dx = p1.x - p0.x
             var dy = p1.y - p0.y
@@ -712,7 +787,9 @@ onScreenTap() {
             console.warn('[player] pinch move scale=' + scale.toFixed(2) + ' c=' + cxp + ',' + cyp + ' -> ' + x + ',' + y + ',' + w + ',' + h)
             this.applyVideoRect(x, y, w, h)
         },
-        onPinchEnd() {
+        onPinchEnd(e) {
+            var n = this.touchMapApply(e, 'end')
+            if (n >= 2) return   // 仍有至少两指：捏合继续
             if (!this.pinch) return
             this.pinch = null
             this._pinchLastT = 0
@@ -726,7 +803,7 @@ onScreenTap() {
                     console.warn('[player] pinch guard auto-reset')
                 }
             }, 500)
-            console.warn('[player] pinch end')
+            console.warn('[player] pinch end n=' + n)
         },
         applyVideoRect(x, y, w, h) {
             if (!this.mPlayer) return
