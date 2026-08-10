@@ -247,13 +247,13 @@ export default {
     },
     mounted() {
         this.history = ''
-        try {
-            // storage 返回数组，直接展示
-            var list = storage.getHistory()
-            this.history = Array.isArray(list) ? list : ''
-        } catch (e) {
-            this.history = ''
-        }
+        // storage JSAPI 为异步（Promise），读取后回填
+        var self = this
+        storage.getHistory().then(function (list) {
+            self.history = Array.isArray(list) ? list : ''
+        }).catch(function () {
+            self.history = ''
+        })
     },
     methods: {
         noop() { },
@@ -289,10 +289,11 @@ export default {
                     this.results = list
                     this.loading = false
                     this.searched = true
-                    // 写历史
-                    try {
-                        this.history = storage.addHistory(kw)
-                    } catch (e) { }
+                    // 写历史（异步，不阻塞结果展示）
+                    var self = this
+                    storage.addHistory(kw).then(function (list) {
+                        self.history = Array.isArray(list) ? list : ''
+                    }).catch(function () { })
                     console.warn('[search] done kw=' + kw + ' hits=' + this.results.length)
                 })
                 .catch(err => {
@@ -306,10 +307,12 @@ export default {
             this.doSearch()
         },
         clearHistory() {
-            try {
-                storage.clearHistory()
-                this.history = ''
-            } catch (e) { }
+            var self = this
+            storage.clearHistory().then(function () {
+                self.history = ''
+            }).catch(function () {
+                self.history = ''
+            })
         },
         openResult(v) {
             console.log('[search] open: ' + v.bvid)

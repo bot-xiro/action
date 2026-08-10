@@ -4,6 +4,7 @@
  * 注意: 系统 JSAPI 必须用 '$jsapi/xxx' 语法导入（会转换为 $falcon.jsapi['xxx']）
  */
 import http from '$jsapi/http'
+import { gstPlayer } from 'gstplayer'
 import md5 from './md5.js'
 
 const BASE = 'https://api.bilibili.com'
@@ -214,6 +215,12 @@ async function getPlayUrl(bvid, cid, qn, fnval) {
 
 /**
  * 搜索（需 Wbi 签名）
+ * 【设备实测 2026-08-10】B 站 wbi 搜索接口对"无浏览器 UA/Referer"请求返回
+ * v_voucher 风控（code=0 但 data 仅含 v_voucher，无 result）→ 旧实现用
+ * $jsapi/http 不发送自定义 header，结果恒为空。现改用 native gstplayer.httpGet
+ * （popen 调设备 curl，强制带浏览器 UA + Referer）→ 实测返回正常结果。
+ * note: httpGet 为同步阻塞（等 curl 完成），搜索期间 UI 会短暂停留，
+ *       单次请求通常 <2s，可接受。
  * @param {string} keyword
  * @param {number} page
  */
@@ -225,7 +232,24 @@ async function searchVideo(keyword, page) {
   }
   const query = await encWbi(params)
   const url = BASE + '/x/web-interface/wbi/search/type?' + query
-  const data = await request(url, { timeout: 10 })
+  let body = ''
+  try {
+    body = gstPlayer.httpGet(url, 10)
+  } catch (e) {
+    console.warn('[api] httpGet failed: ' + url + ' :: ' + (e && e.message ? e.message : JSON.stringify(e)))
+    throw new Error('httpGet: ' + (e && e.message ? e.message : JSON.stringify(e)))
+  }
+  if (!body || body.length === 0) {
+    console.warn('[api] httpGet empty response: ' + url)
+    throw new Error('empty response')
+  }
+  let data = null
+  try {
+    data = JSON.parse(body)
+  } catch (e) {
+    console.warn('[api] JSON.parse failed: ' + url + ' :: ' + body.substring(0, 200))
+    throw new Error('JSON.parse: ' + e.message)
+  }
   if (data && data.code === 0) {
     return data.data
   }

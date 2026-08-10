@@ -46,6 +46,11 @@ public:
     // 双指缩放支持：播放中动态更新渲染区域（逻辑坐标，内部换算物理 CRTC）
     void setRect(JQUTIL_NS::JQFunctionInfo& info);
 
+    // 通用 HTTP GET：popen 调设备 curl，强制带浏览器 UA + Referer
+    // （系统 http JSAPI 不发送自定义 header，B 站风控接口（搜索等）会返回
+    //  v_voucher 空结果；curl 带 UA/Referer 实测可正常返回）
+    void httpGet(JQUTIL_NS::JQFunctionInfo& info);
+
     // ---- JS 信号：gstPlayer.stateChanged.on(cb) / .off(cb) ----
     JQUTIL_NS::JQSignal<std::string> stateChanged;
 

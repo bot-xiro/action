@@ -1,5 +1,6 @@
 #include "GstPlayer.h"
 
+#include <cstdio>
 #include <sstream>
 #include <syslog.h>
 #include <cstring>
@@ -466,6 +467,78 @@ void GstPlayer::setRect(JQFunctionInfo& info)
     gst_util_set_object_arg(G_OBJECT(videoSink_), "render-rectangle", rect.str().c_str());
     PLAYER_LOG("setRect applied: %s", rect.str().c_str());
     info.GetReturnValue().Set(true);
+}
+
+// ---- 通用 HTTP GET（带浏览器 UA+Referer；系统 http JSAPI 不发自定义 header）----
+//
+// 背景：设备 http JSAPI（$jsapi/http）实测不发送自定义 Referer/UA —— B 站 wbi
+// 搜索接口对"无浏览器 UA/Referer"的请求直接返回 v_voucher 风控（code=0 但
+// data 仅含 v_voucher，无 result）→ 前端解析为空列表 → "没有找到相关视频"。
+// 设备自带 curl（/bin/curl），带浏览器 UA+Referer 实测搜索正常返回结果，
+// 因此本方法直接 popen 调 curl 完成请求，绕过 http JSAPI 的 header 限制。
+// 入参: httpGet(url, timeoutSec) → 同步返回响应体字符串（失败返回空串）。
+void GstPlayer::httpGet(JQFunctionInfo& info)
+{
+    JSContext* ctx = info.GetContext();
+    if (info.Length() < 1 || !JS_IsString(info[0])) {
+        info.GetReturnValue().ThrowTypeError("httpGet: url required");
+        return;
+    }
+    const char* urlC = JS_ToCString(ctx, info[0]);
+    if (!urlC) {
+        info.GetReturnValue().ThrowTypeError("httpGet: invalid url");
+        return;
+    }
+    std::string url(urlC);
+    JS_FreeCString(ctx, urlC);
+
+    int timeout = 10;
+    if (info.Length() >= 2 && JS_IsNumber(info[1])) {
+        double t = 0;
+        if (JS_ToFloat64(ctx, &t, info[1]) == 0 && t > 0 && t < 120) timeout = static_cast<int>(t);
+    }
+    if (timeout <= 0) timeout = 10;
+
+    // 浏览器 UA + Referer（B站搜索/防盗链必需）
+    std::string ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+    std::string referer = "https://www.bilibili.com";
+
+    // shell 单引号转义（URL 可能含 & 等特殊字符必须引住；单引号本身罕见，稳妥处理）
+    auto shellQuote = [](const std::string& s) {
+        std::string out = "'";
+        for (char c : s) {
+            if (c == '\'') out += "'\\''";
+            else out += c;
+        }
+        out += "'";
+        return out;
+    };
+
+    std::string cmd = "curl -s --compressed --max-time " + std::to_string(timeout)
+        + " -A " + shellQuote(ua)
+        + " -e " + shellQuote(referer)
+        + " " + shellQuote(url);
+    PLAYER_LOG("httpGet: %s", cmd.c_str());
+
+    FILE* fp = popen(cmd.c_str(), "r");
+    if (!fp) {
+        PLAYER_LOG("httpGet: popen failed");
+        info.GetReturnValue().Set(std::string());
+        return;
+    }
+    std::string body;
+    char buf[8192];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) {
+        body.append(buf, n);
+        if (body.size() > 4 * 1024 * 1024) break;  // 4MB 上限保护
+    }
+    int rc = pclose(fp);
+    if (rc != 0) {
+        PLAYER_LOG("httpGet: curl rc=%d", rc);
+    }
+    PLAYER_LOG("httpGet: len=%zu", body.size());
+    info.GetReturnValue().Set(body);
 }
 
 // ---- 管线构建（手动管线：souphttpsrc → queue → decodebin → 音视频分流）----
@@ -961,6 +1034,7 @@ static JSValue createGstPlayer(JQModuleEnv* env)
     tpl->SetProtoMethod("getPosition", &GstPlayer::getPosition);
     tpl->SetProtoMethod("seek", &GstPlayer::seek);
     tpl->SetProtoMethod("setRect", &GstPlayer::setRect);
+    tpl->SetProtoMethod("httpGet", &GstPlayer::httpGet);
 
     // JS 侧: gstPlayer.stateChanged.on(cb) / .off(cb)
     tpl->InstanceTemplate()->Set("stateChanged", &GstPlayer::stateChanged);

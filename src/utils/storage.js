@@ -1,13 +1,25 @@
 /**
- * 简易持久化封装：搜索历史
- * - 优先用 globalThis.$falcon.storage.set/get（设备如提供则真正持久化）；
- * - 设备未提供时回退到模块内变量（页面生命周期内有效）；
- * - 不抛异常，失败返回空数组。
+ * 搜索历史持久化（基于系统 storage JSAPI，异步）
+ *
+ * 【根因修复 2026-08-10】旧实现用 globalThis.$falcon.storage.get/set，
+ * 该对象不存在 → 始终回退内存数组 → 应用关闭后历史丢失。
+ * 系统正确 JSAPI：import storage from '$jsapi/storage'
+ *   → storage.getStorage(key) / storage.setStorage(key, value)（异步 Promise）
+ * 见 docs/STUDY_NOTES.md「关键 JSAPI」表与 refs/haasui-docs storage-kv.md。
+ *
+ * 对外接口保持同步风格调用（返回 Promise）：
+ *   getHistory() → Promise<Array<string>>
+ *   addHistory(kw) → Promise<Array<string>>（去重置顶，≤10 条）
+ *   clearHistory() → Promise<void>
+ * 所有方法内部兜底：设备 storage 异常时回退内存数组，不抛异常。
  */
+
+import storage from '$jsapi/storage'
 
 const KEY = 'bilibili_search_history'
 const MAX_ITEMS = 10
 
+// 内存兜底缓存（设备 storage 不可用时，页面生命周期内仍可用）
 let _memory = []
 
 function safeParse(raw) {
@@ -21,34 +33,32 @@ function safeParse(raw) {
     }
 }
 
-function readRaw() {
-    var s = globalThis.$falcon && globalThis.$falcon.storage
-    if (s && typeof s.get === 'function') {
-        try {
-            var v = s.get(KEY)
-            return safeParse(v)
-        } catch (e) {
-            // 设备 storage 不可用时回退内存
-            return _memory.slice()
+async function readRaw() {
+    try {
+        if (storage && typeof storage.getStorage === 'function') {
+            const v = await storage.getStorage(KEY)
+            if (v !== undefined && v !== null) {
+                const arr = safeParse(v)
+                _memory = arr.slice()
+                return arr
+            }
         }
+        return _memory.slice()
+    } catch (e) {
+        // 设备 storage 读取失败 → 回退内存
+        return _memory.slice()
     }
-    return _memory.slice()
 }
 
-function writeRaw(arr) {
-    var raw = JSON.stringify(arr)
-    var s = globalThis.$falcon && globalThis.$falcon.storage
-    if (s && typeof s.set === 'function') {
-        try {
-            s.set(KEY, raw)
-            _memory = arr.slice()
-            return
-        } catch (e) {
-            _memory = arr.slice()
-            return
-        }
-    }
+async function writeRaw(arr) {
     _memory = arr.slice()
+    try {
+        if (storage && typeof storage.setStorage === 'function') {
+            await storage.setStorage(KEY, JSON.stringify(arr))
+        }
+    } catch (e) {
+        // 写入失败仅保留内存，不抛异常
+    }
 }
 
 function getHistory() {
@@ -58,22 +68,25 @@ function getHistory() {
 /**
  * 添加一条历史（去重，置顶，超出 10 条截断）
  * @param {string} keyword
+ * @returns {Promise<Array<string>>}
  */
 function addHistory(keyword) {
-    if (!keyword || typeof keyword !== 'string') return []
-    var kw = keyword.trim()
-    if (!kw) return []
-    var list = readRaw()
-    var next = [kw]
-    for (var i = 0; i < list.length && next.length < MAX_ITEMS; i++) {
-        if (list[i] !== kw) next.push(list[i])
-    }
-    writeRaw(next)
-    return next
+    return readRaw().then(function (list) {
+        if (!keyword || typeof keyword !== 'string') return []
+        var kw = keyword.trim()
+        if (!kw) return list || []
+        const next = [kw]
+        for (var i = 0; i < list.length && next.length < MAX_ITEMS; i++) {
+            if (list[i] !== kw) next.push(list[i])
+        }
+        return writeRaw(next).then(function () {
+            return next
+        })
+    })
 }
 
 function clearHistory() {
-    writeRaw([])
+    return writeRaw([])
 }
 
 export default {
