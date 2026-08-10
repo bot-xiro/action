@@ -31,12 +31,11 @@
             <!-- 右栏：相关推荐，独立垂直滚动 -->
             <div class="related-wrap">
                 <text class="related-title">相关推荐</text>
-                <scroller class="related-list" scroll-direction="vertical" :show-scrollbar="false">
+                <scroller class="related-list" scroll-direction="vertical" :show-scrollbar="false" @scroll="onRelScroll">
                     <div class="related-inner">
                         <div v-for="v in topRelated()" :key="v.bvid" class="r-item"
                              @click="openVideo(v)"
-                             @touchstart="rtStart(v)"
-                             @touchmove="rtMove()"
+                             @touchstart="rtStart(v, $event)"
                              @touchend="rtEnd(v)">
                             <image class="r-cover" :src="v.pic" resize="cover"></image>
                             <div class="r-info">
@@ -242,8 +241,10 @@ export default {
             related: [],
             loading: true,
             error: '',
-            // touch 模拟点击：记录按下的推荐项与时间，抬起时若未滑动且在 400ms 内视为点击
-            rt: null
+            // touch 模拟点击：按下记录推荐项/时间/右栏滚动偏移，抬起时偏移未变且 <400ms 视为点击
+            rt: null,
+            // 右栏滚动偏移（点击判定依据：期间未滚动 = 点击）
+            relScrollTop: 0
         }
     },
     mounted() {
@@ -291,30 +292,32 @@ export default {
                 })
         },
         openVideo(v) {
-            console.log('[detail] open(click): ' + v.bvid)
+            console.warn('[detail] open(click): ' + v.bvid)
             $falcon.navTo('detail', { bvid: v.bvid })
         },
-        // touch 模拟点击兜底：若 click 事件在深层 div 上不触发，则用 touch 时序模拟
-        rtStart(v) {
-            this.rt = { v: v, t: Date.now(), moved: false }
-            console.warn('[detail] r-item touchstart: ' + v.bvid)
-        },
-        rtMove() {
-            if (this.rt) {
-                this.rt.moved = true
+        // 记录右栏滚动偏移（touch 点击判定依据）
+        onRelScroll(e) {
+            if (e && e.contentOffset) {
+                this.relScrollTop = e.contentOffset.y || 0
             }
+        },
+        // touch 模拟点击兜底：click 不触发时用 touch 时序模拟
+        rtStart(v, e) {
+            this.rt = { v: v, t: Date.now(), scrollTop: this.relScrollTop }
+            console.warn('[detail] r-item touchstart: ' + v.bvid + ' keys=' + (e ? Object.keys(e).join(',') : 'none'))
         },
         rtEnd(v) {
             var rt = this.rt
             this.rt = null
-            console.warn('[detail] r-item touchend: ' + v.bvid + (rt ? ' moved=' + rt.moved + ' dt=' + (Date.now() - rt.t) : ''))
-            if (rt && rt.v === v && !rt.moved && Date.now() - rt.t < 400) {
-                console.log('[detail] open(touch): ' + v.bvid)
+            var scrolled = rt ? (this.relScrollTop !== rt.scrollTop) : false
+            console.warn('[detail] r-item touchend: ' + v.bvid + (rt ? ' scrolled=' + scrolled + ' dt=' + (Date.now() - rt.t) : ''))
+            if (rt && rt.v === v && !scrolled && Date.now() - rt.t < 400) {
+                console.warn('[detail] open(touch): ' + v.bvid)
                 $falcon.navTo('detail', { bvid: v.bvid })
             }
         },
         openPlayer(v) {
-            console.log('[detail] openPlayer: ' + v.bvid + ' cid=' + v.cid)
+            console.warn('[detail] openPlayer: ' + v.bvid + ' cid=' + v.cid)
             $falcon.navTo('player', { bvid: v.bvid, cid: v.cid, title: v.title })
         },
         formatCount(count) {
