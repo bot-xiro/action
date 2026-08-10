@@ -38,7 +38,7 @@
                              无法算绝对点击位置，改用分段块直接定位 seek 百分比 -->
                         <div class="progress-hit" v-for="(i, idx) in PROGRESS_BLOCKS" :key="i"
                             :style="{ left: progressHitLeft(i) + '%' }" @click="onBlockTap(i)"
-                            @touchstart="onTrackTouch"></div>
+                            @touchstart="onTrackStart(i, $event)" @touchmove="onTrackMove($event)" @touchend="onTrackEnd(i, $event)"></div>
                         <div class="progress-fill" :style="{ width: progressPct() + '%' }"></div>
                         <div class="progress-thumb" :style="{ left: progressPct() + '%' }"></div>
                     </div>
@@ -299,7 +299,9 @@ export default {
             // 双指缩放：当前渲染矩形（逻辑坐标，与 open pos_* 同坐标系，初始即 open 参数）
             videoRect: { x: 0, y: 107, w: 960, h: 266 },
             pinch: null,               // 活跃捏合快照 {dist, x, y, w, h}；null=未捏合
-            pinchTapGuard: false       // 捏合结束后的下一个 click 吞噬标志
+            pinchTapGuard: false,      // 捏合结束后的下一个 click 吞噬标志
+            track: null,               // 进度条触摸快照 {i, t, sliding}
+            trackSlideGuard: false     // 滑动结束后的点击吞噬标志（防派生 click 误 toggle/误 seek）
         }
     },
     mounted() {
@@ -443,6 +445,11 @@ onScreenTap() {
                 this.pinchTapGuard = false
                 return
             }
+            // 进度条滑动刚结束：吞掉派生的 click（防误隐藏控制栏）
+            if (this.trackSlideGuard) {
+                this.trackSlideGuard = false
+                return
+            }
             if (this.btnTapJustOccurred) {
                 this.btnTapJustOccurred = false
                 return
@@ -529,6 +536,11 @@ onScreenTap() {
         onBlockTap(i) {
             // 分段热区点击：直接 seek 到该段对应的进度位置
             if (!this.controlsVisible || !this.mPlayer || !this.duration) return
+            // 滑动刚结束：吞掉随之派生到起点块的 click（防跳回起点）
+            if (this.trackSlideGuard) {
+                this.trackSlideGuard = false
+                return
+            }
             this.btnTapJustOccurred = true   // 进度条点击，短路 stage onClick 的隐藏 toggle
             var pct = (i - 0.5) / PROGRESS_BLOCKS
             if (pct < 0) pct = 0
@@ -548,6 +560,71 @@ onScreenTap() {
             var t = e && e.touches && e.touches[0]
             console.warn('[player] track touchstart keys=' + (e ? Object.keys(e).join(',') : 'null')
                 + (t ? ' touchKeys=' + Object.keys(t).join(',') : ''))
+        },
+        // ---- 进度条触摸双保险（深层 div click 不触发 = 详情页同源问题,改用 touch 时序模拟） ----
+        // 点击：touchstart→touchend 未移动(<400ms) → seek 对应段块
+        // 滑动：框架对一次触摸会重派发 touchstart（详情页 r-item 日志可见 70ms 内双 touchstart）,
+        //       若重派发到相邻块则按"滑动路径"即时 seek；无坐标无法做连续拖动，用块级跳变近似
+        onTrackStart(i, e) {
+            var now = Date.now()
+            if (this.track && now - this.track.t < 600 && this.track.i !== i) {
+                // 同一手势滑到新块：即时 seek（滑动路径）
+                this.track.i = i
+                this.track.sliding = true
+                console.warn('[player] track slide block=' + i)
+                this.seekToBlock(i)
+                return
+            }
+            this.track = { i: i, t: now, sliding: false }
+            var ts = e && e.touches
+            var t0 = ts && ts[0]
+            console.warn('[player] track start block=' + i + ' keys=' + (e ? Object.keys(e).join(',') : 'null')
+                + (t0 ? ' touchKeys=' + Object.keys(t0).join(',') : ''))
+        },
+        onTrackMove(e) {
+            var t = e && e.touches && e.touches[0]
+            if (t && (typeof t.x === 'number' || (t.point && typeof t.point.x === 'number'))) {
+                // 有坐标：未来可实现连续拖动（当前日志确认后再说）
+            }
+        },
+        onTrackEnd(i, e) {
+            var tk = this.track
+            this.track = null
+            if (!tk) return
+            var dt = Date.now() - tk.t
+            console.warn('[player] track end block=' + i + ' sliding=' + tk.sliding + ' dt=' + dt)
+            if (tk.sliding) {
+                // 滑动结束：吞掉随后可能派发的 click，防误 toggle/误跳回起点块
+                this.trackSlideGuard = true
+                var self = this
+                setTimeout(function () {
+                    if (self.trackSlideGuard) {
+                        self.trackSlideGuard = false
+                        console.warn('[player] track slide guard auto-reset')
+                    }
+                }, 500)
+                return
+            }
+            if (dt < 400) {
+                // 时序模拟点击：短时抬起 = 点击该段块（click 事件在深层 div 不可靠）
+                this.onBlockTap(i)
+            }
+        },
+        // 滑动 seek：直接定位到段块中心对应的进度位置
+        seekToBlock(i) {
+            if (!this.controlsVisible || !this.mPlayer || !this.duration) return
+            if (this.trackSlideGuard) return  // 滑动 guard 期间不响应（防派生 click 抖动）
+            var pct = (i - 0.5) / PROGRESS_BLOCKS
+            if (pct < 0) pct = 0
+            if (pct > 1) pct = 1
+            var target = Math.round(this.duration * pct)
+            try {
+                this.mPlayer.seek(target)
+                this.currentPosition = target   // 立即更新进度条，不等下轮轮询
+                console.warn('[player] slide seek block=' + i + '/' + PROGRESS_BLOCKS + ' target=' + target + 'ms')
+            } catch (err) {
+                console.warn('[player] slide seek error: ' + err.message)
+            }
         },
         // ---- 双指缩放（捏合） ----
         // 手势流程：touchstart 记录起始矩形与双指间距 → touchmove 按间距比例
