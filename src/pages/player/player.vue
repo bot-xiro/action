@@ -483,15 +483,24 @@ onScreenTap() {
         // 事件参数兼容两种形态：直接 number 或框架事件对象(e.value / e.data.value)。
         onSeekChanging(v) {
             var val = this.seekbarValue(v)
+            console.warn('[player] seekbar changing: argType=' + typeof v + ' json=' + safeJson(v) + ' -> val=' + val)
             if (val === null || !this.mPlayer || !this.duration) return
             this.seekTo(val, 'changing')
         },
         onSeekChange(v) {
             var val = this.seekbarValue(v)
+            console.warn('[player] seekbar change: argType=' + typeof v + ' json=' + safeJson(v) + ' -> val=' + val)
             if (val === null || !this.mPlayer || !this.duration) return
             this.seekTo(val, 'change')
             // 拖动/点击完成后派生的 click 冒泡到 stage 会误隐藏控制栏 → 短路
             this.btnTapJustOccurred = true
+        },
+        safeJson(v) {
+            if (typeof v === 'number') return '' + v
+            if (v && typeof v === 'object') {
+                try { return JSON.stringify(v).substring(0, 300) } catch (e) { return 'obj(no-json)' }
+            }
+            return String(v)
         },
         seekbarValue(v) {
             if (typeof v === 'number') return v
