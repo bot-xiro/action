@@ -562,11 +562,10 @@ onScreenTap() {
             }
         },
         onTrackTouch(e) {
-            // 探测触摸事件是否携带坐标（用于判断未来能否实现拖动手势）：
-            // 打印事件键与首个 touch 点的坐标字段。
-            var t = e && e.touches && e.touches[0]
-            console.warn('[player] track touchstart keys=' + (e ? Object.keys(e).join(',') : 'null')
-                + (t ? ' touchKeys=' + Object.keys(t).join(',') : '') + (t && typeof t.x === 'number' ? ' x=' + t.x : ''))
+            // 探测触摸事件坐标：changedTouches[0] 是否携带 x/y（用于实现点击+拖动）
+            var ct = e && e.changedTouches && e.changedTouches[0]
+            console.warn('[player] track touch keys=' + (e ? Object.keys(e).join(',') : 'null')
+                + (ct ? ' changedKeys=' + Object.keys(ct).join(',') : '') + (ct ? ' json=' + JSON.stringify(ct).substring(0, 300) : ''))
         },
         onProbe(where, e) {
             // 命中探测：确认哪种元素能收到 click 事件（透明空 div vs 实背景元素）
