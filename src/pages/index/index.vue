@@ -20,13 +20,23 @@
             <text class="retry" @click="loadPopular()">点击重试</text>
         </div>
 
-        <!-- 推荐列表：横向滚动 -->
-        <scroller v-else class="list" scroll-direction="horizontal" :show-scrollbar="false">
+        <!-- 推荐列表：垂直滚动（支持下拉刷新 + 触底加载） -->
+        <scroller v-else class="list" scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60" @scroll="onScroll" @scrolltolower="onLoadMore">
             <div class="list-inner">
-                <div v-for="item in videos" :key="item.bvid" class="card" @click="openVideo(item)">
-                    <image class="cover" :src="item.pic" resize="cover"></image>
-                    <text class="title">{{ item.title }}</text>
-                    <text class="meta">{{ item.owner.name }} · {{ formatCount(item.stat.view) }}</text>
+                <!-- 视频列表项：左图右文 -->
+                <div v-for="item in videos" :key="item.bvid" class="v-item" @click="openVideo(item)">
+                    <image class="v-cover" :src="item.pic" resize="cover"></image>
+                    <div class="v-info">
+                        <text class="v-title" :lines="2">{{ item.title }}</text>
+                        <text class="v-meta">{{ item.owner.name }} · {{ formatCount(item.stat.view) }}播放</text>
+                    </div>
+                </div>
+                <!-- 底部加载状态 -->
+                <div v-if="loadingMore" class="load-more">
+                    <text class="load-text">加载中...</text>
+                </div>
+                <div v-else-if="!hasMore && videos.length > 0" class="load-more">
+                    <text class="load-text">没有更多了</text>
                 </div>
             </div>
         </scroller>
@@ -99,52 +109,67 @@
 
 .list {
     flex: 1;
-    flex-direction: row;
+    flex-direction: column;
 }
 
 .list-inner {
-    flex-direction: row;
-    align-items: flex-start;
+    flex-direction: column;
 }
 
-.card {
-    width: 260px;
-    height: 218px;
+/* ---- 列表项：左图右文 ---- */
+.v-item {
+    height: 112px;
+    margin-top: 8px;
     margin-left: 12px;
-    margin-top: 10px;
-    margin-right: 4px;
+    margin-right: 12px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    padding-left: 8px;
+    padding-right: 12px;
     background-color: #f5f5f5;
     border-radius: 8px;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
     overflow: hidden;
 }
 
-.card:first-child {
-    margin-left: 16px;
-}
-
-.cover {
-    width: 260px;
-    height: 146px;
+.v-cover {
+    width: 200px;
+    height: 112px;
     background-color: #e0e0e0;
+    border-radius: 4px;
 }
 
-.title {
-    margin-top: 6px;
-    margin-left: 8px;
-    margin-right: 8px;
-    font-size: 20px;
-    color: #333333;
-    lines: 1;
+.v-info {
+    flex: 1;
+    flex-direction: column;
+    justify-content: center;
+    margin-left: 12px;
 }
 
-.meta {
-    margin-top: 4px;
-    margin-left: 8px;
-    margin-right: 8px;
+.v-title {
     font-size: 18px;
+    color: #333333;
+    lines: 2;
+}
+
+.v-meta {
+    margin-top: 4px;
+    font-size: 14px;
     color: #999999;
     lines: 1;
+}
+
+/* ---- 底部加载状态 ---- */
+.load-more {
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+}
+
+.load-text {
+    font-size: 16px;
+    color: #999999;
 }
 </style>
 
@@ -158,7 +183,13 @@ export default {
             videos: [],
             loading: true,
             error: '',
-            statusText: '加载中'
+            statusText: '加载中',
+            page: 1,
+            pageSize: 20,
+            loadingMore: false,
+            refreshing: false,
+            hasMore: true,
+            refreshLock: false
         }
     },
     mounted() {
@@ -169,12 +200,15 @@ export default {
             this.loading = true
             this.error = ''
             this.statusText = '请求中'
-            api.getPopular(1, 20)
+            this.page = 1
+            api.getPopular(this.page, this.pageSize)
                 .then(data => {
-                    this.videos = data.list || []
+                    var list = (data && data.list) || []
+                    this.videos = list
                     this.loading = false
+                    this.hasMore = list.length >= this.pageSize
                     this.statusText = '共 ' + this.videos.length + ' 条'
-                    console.warn('[index] popular loaded: ' + this.videos.length)
+                    console.warn('[index] popular loaded: ' + this.videos.length + ' page=' + this.page)
                 })
                 .catch(err => {
                     console.warn('[index] popular error: ' + (err && err.message ? err.message : JSON.stringify(err)))
@@ -182,6 +216,86 @@ export default {
                     this.error = '加载失败: ' + (err && err.message ? err.message : JSON.stringify(err))
                     this.statusText = '失败'
                 })
+        },
+        loadMore() {
+            if (this.loadingMore || this.refreshing || !this.hasMore) {
+                return
+            }
+            this.loadingMore = true
+            this.statusText = '加载第 ' + (this.page + 1) + ' 页'
+            var nextPage = this.page + 1
+            console.warn('[index] loadMore page=' + nextPage)
+            api.getPopular(nextPage, this.pageSize)
+                .then(data => {
+                    var list = (data && data.list) || []
+                    // 按 bvid 去重追加
+                    var existing = {}
+                    for (var i = 0; i < this.videos.length; i++) {
+                        existing[this.videos[i].bvid] = true
+                    }
+                    var appended = 0
+                    for (var j = 0; j < list.length; j++) {
+                        if (!existing[list[j].bvid]) {
+                            this.videos.push(list[j])
+                            existing[list[j].bvid] = true
+                            appended++
+                        }
+                    }
+                    this.page = nextPage
+                    this.loadingMore = false
+                    this.hasMore = list.length >= this.pageSize
+                    this.statusText = '共 ' + this.videos.length + ' 条'
+                    console.warn('[index] loadMore OK appended=' + appended + ' total=' + this.videos.length + ' hasMore=' + this.hasMore)
+                })
+                .catch(err => {
+                    console.warn('[index] loadMore error: ' + (err && err.message ? err.message : JSON.stringify(err)))
+                    this.loadingMore = false
+                    this.statusText = '加载更多失败'
+                })
+        },
+        refresh() {
+            if (this.refreshing || this.refreshLock) {
+                return
+            }
+            this.refreshLock = true
+            this.refreshing = true
+            this.statusText = '刷新中'
+            console.warn('[index] refresh')
+            api.getPopular(1, this.pageSize)
+                .then(data => {
+                    var list = (data && data.list) || []
+                    this.videos = list
+                    this.page = 1
+                    this.hasMore = list.length >= this.pageSize
+                    this.refreshing = false
+                    this.statusText = '共 ' + this.videos.length + ' 条'
+                    console.warn('[index] refresh OK count=' + this.videos.length)
+                    // 防抖：500ms 后释放刷新锁
+                    setTimeout(() => {
+                        this.refreshLock = false
+                    }, 500)
+                })
+                .catch(err => {
+                    console.warn('[index] refresh error: ' + (err && err.message ? err.message : JSON.stringify(err)))
+                    this.refreshing = false
+                    this.statusText = '刷新失败'
+                    setTimeout(() => {
+                        this.refreshLock = false
+                    }, 500)
+                })
+        },
+        onScroll(e) {
+            // contentOffset.y < 0 表示顶部下拉越界（over-scroll 回弹区域）
+            if (!e || !e.contentOffset) {
+                return
+            }
+            var y = e.contentOffset.y || 0
+            if (y < -40 && !this.refreshing && !this.refreshLock) {
+                this.refresh()
+            }
+        },
+        onLoadMore() {
+            this.loadMore()
         },
         formatCount(count) {
             if (count >= 10000) {
