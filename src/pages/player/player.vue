@@ -144,12 +144,14 @@
     background-color: rgba(0, 0, 0, 0.5);
 }
 
-/* 底部控制栏：无整块灰底（用户要求），仅内容（进度条/按钮）浮于视频上 */
+/* 底部控制栏：半透明黑底（正常手机端播放器样式，用户要求与之一致），
+   内容顺序：进度条在上、按钮行在下 */
 .ctrl-bottom {
     bottom: 0;
     height: 128px;
     flex-direction: column;
     justify-content: center;
+    background-color: rgba(0, 0, 0, 0.5);
 }
 
 /* 按钮行：回退 / 播放暂停 / 快进 均匀分布（进度条下方，用户要求进度条在按钮上方） */
@@ -193,14 +195,15 @@
     width: 928px;               /* 960 - 左右 padding 16*2 */
 }
 
-/* 轨道：全宽 928px、高 36px 命中区（>4px 视觉轨道，放大触摸目标）。
+/* 轨道：全宽 928px、高 14px 细轨道（正常手机端播放器样式，不再是 36px 宽灰带）。
    实背景 rgba(255,255,255,0.3)——探测版证实实背景元素可命中 touch，
-   近透明 div 无法命中（见 DEV_LOG 2026-08-10）。touch 系事件直接绑在轨道上。 */
+   近透明 div 无法命中（见 DEV_LOG 2026-08-10）。touch 系事件直接绑在轨道上。
+   说明：fill/thumb 等宽高收窄视觉条居中，轨道背景即进度条灰底（细条，非宽灰带）。 */
 .progress-track {
     position: relative;
     width: 928px;
-    height: 36px;
-    border-radius: 5px;
+    height: 14px;
+    border-radius: 7px;
     background-color: rgba(255, 255, 255, 0.3);
     justify-content: center;    /* 内部 fill/thumb 视觉居中 */
 }
@@ -210,8 +213,8 @@
 .progress-fill {
     position: absolute;
     left: 0;
-    top: 16px;                  /* 36 高轨道中 4px 视觉条：top/bottom 各 16 */
-    bottom: 16px;
+    top: 5px;                   /* 14 高轨道中 4px 视觉条：top/bottom 各 5 */
+    bottom: 5px;
     border-radius: 2px;
     background-color: #fb7299;
     pointer-events: none;
@@ -221,7 +224,7 @@
    pointer-events:none——同 fill，不拦截触摸 */
 .progress-thumb {
     position: absolute;
-    top: 10px;                  /* (36-16)/2 垂直居中 */
+    top: -1px;                  /* (14-16)/2 垂直居中，微超轨上缘 */
     width: 16px;
     height: 16px;
     margin-left: -8px;          /* 回移半宽：left 对准圆点中心 */
