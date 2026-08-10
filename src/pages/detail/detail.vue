@@ -1,6 +1,6 @@
 <template>
     <div class="page">
-        <!-- 左侧：视频信息区（固定宽度） -->
+        <!-- 左侧：视频信息区（固定宽度，垂直滚动） -->
         <div class="info-panel">
             <!-- 加载中 -->
             <div v-if="loading" class="center">
@@ -13,14 +13,16 @@
                 <text class="retry" @click="loadDetail()">点击重试</text>
             </div>
 
-            <!-- 视频信息 -->
-            <div v-else-if="video" class="info-inner">
-                <image class="cover" :src="video.pic" resize="cover"></image>
-                <text class="title" :lines="1">{{ video.title }}</text>
-                <text class="meta">{{ video.owner.name }} · {{ formatCount(video.stat.view) }}播放 · {{ formatCount(video.stat.danmaku) }}弹幕</text>
-                <text class="play-btn" @click="openPlayer(video)">► 播放</text>
-                <text class="desc" :lines="2">{{ video.desc }}</text>
-            </div>
+            <!-- 视频信息：scroller 容器撑满 info-panel，内部 flex-direction: column 与 scroll-direction 一致 -->
+            <scroller v-else-if="video" class="info-scroller" scroll-direction="vertical" :show-scrollbar="false">
+                <div class="info-inner">
+                    <image class="cover" :src="video.pic" resize="cover"></image>
+                    <text class="title" :lines="1">{{ video.title }}</text>
+                    <text class="meta">{{ video.owner.name }} · {{ formatCount(video.stat.view) }}播放 · {{ formatCount(video.stat.danmaku) }}弹幕</text>
+                    <text class="play-btn" @click="openPlayer(video)">► 播放</text>
+                    <text class="desc" :lines="2">{{ video.desc }}</text>
+                </div>
+            </scroller>
         </div>
 
         <!-- 右侧：相关推荐（垂直滚动） -->
@@ -58,47 +60,52 @@
     flex-direction: column;
 }
 
-.info-inner {
+.info-scroller {
     flex: 1;
+    flex-direction: column;
+}
+
+.info-inner {
     flex-direction: column;
     padding: 8px;
 }
 
 .cover {
-    width: 430px;
-    height: 150px;
+    width: 260px;
+    height: 163px;
     background-color: #e0e0e0;
     border-radius: 8px;
+    align-self: flex-start;
 }
 
 .title {
     margin-top: 8px;
-    font-size: 20px;
+    font-size: 15px;
     color: #333333;
     font-weight: bold;
 }
 
 .meta {
     margin-top: 4px;
-    font-size: 14px;
+    font-size: 13px;
     color: #999999;
 }
 
 .play-btn {
     margin-top: 8px;
-    width: 400px;
+    width: 260px;
     height: 32px;
     background-color: #fb7299;
     border-radius: 6px;
     text-align: center;
     line-height: 32px;
-    font-size: 18px;
+    font-size: 16px;
     color: #ffffff;
 }
 
 .desc {
     margin-top: 6px;
-    font-size: 14px;
+    font-size: 12px;
     color: #666666;
     lines: 2;
 }
@@ -127,18 +134,17 @@
 }
 
 .r-item {
-    height: 56px;
+    height: 64px;
     margin-bottom: 6px;
     flex-direction: row;
     align-items: center;
     background-color: #f5f5f5;
     border-radius: 6px;
-    overflow: hidden;
 }
 
 .r-cover {
-    width: 90px;
-    height: 50px;
+    width: 100px;
+    height: 56px;
     background-color: #e0e0e0;
     margin-right: 8px;
     border-radius: 4px;
