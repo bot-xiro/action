@@ -26,11 +26,6 @@
                  与顶部栏共用同一显隐状态。
                  【布局】两行：上=按钮行（左回退 / 中播放暂停 / 右快进），下=进度条+时间。 -->
             <div class="ctrl-bottom" :class="{ 'ctrl-visible': controlsVisible }">
-                <div class="btn-row">
-                    <text class="seek-btn" @click="onSeekBack">回退</text>
-                    <text class="mini-play-btn" @click="onTogglePlay">{{ paused ? '▶ 播放' : '⏸ 暂停' }}</text>
-                    <text class="seek-btn" @click="onSeekForward">快进</text>
-                </div>
                 <div class="progress-row">
                     <!-- 进度条：自研实现（原生 seekbar 组件被框架忽略、回调零触发，见 DEV_LOG 2026-08-10，
                          官方应用亦无使用 seekbar 的先例，弃用）。track 全宽 928px 几何确定，
@@ -44,6 +39,11 @@
                         <div class="progress-thumb" :style="{ left: progressThumbLeft() + '%' }"></div>
                     </div>
                     <text class="time-text">{{ fmtTime(currentPosition) }} / {{ fmtTime(duration) }}</text>
+                </div>
+                <div class="btn-row">
+                    <text class="seek-btn" @click="onSeekBack">回退</text>
+                    <text class="mini-play-btn" @click="onTogglePlay">{{ paused ? '▶ 播放' : '⏸ 暂停' }}</text>
+                    <text class="seek-btn" @click="onSeekForward">快进</text>
                 </div>
             </div>
         </div>
@@ -121,7 +121,7 @@
     z-index: 1;
 }
 
-/* ---- 悬浮控制栏通用样式：默认隐藏，显示时半透明黑底 ---- */
+/* ---- 悬浮控制栏通用样式：默认隐藏 ---- */
 .ctrl-top,
 .ctrl-bottom {
     position: absolute;
@@ -130,20 +130,21 @@
     z-index: 999;               /* DOM 最顶层，保证盖在 hole 之上 */
     padding-left: 16px;
     padding-right: 16px;
-    background-color: rgba(0, 0, 0, 0.5);   /* 半透明黑底：既保证可读性又不完全遮画面 */
     opacity: 0;                 /* 默认透明不可见，全屏沉浸播放 */
     pointer-events: none;       /* 不可点击，点击事件穿透到 stage 唤出控制栏 */
     transition: opacity 0.3s;   /* 淡入淡出（框架若不支持 transition 则退化为瞬间切换） */
 }
 
+/* 顶部栏保留半透明黑底：标题/返回键下方衬底保证视频上可读 */
 .ctrl-top {
     top: 0;
     height: 60px;
     flex-direction: row;
     align-items: center;
+    background-color: rgba(0, 0, 0, 0.5);
 }
 
-/* 底部控制栏：两行——上=按钮行（回退/播放暂停/快进），下=进度条+时间 */
+/* 底部控制栏：无整块灰底（用户要求），仅内容（进度条/按钮）浮于视频上 */
 .ctrl-bottom {
     bottom: 0;
     height: 128px;
@@ -151,7 +152,7 @@
     justify-content: center;
 }
 
-/* 按钮行：回退 / 播放暂停 / 快进 均匀分布（进度条上方） */
+/* 按钮行：回退 / 播放暂停 / 快进 均匀分布（进度条下方，用户要求进度条在按钮上方） */
 .btn-row {
     flex-direction: row;
     align-items: center;
