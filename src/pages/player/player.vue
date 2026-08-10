@@ -32,17 +32,17 @@
                     <text class="seek-btn" @click="onSeekForward">快进</text>
                 </div>
                 <div class="progress-row">
-                    <div class="progress-track">
+                    <div class="progress-track" @touchstart="onTrackTouch($event)" @click="onProbe('track', $event)">
                         <!-- 点击热区：40 等分段（每段 928/40=23.2px），
                              事件对象无坐标字段（实测 event keys=type），
                              无法算绝对点击位置，改用分段块直接定位 seek 百分比 -->
                         <div class="progress-hit" v-for="(i, idx) in PROGRESS_BLOCKS" :key="i"
                             :style="{ left: progressHitLeft(i) + '%' }" @click="onBlockTap(i)"
                             @touchstart="onTrackStart(i, $event)" @touchmove="onTrackMove($event)" @touchend="onTrackEnd(i, $event)"></div>
-                        <div class="progress-fill" :style="{ width: progressPct() + '%' }"></div>
-                        <div class="progress-thumb" :style="{ left: progressPct() + '%' }"></div>
+                        <div class="progress-fill" :style="{ width: progressPct() + '%' }" @touchstart="onTrackTouch($event)" @click="onProbe('fill', $event)"></div>
+                        <div class="progress-thumb" :style="{ left: progressPct() + '%' }" @touchstart="onTrackTouch($event)" @click="onProbe('thumb', $event)"></div>
                     </div>
-                    <text class="time-text">{{ fmtTime(currentPosition) }} / {{ fmtTime(duration) }}</text>
+                    <text class="time-text" @touchstart="onTrackTouch($event)" @click="onProbe('time', $event)">{{ fmtTime(currentPosition) }} / {{ fmtTime(duration) }}</text>
                 </div>
             </div>
         </div>
@@ -566,6 +566,12 @@ onScreenTap() {
             // 打印事件键与首个 touch 点的坐标字段。
             var t = e && e.touches && e.touches[0]
             console.warn('[player] track touchstart keys=' + (e ? Object.keys(e).join(',') : 'null')
+                + (t ? ' touchKeys=' + Object.keys(t).join(',') : '') + (t && typeof t.x === 'number' ? ' x=' + t.x : ''))
+        },
+        onProbe(where, e) {
+            // 命中探测：确认哪种元素能收到 click 事件（透明空 div vs 实背景元素）
+            var t = e && e.touches && e.touches[0]
+            console.warn('[player] probe click on=' + where + ' keys=' + (e ? Object.keys(e).join(',') : 'null')
                 + (t ? ' touchKeys=' + Object.keys(t).join(',') : ''))
         },
         // ---- 进度条触摸双保险（深层 div click 不触发 = 详情页同源问题,改用 touch 时序模拟） ----
