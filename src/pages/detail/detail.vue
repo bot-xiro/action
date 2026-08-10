@@ -11,39 +11,46 @@
             <text class="retry" @click="loadDetail()">点击重试</text>
         </div>
 
-        <!-- 内容：单 scroller 整页滚动（scroller > page-inner > row-wrap，与 index.vue 已验证可点击结构同构；
-             注意：同页多 scroller 时仅首个 scroller 内点击可用，故相关推荐不可再单独用 scroller） -->
-        <scroller v-else-if="video" class="page-scroller" scroll-direction="vertical" :show-scrollbar="false">
-            <div class="page-inner">
-                <div class="row-wrap">
-                    <!-- 左侧：视频信息 -->
-                    <div class="info-col">
+        <!-- 内容：左右独立滚动（左栏滚到底固定，右栏继续滚；点击见 r-item 双保险绑定 + touch 兜底） -->
+        <div v-else-if="video" class="body">
+            <!-- 左栏：与封面同宽 260px（右侧分割线即照片右缘），内部垂直滚动 -->
+            <div class="info-panel">
+                <scroller class="info-scroller" scroll-direction="vertical" :show-scrollbar="false">
+                    <div class="info-inner">
                         <image class="cover" :src="video.pic" resize="cover"></image>
                         <text class="title" :lines="1">{{ video.title }}</text>
                         <text class="meta">{{ video.owner.name }} · {{ formatCount(video.stat.view) }}播放 · {{ formatCount(video.stat.danmaku) }}弹幕</text>
                         <text class="bvid">{{ bvid }}</text>
                         <text class="play-btn" @click="openPlayer(video)">► 播放</text>
-                        <!-- 简介：不限行数，自动换行完整显示 -->
+                        <!-- 简介：不限行数，自动换行完整显示（左栏可滚，滚到底固定） -->
                         <text class="desc">{{ video.desc }}</text>
                     </div>
+                </scroller>
+            </div>
 
-                    <!-- 右侧：相关推荐（非独立 scroller，与左列同容器整页滚动，保证点击可用） -->
-                    <div class="related-col">
-                        <text class="related-title">相关推荐</text>
-                        <div v-for="v in topRelated()" :key="v.bvid" class="r-item" @click="openVideo(v)">
+            <!-- 右栏：相关推荐，独立垂直滚动 -->
+            <div class="related-wrap">
+                <text class="related-title">相关推荐</text>
+                <scroller class="related-list" scroll-direction="vertical" :show-scrollbar="false">
+                    <div class="related-inner">
+                        <div v-for="v in topRelated()" :key="v.bvid" class="r-item"
+                             @click="openVideo(v)"
+                             @touchstart="rtStart(v)"
+                             @touchmove="rtMove()"
+                             @touchend="rtEnd(v)">
                             <image class="r-cover" :src="v.pic" resize="cover"></image>
                             <div class="r-info">
-                                <text class="r-title" :lines="1">{{ v.title }}</text>
+                                <text class="r-title" :lines="1" @click="openVideo(v)">{{ v.title }}</text>
                                 <text class="r-meta">{{ v.owner.name }} · {{ formatCount(v.stat.view) }}播放</text>
                             </div>
                         </div>
-                        <div v-if="!related.length && !loading" class="related-empty">
+                        <div v-if="!related.length" class="related-empty">
                             <text class="hint">暂无相关推荐</text>
                         </div>
                     </div>
-                </div>
+                </scroller>
             </div>
-        </scroller>
+        </div>
     </div>
 </template>
 
@@ -54,33 +61,36 @@
     flex-direction: column;
 }
 
-/* ---- 整页单 scroller（与 index.vue 已验证可点击结构同构） ---- */
-.page-scroller {
+.body {
     flex: 1;
-    flex-direction: column;
-}
-
-.page-inner {
-    flex-direction: column;
-}
-
-.row-wrap {
     flex-direction: row;
 }
 
-/* ---- 左侧信息区（460px 固定，右列 4 条等高 → 整页几乎不滚动，信息不滚出屏） ---- */
-.info-col {
-    width: 460px;
+/* ---- 左栏：与封面同宽（260px，右侧 border 即分割线 = 照片右缘） ---- */
+.info-panel {
+    width: 260px;
     border-right-width: 1px;
     border-right-color: #eeeeee;
     background-color: #fafafa;
     flex-direction: column;
-    padding: 8px;
+}
+
+.info-scroller {
+    flex: 1;
+    flex-direction: column;
+}
+
+.info-inner {
+    flex-direction: column;
+    padding-left: 8px;
+    padding-right: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
 }
 
 .cover {
-    width: 260px;
-    height: 163px;
+    width: 244px;
+    height: 153px;
     background-color: #e0e0e0;
     border-radius: 8px;
     align-self: flex-start;
@@ -91,15 +101,15 @@
     font-size: 15px;
     color: #333333;
     font-weight: bold;
-    width: 260px;
+    width: 244px;
     align-self: flex-start;
 }
 
 .meta {
     margin-top: 4px;
-    font-size: 13px;
+    font-size: 12px;
     color: #999999;
-    width: 260px;
+    width: 244px;
     align-self: flex-start;
 }
 
@@ -107,13 +117,13 @@
     margin-top: 4px;
     font-size: 12px;
     color: #999999;
-    width: 260px;
+    width: 244px;
     align-self: flex-start;
 }
 
 .play-btn {
     margin-top: 8px;
-    width: 260px;
+    width: 244px;
     height: 32px;
     background-color: #fb7299;
     border-radius: 6px;
@@ -128,16 +138,15 @@
     font-size: 12px;
     color: #666666;
     /* 不限行数：自动换行完整显示 */
-    width: 260px;
+    width: 244px;
     align-self: flex-start;
 }
 
-/* ---- 右侧相关推荐（非独立 scroller，普通 div 保证点击可用） ---- */
-.related-col {
+/* ---- 右栏：相关推荐 ---- */
+.related-wrap {
     flex: 1;
     flex-direction: column;
-    padding-left: 8px;
-    padding-right: 8px;
+    background-color: #ffffff;
 }
 
 .related-title {
@@ -147,6 +156,17 @@
     font-weight: bold;
     padding-left: 10px;
     padding-top: 6px;
+}
+
+.related-list {
+    flex: 1;
+    padding-left: 8px;
+    padding-right: 8px;
+    flex-direction: column;
+}
+
+.related-inner {
+    flex-direction: column;
 }
 
 .related-empty {
@@ -221,7 +241,9 @@ export default {
             video: null,
             related: [],
             loading: true,
-            error: ''
+            error: '',
+            // touch 模拟点击：记录按下的推荐项与时间，抬起时若未滑动且在 400ms 内视为点击
+            rt: null
         }
     },
     mounted() {
@@ -269,8 +291,27 @@ export default {
                 })
         },
         openVideo(v) {
-            console.log('[detail] open: ' + v.bvid)
+            console.log('[detail] open(click): ' + v.bvid)
             $falcon.navTo('detail', { bvid: v.bvid })
+        },
+        // touch 模拟点击兜底：若 click 事件在深层 div 上不触发，则用 touch 时序模拟
+        rtStart(v) {
+            this.rt = { v: v, t: Date.now(), moved: false }
+            console.warn('[detail] r-item touchstart: ' + v.bvid)
+        },
+        rtMove() {
+            if (this.rt) {
+                this.rt.moved = true
+            }
+        },
+        rtEnd(v) {
+            var rt = this.rt
+            this.rt = null
+            console.warn('[detail] r-item touchend: ' + v.bvid + (rt ? ' moved=' + rt.moved + ' dt=' + (Date.now() - rt.t) : ''))
+            if (rt && rt.v === v && !rt.moved && Date.now() - rt.t < 400) {
+                console.log('[detail] open(touch): ' + v.bvid)
+                $falcon.navTo('detail', { bvid: v.bvid })
+            }
         },
         openPlayer(v) {
             console.log('[detail] openPlayer: ' + v.bvid + ' cid=' + v.cid)
