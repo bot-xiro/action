@@ -32,14 +32,17 @@
                     <text class="seek-btn" @click="onSeekForward">快进</text>
                 </div>
                 <div class="progress-row">
-                    <!-- 进度条：框架原生 seekbar 组件（自带触摸命中/拖动，见 haasui-docs docs/app/ui/seekbar.md）。
-                         自研 40 段热区因近透明空 div 无法命中 touch(见 DEV_LOG 2026-08-10), 弃用改用官方组件。
-                         changing=拖动中实时回调，change=拖动完成回调（参数均为当前 value）。 -->
-                    <seekbar class="progress-seekbar" :min="0" :max="duration || 1"
-                        :value="currentPosition" active-color="#fb7299"
-                        background-color="rgba(255, 255, 255, 0.3)" :track-size="4"
-                        :handle-size="16" handle-color="#ffffff"
-                        @changing="onSeekChanging" @change="onSeekChange"></seekbar>
+                    <!-- 进度条：自研实现（原生 seekbar 组件被框架忽略、回调零触发，见 DEV_LOG 2026-08-10，
+                         官方应用亦无使用 seekbar 的先例，弃用）。track 全宽 928px 几何确定，
+                         自身绑定 touch 系事件——探测版已证实 track(实背景)可命中且
+                         changedTouches[0] 携带 pageX/pageY/screenX/screenY 坐标。
+                         点击 = touchstart 立即按绝对坐标 seek；拖动 = touchmove 按相对起始
+                         startX 的位移增量 seek（不依赖轨道绝对左缘，拖动跟随精确）。 -->
+                    <div class="progress-track" @touchstart="onTrackStart($event)"
+                        @touchmove="onTrackMove($event)" @touchend="onTrackEnd($event)">
+                        <div class="progress-fill" :style="{ width: progressPct() + '%' }"></div>
+                        <div class="progress-thumb" :style="{ left: progressThumbLeft() + '%' }"></div>
+                    </div>
                     <text class="time-text">{{ fmtTime(currentPosition) }} / {{ fmtTime(duration) }}</text>
                 </div>
             </div>
@@ -143,7 +146,7 @@
 /* 底部控制栏：两行——上=按钮行（回退/播放暂停/快进），下=进度条+时间 */
 .ctrl-bottom {
     bottom: 0;
-    height: 108px;
+    height: 128px;
     flex-direction: column;
     justify-content: center;
 }
@@ -182,23 +185,56 @@
     background-color: #fb7299;  /* bilibili 粉红 */
 }
 
-/* 进度条行：原生 seekbar + 时间文本 */
+/* 进度条行：纵向两行——上=轨道(全宽 928px 几何固定，便于坐标换算)，下=时间文本 */
 .progress-row {
-    flex-direction: row;
-    align-items: center;
+    flex-direction: column;
+    align-items: flex-start;
     width: 928px;               /* 960 - 左右 padding 16*2 */
 }
 
-/* 原生 seekbar：占满剩余宽度，高度给足命中区（36px，比轨道高 4px 更易触摸） */
-.progress-seekbar {
-    flex: 1;
+/* 轨道：全宽 928px、高 36px 命中区（>4px 视觉轨道，放大触摸目标）。
+   实背景 rgba(255,255,255,0.3)——探测版证实实背景元素可命中 touch，
+   近透明 div 无法命中（见 DEV_LOG 2026-08-10）。touch 系事件直接绑在轨道上。 */
+.progress-track {
+    position: relative;
+    width: 928px;
     height: 36px;
+    border-radius: 5px;
+    background-color: rgba(255, 255, 255, 0.3);
+    justify-content: center;    /* 内部 fill/thumb 视觉居中 */
+}
+
+/* 已播放填充条：绝对定位，宽度由 JS 轮询进度动态设置。
+   pointer-events:none——不拦截触摸，保证触摸命中统一落到 track 上 */
+.progress-fill {
+    position: absolute;
+    left: 0;
+    top: 16px;                  /* 36 高轨道中 4px 视觉条：top/bottom 各 16 */
+    bottom: 16px;
+    border-radius: 2px;
+    background-color: #fb7299;
+    pointer-events: none;
+}
+
+/* 进度圆点：中心对齐进度位置（left = pct% 时实际圆点左缘，用负 margin 回移半宽）。
+   pointer-events:none——同 fill，不拦截触摸 */
+.progress-thumb {
+    position: absolute;
+    top: 10px;                  /* (36-16)/2 垂直居中 */
+    width: 16px;
+    height: 16px;
+    margin-left: -8px;          /* 回移半宽：left 对准圆点中心 */
+    border-radius: 8px;
+    background-color: #ffffff;
+    pointer-events: none;
 }
 
 .time-text {
-    margin-left: 16px;
+    margin-top: 4px;
     font-size: 16px;
     color: #ffffff;
+    text-align: right;
+    width: 100%;
 }
 
 /* 唤出状态：完全不透明、可交互 */
@@ -238,6 +274,9 @@ const SEEK_STEP_MS = 10000       // 快进/回退单步时长（10 秒，毫秒�
 const PINCH_MIN_SCALE = 0.5      // 双指缩放下限（相对初始矩形）
 const PINCH_MAX_SCALE = 2.0      // 双指缩放上限（放大 2 倍后宽度超出屏幕，可平移查看细节）
 const PINCH_THROTTLE_MS = 40     // touchmove→setRect 调用节流间隔（JS→C++ 跨调用，减少 UI 线程开销）
+const TRACK_SCREEN_LEFT = 16     // 轨道左缘屏幕/页面坐标（ctrl-bottom padding-left，进度条 x=16 起）
+const TRACK_WIDTH = 928          // 轨道全宽（960 - 左右 padding 16*2，与 .progress-track 保持一致）
+const TRACK_MOVE_THROTTLE_MS = 60 // 拖动 seek 节流：touchmove 高频触发时限制 JS→C++ 跨调用
 
 export default {
     name: 'player',
@@ -263,6 +302,7 @@ export default {
             videoRect: { x: 0, y: 107, w: 960, h: 266 },
             pinch: null,               // 活跃捏合快照 {dist, x, y, w, h}；null=未捏合
             pinchTapGuard: false,      // 捏合结束后的下一个 click 吞噬标志
+            trackDrag: null,           // 进度条拖动快照 {startX, startPct}；null=未在拖动
         }
     },
     mounted() {
@@ -478,37 +518,100 @@ onScreenTap() {
             function pad(n) { return n < 10 ? '0' + n : '' + n }
             return (h > 0 ? pad(h) + ':' : '') + pad(m) + ':' + pad(s)
         },
-        // ---- 进度条：原生 seekbar 组件（haasui-docs docs/app/ui/seekbar.md） ----
-        // changing=拖动中持续回调(value 为当前值)，change=拖动完成回调。
-        // 事件参数兼容两种形态：直接 number 或框架事件对象(e.value / e.data.value)。
-        onSeekChanging(v) {
-            var val = this.seekbarValue(v)
-            console.warn('[player] seekbar changing: argType=' + typeof v + ' json=' + safeJson(v) + ' -> val=' + val)
-            if (val === null || !this.mPlayer || !this.duration) return
-            this.seekTo(val, 'changing')
+        progressPct() {
+            // 当前播放位置 → 进度百分比（0~100，驱动 fill 宽度 / thumb 左缘）
+            if (!this.duration) return 0
+            var pct = this.currentPosition * 100 / this.duration
+            if (pct < 0) pct = 0
+            if (pct > 100) pct = 100
+            return pct
         },
-        onSeekChange(v) {
-            var val = this.seekbarValue(v)
-            console.warn('[player] seekbar change: argType=' + typeof v + ' json=' + safeJson(v) + ' -> val=' + val)
-            if (val === null || !this.mPlayer || !this.duration) return
-            this.seekTo(val, 'change')
-            // 拖动/点击完成后派生的 click 冒泡到 stage 会误隐藏控制栏 → 短路
-            this.btnTapJustOccurred = true
+        progressThumbLeft() {
+            // 圆点中心对齐进度位置：left = pct% - 半宽(8px)/轨道宽(928px)*100
+            // 直接换算百分比，避免负 margin 兼容性问题
+            var pct = this.progressPct()
+            var left = pct - (8 / TRACK_WIDTH) * 100
+            if (left < 0) left = 0
+            if (left > 100) left = 100
+            return left
         },
-        safeJson(v) {
-            if (typeof v === 'number') return '' + v
-            if (v && typeof v === 'object') {
-                try { return JSON.stringify(v).substring(0, 300) } catch (e) { return 'obj(no-json)' }
-            }
-            return String(v)
-        },
-        seekbarValue(v) {
-            if (typeof v === 'number') return v
-            if (v && typeof v === 'object') {
-                if (typeof v.value === 'number') return v.value
-                if (v.data && typeof v.data.value === 'number') return v.data.value
-            }
+        // ---- 进度条：触摸坐标换算点击/拖动 seek ----
+        // 思路（探测版 3ba1c87 证实）：track 为实背景元素可命中 touch 事件，
+        // changedTouches[0] 携带 pageX/pageY/screenX/screenY 坐标。
+        // 点击 = touchstart 立即按绝对坐标换算 seek；拖动 = touchmove 按相对起点位移
+        // 换算 seek（不依赖轨道绝对左缘，跟随精确）。原生 seekbar 组件被框架忽略
+        // （FALCON_IGNORE_ELEMENTS=['modal','seekbar']，官方应用无使用先例）弃用。
+        // 坐标统一取 pageX（页面坐标：轨道左缘=16，全宽 928 的几何直接可用；
+        // 探测日志 pageX≈screenX-16，二者恒定差 16 即 padding，pageX 更直接）。
+        touchX(e) {
+            var ct = e && e.changedTouches && e.changedTouches[0]
+            if (ct && typeof ct.pageX === 'number') return ct.pageX
+            var t = e && e.touches && e.touches[0]
+            if (t && typeof t.pageX === 'number') return t.pageX
             return null
+        },
+        onTrackStart(e) {
+            if (!this.controlsVisible || !this.mPlayer || !this.duration) return
+            var x = this.touchX(e)
+            if (x === null) return   // 无坐标：记录日志但不设锚点，避免脏时间戳
+            var now = Date.now()
+            // 防御：框架对一次触摸会重派发 touchstart（探测版实测 70ms 内双 touchstart）。
+            // 重派发时跳过"点击 seek"，仅更新拖动锚点（手指已移动则跟手不跳变）。
+            var reDispatch = (typeof this._lastTrackStartT === 'number') && (now - this._lastTrackStartT < 120)
+            console.warn('[player] track start x=' + x + ' keys=' + Object.keys(e || {}).join(',')
+                + (reDispatch ? ' reDispatch' : ''))
+            this._lastTrackStartT = now
+            // 记录拖动起点：起点坐标 + 起点进度百分比
+            this.trackDrag = {
+                startX: x,
+                startPct: this.progressPct() / 100
+            }
+            if (!reDispatch) {
+                // 首次按下：点击即 seek 到该位置（绝对坐标）
+                this.seekFromTouchX(x, TRACK_SCREEN_LEFT, TRACK_WIDTH, 'tap')
+            }
+        },
+        onTrackMove(e) {
+            if (!this.trackDrag || !this.mPlayer || !this.duration) return
+            var x = this.touchX(e)
+            if (x === null) return
+            // 拖动 seek：起点百分比 + 位移比例（相对起点换算，避免依赖轨道绝对左缘）
+            var dX = x - this.trackDrag.startX
+            var pct = this.trackDrag.startPct + dX / TRACK_WIDTH
+            if (pct < 0) pct = 0
+            if (pct > 1) pct = 1
+            if (typeof this._lastTrackMoveX === 'number' && Math.abs(x - this._lastTrackMoveX) < 4) return
+            this._lastTrackMoveX = x
+            var target = Math.round(this.duration * pct)
+            console.warn('[player] track drag x=' + x + ' dX=' + dX + ' pct=' + Math.round(pct * 100) + '% target=' + target + 'ms')
+            this.seekTo(target, 'drag')
+        },
+        onTrackEnd(e) {
+            if (!this.trackDrag && typeof this._lastTrackStartT !== 'number') return
+            this.trackDrag = null
+            this._lastTrackMoveX = null
+            console.warn('[player] track end')
+            // 拖动/点击结束派生 click 冒泡到 stage 会误隐藏控制栏 → 短路。
+            // 定时器兜底：若框架未派发派生 click（guard 无人消费），300ms 后自动复位防卡死
+            // （与 pinchTapGuard 同款机制，避免脏标志吞掉下一次正常点击）
+            this.btnTapJustOccurred = true
+            var self = this
+            setTimeout(function () {
+                if (self.btnTapJustOccurred) {
+                    self.btnTapJustOccurred = false
+                    console.log('[player] track btnTap guard auto-reset')
+                }
+            }, 300)
+        },
+        // 绝对坐标 → 进度百分比 → seek（tap）
+        seekFromTouchX(x, trackLeft, trackWidth, kind) {
+            var pct = (x - trackLeft) / trackWidth
+            if (pct < 0) pct = 0
+            if (pct > 1) pct = 1
+            var target = Math.round(this.duration * pct)
+            console.warn('[player] seek coord ' + kind + ' x=' + x + ' left=' + trackLeft
+                + ' w=' + trackWidth + ' pct=' + Math.round(pct * 100) + '% target=' + target + 'ms')
+            this.seekTo(target, kind)
         },
         seekTo(val, reason) {
             var target = Math.round(val)
@@ -517,7 +620,6 @@ onScreenTap() {
             try {
                 this.mPlayer.seek(target)
                 this.currentPosition = target   // 立即更新进度条，不等下轮轮询
-                console.warn('[player] seekbar ' + reason + ' -> ' + target + 'ms')
             } catch (err) {
                 console.warn('[player] seek error: ' + err.message)
             }
