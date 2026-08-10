@@ -19,6 +19,7 @@
                     <image class="cover" :src="video.pic" resize="cover"></image>
                     <text class="title" :lines="1">{{ video.title }}</text>
                     <text class="meta">{{ video.owner.name }} · {{ formatCount(video.stat.view) }}播放 · {{ formatCount(video.stat.danmaku) }}弹幕</text>
+                    <text class="bvid">{{ bvid }}</text>
                     <text class="play-btn" @click="openPlayer(video)">► 播放</text>
                     <text class="desc" :lines="2">{{ video.desc }}</text>
                 </div>
@@ -29,15 +30,17 @@
         <div class="related-wrap">
             <text class="related-title">相关推荐</text>
             <scroller class="related-list" scroll-direction="vertical" :show-scrollbar="false">
-                <div v-for="v in related" :key="v.bvid" class="r-item" @click="openVideo(v)">
-                    <image class="r-cover" :src="v.pic" resize="cover"></image>
-                    <div class="r-info">
-                        <text class="r-title" :lines="1">{{ v.title }}</text>
-                        <text class="r-meta">{{ v.owner.name }} · {{ formatCount(v.stat.view) }}播放</text>
+                <div class="related-inner">
+                    <div v-for="v in related" :key="v.bvid" class="r-item" @click="openVideo(v)">
+                        <image class="r-cover" :src="v.pic" resize="cover"></image>
+                        <div class="r-info">
+                            <text class="r-title" :lines="1">{{ v.title }}</text>
+                            <text class="r-meta">{{ v.owner.name }} · {{ formatCount(v.stat.view) }}播放</text>
+                        </div>
                     </div>
-                </div>
-                <div v-if="!related.length && !loading" class="center">
-                    <text class="hint">暂无相关推荐</text>
+                    <div v-if="!related.length && !loading" class="center">
+                        <text class="hint">暂无相关推荐</text>
+                    </div>
                 </div>
             </scroller>
         </div>
@@ -83,12 +86,24 @@
     font-size: 15px;
     color: #333333;
     font-weight: bold;
+    width: 260px;
+    align-self: flex-start;
 }
 
 .meta {
     margin-top: 4px;
     font-size: 13px;
     color: #999999;
+    width: 260px;
+    align-self: flex-start;
+}
+
+.bvid {
+    margin-top: 4px;
+    font-size: 12px;
+    color: #999999;
+    width: 260px;
+    align-self: flex-start;
 }
 
 .play-btn {
@@ -108,6 +123,8 @@
     font-size: 12px;
     color: #666666;
     lines: 2;
+    width: 260px;
+    align-self: flex-start;
 }
 
 /* ---- 右侧相关推荐 ---- */
@@ -130,6 +147,10 @@
     flex: 1;
     padding-left: 8px;
     padding-right: 8px;
+    flex-direction: column;
+}
+
+.related-inner {
     flex-direction: column;
 }
 
