@@ -1,49 +1,49 @@
 <template>
     <div class="page">
-        <!-- 左侧：视频信息区（固定宽度，垂直滚动） -->
-        <div class="info-panel">
-            <!-- 加载中 -->
-            <div v-if="loading" class="center">
-                <text class="hint">加载中...</text>
-            </div>
-
-            <!-- 错误提示 -->
-            <div v-else-if="error" class="center">
-                <text class="hint">{{ error }}</text>
-                <text class="retry" @click="loadDetail()">点击重试</text>
-            </div>
-
-            <!-- 视频信息：scroller 容器撑满 info-panel，内部 flex-direction: column 与 scroll-direction 一致 -->
-            <scroller v-else-if="video" class="info-scroller" scroll-direction="vertical" :show-scrollbar="false">
-                <div class="info-inner">
-                    <image class="cover" :src="video.pic" resize="cover"></image>
-                    <text class="title" :lines="1">{{ video.title }}</text>
-                    <text class="meta">{{ video.owner.name }} · {{ formatCount(video.stat.view) }}播放 · {{ formatCount(video.stat.danmaku) }}弹幕</text>
-                    <text class="bvid">{{ bvid }}</text>
-                    <text class="play-btn" @click="openPlayer(video)">► 播放</text>
-                    <text class="desc" :lines="2">{{ video.desc }}</text>
-                </div>
-            </scroller>
+        <!-- 加载中 -->
+        <div v-if="loading" class="center">
+            <text class="hint">加载中...</text>
         </div>
 
-        <!-- 右侧：相关推荐（垂直滚动） -->
-        <div class="related-wrap">
-            <text class="related-title">相关推荐</text>
-            <scroller class="related-list" scroll-direction="vertical" :show-scrollbar="false">
-                <div class="related-inner">
-                    <div v-for="v in related" :key="v.bvid" class="r-item" @click="openVideo(v)">
-                        <image class="r-cover" :src="v.pic" resize="cover"></image>
-                        <div class="r-info">
-                            <text class="r-title" :lines="1">{{ v.title }}</text>
-                            <text class="r-meta">{{ v.owner.name }} · {{ formatCount(v.stat.view) }}播放</text>
+        <!-- 错误提示 -->
+        <div v-else-if="error" class="center">
+            <text class="hint">{{ error }}</text>
+            <text class="retry" @click="loadDetail()">点击重试</text>
+        </div>
+
+        <!-- 内容：单 scroller 整页滚动（scroller > page-inner > row-wrap，与 index.vue 已验证可点击结构同构；
+             注意：同页多 scroller 时仅首个 scroller 内点击可用，故相关推荐不可再单独用 scroller） -->
+        <scroller v-else-if="video" class="page-scroller" scroll-direction="vertical" :show-scrollbar="false">
+            <div class="page-inner">
+                <div class="row-wrap">
+                    <!-- 左侧：视频信息 -->
+                    <div class="info-col">
+                        <image class="cover" :src="video.pic" resize="cover"></image>
+                        <text class="title" :lines="1">{{ video.title }}</text>
+                        <text class="meta">{{ video.owner.name }} · {{ formatCount(video.stat.view) }}播放 · {{ formatCount(video.stat.danmaku) }}弹幕</text>
+                        <text class="bvid">{{ bvid }}</text>
+                        <text class="play-btn" @click="openPlayer(video)">► 播放</text>
+                        <!-- 简介：不限行数，自动换行完整显示 -->
+                        <text class="desc">{{ video.desc }}</text>
+                    </div>
+
+                    <!-- 右侧：相关推荐（非独立 scroller，与左列同容器整页滚动，保证点击可用） -->
+                    <div class="related-col">
+                        <text class="related-title">相关推荐</text>
+                        <div v-for="v in topRelated()" :key="v.bvid" class="r-item" @click="openVideo(v)">
+                            <image class="r-cover" :src="v.pic" resize="cover"></image>
+                            <div class="r-info">
+                                <text class="r-title" :lines="1">{{ v.title }}</text>
+                                <text class="r-meta">{{ v.owner.name }} · {{ formatCount(v.stat.view) }}播放</text>
+                            </div>
+                        </div>
+                        <div v-if="!related.length && !loading" class="related-empty">
+                            <text class="hint">暂无相关推荐</text>
                         </div>
                     </div>
-                    <div v-if="!related.length && !loading" class="center">
-                        <text class="hint">暂无相关推荐</text>
-                    </div>
                 </div>
-            </scroller>
-        </div>
+            </div>
+        </scroller>
     </div>
 </template>
 
@@ -51,24 +51,29 @@
 .page {
     flex: 1;
     background-color: #ffffff;
-    flex-direction: row;
-}
-
-/* ---- 左侧信息区 ---- */
-.info-panel {
-    width: 460px;
-    border-right-width: 1px;
-    border-right-color: #eeeeee;
-    background-color: #fafafa;
     flex-direction: column;
 }
 
-.info-scroller {
+/* ---- 整页单 scroller（与 index.vue 已验证可点击结构同构） ---- */
+.page-scroller {
     flex: 1;
     flex-direction: column;
 }
 
-.info-inner {
+.page-inner {
+    flex-direction: column;
+}
+
+.row-wrap {
+    flex-direction: row;
+}
+
+/* ---- 左侧信息区（460px 固定，右列 4 条等高 → 整页几乎不滚动，信息不滚出屏） ---- */
+.info-col {
+    width: 460px;
+    border-right-width: 1px;
+    border-right-color: #eeeeee;
+    background-color: #fafafa;
     flex-direction: column;
     padding: 8px;
 }
@@ -122,16 +127,17 @@
     margin-top: 6px;
     font-size: 12px;
     color: #666666;
-    lines: 2;
+    /* 不限行数：自动换行完整显示 */
     width: 260px;
     align-self: flex-start;
 }
 
-/* ---- 右侧相关推荐 ---- */
-.related-wrap {
+/* ---- 右侧相关推荐（非独立 scroller，普通 div 保证点击可用） ---- */
+.related-col {
     flex: 1;
     flex-direction: column;
-    background-color: #ffffff;
+    padding-left: 8px;
+    padding-right: 8px;
 }
 
 .related-title {
@@ -143,15 +149,10 @@
     padding-top: 6px;
 }
 
-.related-list {
-    flex: 1;
-    padding-left: 8px;
-    padding-right: 8px;
+.related-empty {
     flex-direction: column;
-}
-
-.related-inner {
-    flex-direction: column;
+    align-items: center;
+    padding-top: 40px;
 }
 
 .r-item {
@@ -280,6 +281,10 @@ export default {
                 return (count / 10000).toFixed(1) + '万'
             }
             return String(count)
+        },
+        // 右列最多展示 6 条：整页单 scroller 高度可控（≈420px），左列信息不会被滚出屏
+        topRelated() {
+            return (this.related || []).slice(0, 6)
         }
     }
 }
