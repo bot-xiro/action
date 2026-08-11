@@ -303,14 +303,10 @@ void GstPlayer::open(JQFunctionInfo& info)
     }
 
 #ifdef KMSSINK_TEST
-    // 【2026-08-11 用户指令】视频 plane 76 zpos 置底（3→0），UI/控制栏盖住视频：
-    // 根因：UI 层 XR24 不透明，之前视频 zpos=3 置顶盖 UI（控制栏被挡不可操作）。
-    // 现改为视频最底 zpos=0，UI 主平面由 preheat() 抬到 zpos=1（见 preheat），
-    // 控制栏（UI 平面内）确定盖住视频；下一步再做 WebView 挖洞让视频透出。
-    // plane 76 在 buildPipeline 后由 kmssink 创建，此时设置生效且为内核态持久属性。
-    if (!setPlaneZpos(76, 0)) {
-        PLAYER_LOG("open WARN: video plane 76 zpos set failed (video may be visible over UI)");
-    }
+    // 【2026-08-11 嵌进播放器】不再在此强制视频置底（zpos=0）！
+    // 视频 zpos 由 JS 统一控制（open 后 setVideoZpos(3) 置顶常驻，中间条布局）。
+    // 历史遗留注释保留：曾因 UI 层 XR24 不透明 + 控制栏与视频同区域互斥，
+    // 用视频置底让控制栏可操作；现中间条布局已无该冲突。
 #endif
 
     info.GetReturnValue().Set(true);
@@ -388,13 +384,12 @@ void GstPlayer::start(JQFunctionInfo& info)
         return;
     }
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
-#ifdef KMSSINK_TEST
-    // 补设（幂等）：进入 PLAYING 后 kmssink 必然已持有 plane 76，
-    // 确保视频 zpos=0 置底（open() 时可能因 plane 未建好而失败）。
-    if (!setPlaneZpos(76, 0)) {
-        PLAYER_LOG("start WARN: video plane 76 zpos set failed");
-    }
-#endif
+    // 【2026-08-11 嵌进播放器】不再在此强制置底！历史遗留（2bdb63e "视频置底 +
+    // 挖洞"方案）曾 setPlaneZpos(76, 0)，会把刚由 JS setVideoZpos(3) 置顶的视频
+    // 又拉回底层 → 被 UI 不透明平面盖住 → 画面消失（真机实证 21:26：stateChanged
+    // playing 但用户看不到视频）。
+    // 现在视频 zpos 完全由 JS 控制（open 后 setVideoTopmost(true) = zpos=3 置顶，
+    // 视频只覆盖中间条，控制栏上下条在视频 plane 外不受影响）。
     PLAYER_LOG("start set PLAYING");
     info.GetReturnValue().Set(true);
 }
