@@ -10,9 +10,9 @@
              WebView UI 平面（本页）+ 原生视频窗口（waylandsink/kmssink，平面叠加） -->
         <div v-else class="stage" @click="onScreenTap" @touchstart="onPinchStart" @touchmove="onPinchMove" @touchend="onPinchEnd">
             <!-- holE 挖洞：绝对定位铺满页面视口 960×266，与 gstPlayer.open 的
-                 pos 参数一致（960×266 全屏视频区）。注意：JQuick 框架不支持
-                 hole/透明（UI 层恒为 XR24 不透明），此处仅为语义保留，实际显示
-                 依赖视频 plane zpos=3 置顶。 -->
+                 pos 参数一致（960×266 全屏视频区）。【2026-08-11 用户指令】层级基线：
+                 视频 plane 76 zpos=0 置底 + UI 平面抬 zpos=1（preheat）→ 控制栏盖住
+                 视频；本 hole 为后续挖洞预留（洞区域透明后视频从洞中透出）。 -->
             <hole class="video-hole"></hole>
 
             <!-- 顶部控制栏（返回 + 标题）：absolute 悬浮，z-index 999 保证在 DOM 最顶层。
@@ -117,7 +117,8 @@
 
 /* 挖洞区域：覆盖整个视口（页面 x=0~960，逻辑高 266）——对应 gstPlayer.open
    ({ pos_x: 0, pos_y: 107, pos_w: 960, pos_h: 266 })：视频物理全屏竖条。
-   JQuick 不支持 hole/透明，此区域实际由视频 plane zpos=3 置顶覆盖。 */
+   【2026-08-11】视频 zpos=0 置底 + UI zpos=1 盖视频（控制栏可操作），
+   挖洞透出视频后再依赖本区域透明显示。 */
 .video-hole {
     position: absolute;
     top: 0;

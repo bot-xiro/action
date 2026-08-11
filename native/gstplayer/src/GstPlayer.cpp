@@ -292,12 +292,13 @@ void GstPlayer::open(JQFunctionInfo& info)
     }
 
 #ifdef KMSSINK_TEST
-    // 【2026-08-11 修复】视频 plane 76 置顶（zpos=0→3），盖过 UI 主平面（默认 0）：
-    // 根因：UI 层 XR24 不透明且 JQuick 不支持 hole/透明，双平面挖洞方案不可行。
-    // 现改为视频盖 UI（视频全可见），UI 控制栏布局避让到视频覆盖区之外（见 player.vue）。
+    // 【2026-08-11 用户指令】视频 plane 76 zpos 置底（3→0），UI/控制栏盖住视频：
+    // 根因：UI 层 XR24 不透明，之前视频 zpos=3 置顶盖 UI（控制栏被挡不可操作）。
+    // 现改为视频最底 zpos=0，UI 主平面由 preheat() 抬到 zpos=1（见 preheat），
+    // 控制栏（UI 平面内）确定盖住视频；下一步再做 WebView 挖洞让视频透出。
     // plane 76 在 buildPipeline 后由 kmssink 创建，此时设置生效且为内核态持久属性。
-    if (!setPlaneZpos(76, 3)) {
-        PLAYER_LOG("open WARN: video plane 76 zpos set failed (video may be hidden under UI)");
+    if (!setPlaneZpos(76, 0)) {
+        PLAYER_LOG("open WARN: video plane 76 zpos set failed (video may be visible over UI)");
     }
 #endif
 
@@ -306,14 +307,19 @@ void GstPlayer::open(JQFunctionInfo& info)
 
 void GstPlayer::preheat(JQFunctionInfo& info)
 {
-    // 【2026-08-11 修复】不再抬升 UI 主平面 zpos：
-    // 原逻辑 setPlaneZpos(54, 3) 把 UI 抬到视频之上，显示依赖 WebView hole 挖洞，
-    // 但 JQuick 框架不支持 hole/透明（UI 层恒为 XR24 不透明）→ 视频永远被盖 → 黑屏。
-    // 现改为视频 plane 自身置顶（见 open()），UI 保持 weston 默认 zpos=0。
-    // 本方法保留幂等入口（app.js onLaunch 调用），只做日志标记。
+    // 【2026-08-11 用户指令】视频置底策略：UI 主平面抬 zpos=1（0→1）。
+    // 视频 plane 76 zpos=0（见 open()）与 UI 同层竞争不确定，故 UI 抬到 1
+    // 保证控制栏（UI 平面内）确定盖住视频；后续 WebView 挖洞成功后，
+    // 洞区域透明 → 视频从洞中透出，控制栏仍悬浮在视频上方。
+    // 历史教训：曾抬 zpos=3（2026-08-09）依赖 hole 透出但 JQuick 不支持
+    // hole → 视频永远被盖 → 黑屏事故；本次是用户明确要求的"视频置底 +
+    // 挖洞"方案的基线，语义不同（先验证控制栏可见，再做挖洞）。
+    // 本方法幂等（app.js onLaunch 调用一次）。
     static std::atomic<bool> done{false};
     if (!done.exchange(true)) {
-        PLAYER_LOG("preheat: UI zpos untouched (video topmost strategy, out of play path)");
+        if (!setPlaneZpos(54, 1)) {
+            PLAYER_LOG("preheat WARN: UI plane 54 zpos set failed (UI default zpos=0, video may cover UI)");
+        }
     }
     info.GetReturnValue().Set(true);
 }
@@ -342,8 +348,8 @@ void GstPlayer::start(JQFunctionInfo& info)
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
 #ifdef KMSSINK_TEST
     // 补设（幂等）：进入 PLAYING 后 kmssink 必然已持有 plane 76，
-    // 确保视频 zpos=3 置顶（open() 时可能因 plane 未建好而失败）。
-    if (!setPlaneZpos(76, 3)) {
+    // 确保视频 zpos=0 置底（open() 时可能因 plane 未建好而失败）。
+    if (!setPlaneZpos(76, 0)) {
         PLAYER_LOG("start WARN: video plane 76 zpos set failed");
     }
 #endif

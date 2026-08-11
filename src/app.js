@@ -73,9 +73,10 @@ try {
   console.warn('[probe] err: ' + (err && err.message))
 }
 
-// 闪烁修复（2026-08-09）：UI 主平面 zpos 层级提升全局只执行一次，且必须在
-// 播放路径之外。之前每次 gstPlayer.open 都要 setPlanezPos(54,3)，播放瞬间
-// 反复改写 UI 平面层级 → 合成器短暂混乱、画面闪烁。改为应用启动时预热。
+// 【2026-08-11 视频置底方案】UI 主平面 zpos 提升全局只执行一次，且必须在
+// 播放路径之外（曾每次 open 都改写 UI 层级 → 合成器短暂混乱、画面闪烁，
+// 2026-08-09 教训）。preheat 现抬 UI plane 54 zpos=1（视频 plane 76 zpos=0
+// 置底，见 GstPlayer.cpp），保证控制栏盖住视频；挖洞透出视频后此层级保持。
 // preheat 内部幂等（原子标志保证只执行一次），此处调用即使失败也不影响播放。
 try {
   gstPlayer.preheat()
