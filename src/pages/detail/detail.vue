@@ -28,10 +28,19 @@
                 </scroller>
             </div>
 
-            <!-- 右栏：相关推荐，独立垂直滚动 -->
-            <div class="related-wrap">
-                <text class="related-title">相关推荐</text>
-                <scroller class="related-list" scroll-direction="vertical" :show-scrollbar="false" @scroll="onRelScroll">
+            <!-- 右栏：Tab 切换 + 单 scroller（v-if 保证同一时刻仅渲染一个，规避框架多 scroller 点击失效） -->
+            <div class="right-col"
+                 @touchstart="swStart($event)"
+                 @touchmove="swMove($event)"
+                 @touchend="swEnd()">
+                <!-- Tab 行 -->
+                <div class="tab-row">
+                    <text class="tab-item" :class="tab==='related' ? 'tab-active' : ''" @click="switchTab('related')">相关推荐</text>
+                    <text class="tab-item" :class="tab==='comment' ? 'tab-active' : ''" @click="switchTab('comment')">评论区{{ commentTotal ? (' ' + formatCount(commentTotal)) : '' }}</text>
+                </div>
+
+                <!-- 相关推荐 -->
+                <scroller v-if="tab==='related'" class="related-list" scroll-direction="vertical" :show-scrollbar="false" @scroll="onRelScroll">
                     <div class="related-inner">
                         <div v-for="v in topRelated()" :key="v.bvid" class="r-item"
                              @click="openVideo(v)"
@@ -45,6 +54,43 @@
                         </div>
                         <div v-if="!related.length" class="related-empty">
                             <text class="hint">暂无相关推荐</text>
+                        </div>
+                    </div>
+                </scroller>
+
+                <!-- 评论区（下拉刷新：顶部下拉超 -50px 触发 refresh） -->
+                <scroller v-else class="comment-list" scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60" @scroll="onCommentScroll" @scrolltolower="loadMoreReplies">
+                    <div class="comment-refresh" v-if="commentRefreshState === 'pulling'">
+                        <text class="hint">松手刷新评论</text>
+                    </div>
+                    <div class="comment-refresh" v-else-if="commentRefreshState === 'refreshing'">
+                        <text class="hint">刷新中...</text>
+                    </div>
+                    <div class="comment-inner">
+                        <div v-if="repliesLoading && !replies.length" class="center-col">
+                            <text class="hint">评论加载中...</text>
+                        </div>
+                        <div v-else-if="!replies.length && repliesDone" class="center-col">
+                            <text class="hint">暂无评论</text>
+                        </div>
+                        <div v-else>
+                            <div v-for="c in replies" :key="c.rpid" class="c-item">
+                                <image class="c-avatar" :src="c.member && c.member.avatar" resize="cover"></image>
+                                <div class="c-body">
+                                    <div class="c-header">
+                                        <text class="c-uname">{{ c.member ? c.member.uname : '' }}</text>
+                                        <text v-if="c._isTop" class="c-hot-badge">热</text>
+                                    </div>
+                                    <text class="c-msg" :lines="3">{{ c.content ? c.content.message : '' }}</text>
+                                    <text class="c-meta">赞 {{ c.like }} · {{ c.rcount }} 条回复 · {{ fmtTime(c.ctime) }}</text>
+                                </div>
+                            </div>
+                            <div v-if="repliesLoading" class="load-more">
+                                <text class="hint">加载中...</text>
+                            </div>
+                            <div v-else-if="!repliesHasMore" class="load-more">
+                                <text class="hint">没有更多评论了</text>
+                            </div>
                         </div>
                     </div>
                 </scroller>
@@ -141,20 +187,35 @@
     align-self: flex-start;
 }
 
-/* ---- 右栏：相关推荐 ---- */
-.related-wrap {
+/* ---- 右栏：Tab + 内容区 ---- */
+.right-col {
     flex: 1;
     flex-direction: column;
     background-color: #ffffff;
 }
 
-.related-title {
+.tab-row {
     height: 30px;
-    font-size: 16px;
+    flex-direction: row;
+    align-items: center;
+    padding-left: 10px;
+    border-bottom-width: 1px;
+    border-bottom-color: #f0f0f0;
+}
+
+.tab-item {
+    font-size: 14px;
+    color: #999999;
+    margin-right: 18px;
+    height: 29px;
+    line-height: 29px;
+}
+
+.tab-active {
     color: #fb7299;
     font-weight: bold;
-    padding-left: 10px;
-    padding-top: 6px;
+    border-bottom-width: 2px;
+    border-bottom-color: #fb7299;
 }
 
 .related-list {
@@ -162,6 +223,92 @@
     padding-left: 8px;
     padding-right: 8px;
     flex-direction: column;
+}
+
+.comment-list {
+    flex: 1;
+    padding-left: 10px;
+    padding-right: 10px;
+    flex-direction: column;
+}
+
+.comment-inner {
+    flex-direction: column;
+}
+
+.c-item {
+    flex-direction: row;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border-bottom-width: 1px;
+    border-bottom-color: #f2f2f2;
+}
+
+.c-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 14px;
+    background-color: #e0e0e0;
+    margin-right: 8px;
+}
+
+.c-body {
+    flex: 1;
+    flex-direction: column;
+}
+
+.c-header {
+    flex-direction: row;
+    align-items: center;
+}
+
+.c-uname {
+    font-size: 12px;
+    color: #999999;
+}
+
+.c-hot-badge {
+    margin-left: 6px;
+    padding-left: 4px;
+    padding-right: 4px;
+    height: 14px;
+    line-height: 14px;
+    font-size: 10px;
+    color: #ffffff;
+    background-color: #fb7299;
+    border-radius: 2px;
+}
+
+.c-msg {
+    margin-top: 2px;
+    font-size: 13px;
+    color: #333333;
+}
+
+.c-meta {
+    margin-top: 3px;
+    font-size: 11px;
+    color: #bbbbbb;
+}
+
+.center-col {
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    padding-top: 40px;
+}
+
+.load-more {
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+}
+
+.comment-refresh {
+    height: 36px;
+    align-items: center;
+    justify-content: center;
+    background-color: #fafafa;
 }
 
 .related-inner {
@@ -241,18 +388,30 @@ export default {
             related: [],
             loading: true,
             error: '',
-            // touch 模拟点击：按下记录推荐项/时间/右栏滚动偏移，抬起时偏移未变且 <400ms 视为点击
-            rt: null,
-            // 右栏滚动偏移（点击判定依据：期间未滚动 = 点击）
+            // 评论区数据（新版 /x/v2/reply/wbi/main 游标分页）
+            tab: 'related',
+            replies: [],
+            replyCursor: '',
+            repliesHasMore: true,
+            repliesLoading: false,
+            repliesDone: false,
+            commentTotal: 0,
+            // 评论区下拉刷新状态
+            commentRefreshState: '',
+            refreshLock: false,
+            // 横滑切换快照
+            swatch: null,
+            // 右栏滚动偏移（点击判定）
             relScrollTop: 0
         }
     },
     mounted() {
-        // 从 index 页 navTo 带过来的参数
         var opt = this.$page.loadOptions || {}
         this.bvid = opt.bvid || ''
         console.warn('[detail] mounted bvid=' + this.bvid)
         this.loadDetail()
+        // 初始化 tab
+        this.tab = 'related'
     },
     methods: {
         loadDetail() {
@@ -268,7 +427,9 @@ export default {
                     this.video = data
                     this.loading = false
                     console.warn('[detail] video loaded: ' + data.title)
-                    // 预取播放地址（cid 已就绪）：缓存 10 分钟，点播放时秒开
+                    // 设置评论总数
+                    this.commentTotal = data.stat && data.stat.reply ? data.stat.reply : 0
+                    // 预取播放地址
                     var prefetchCid = (data && (data.cid || (data.pages && data.pages[0] && data.pages[0].cid))) || ''
                     if (prefetchCid) {
                         api.getPlayUrl(this.bvid, prefetchCid, 64, 1)
@@ -281,51 +442,132 @@ export default {
                     this.loading = false
                     this.error = '加载失败: ' + (err && err.message ? err.message : JSON.stringify(err))
                 })
-            // 相关推荐（独立于主信息，失败不阻断）
             api.getRelated(this.bvid)
                 .then(list => {
                     this.related = list || []
-                    console.warn('[detail] related loaded: ' + this.related.length)
                 })
                 .catch(err => {
                     console.warn('[detail] related error: ' + (err && err.message ? err.message : JSON.stringify(err)))
                 })
         },
-        openVideo(v) {
-            console.warn('[detail] open(click): ' + v.bvid + ' now=' + this.bvid)
-            this.gotoVideo(v.bvid)
-        },
-        // 详情页内点击相关推荐：框架 navTo 到同一页面不重建（复用实例仅回调 onNewOptions，Vue 层收不到），
-        // 故原地重载新 bvid（等价于"跳转"效果），避免同页导航黑洞
-        gotoVideo(bvid) {
-            if (!bvid || bvid === this.bvid) {
-                console.warn('[detail] gotoVideo skip same: ' + bvid)
-                return
+        switchTab(t) {
+            if (this.tab === t) return
+            this.tab = t
+            console.warn('[detail] switchTab: ' + t)
+            if (t === 'comment' && !this.replies.length && !this.repliesLoading) {
+                this.loadReplies(true)
             }
-            this.bvid = bvid
-            this.video = null
-            this.related = []
-            this.error = ''
-            this.loading = true
-            this.loadDetail()
+            // 重置 swatch
+            this.swatch = null
         },
-        // 记录右栏滚动偏移（touch 点击判定依据）
-        onRelScroll(e) {
-            if (e && e.contentOffset) {
-                this.relScrollTop = e.contentOffset.y || 0
+        swStart(e) {
+            var t = e && e.changedTouches && e.changedTouches[0]
+            this.swatch = t ? { x: t.pageX, y: t.pageY, t: Date.now() } : null
+        },
+        swMove(e) {
+            var s = this.swatch, t = e && e.changedTouches && e.changedTouches[0]
+            if (!s || !t) return
+            var dx = t.pageX - s.x, dy = t.pageY - s.y
+            if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+                if (dx < -60) this.switchTab('comment')
+                else if (dx > 60) this.switchTab('related')
             }
         },
-        // touch 模拟点击兜底：click 不触发时用 touch 时序模拟
+        swEnd() {
+            this.swatch = null
+        },
+        loadReplies(reset) {
+            if (!this.video || !this.video.aid) return
+            if (reset) {
+                this.replies = []
+                this.replyPage = 0
+                this.repliesHasMore = true
+                this.repliesDone = false
+            }
+            if (!this.repliesHasMore || this.repliesLoading) return
+            var pn = this.replyPage + 1
+            this.repliesLoading = true
+            console.warn('[detail] replies load cursor=' + (this.replyCursor || 'first') + ' aid=' + this.video.aid)
+            api.getReplies(this.video.aid, this.replyCursor)
+                .then(data => {
+                    // 首页：置顶/热评合并到前部并打标，翻页只追加普通评论
+                    var list = reset ? (data.tops || []).concat(data.replies || []) : (data.replies || [])
+                    this.replies = reset ? list : this.replies.concat(list)
+                    this.replyCursor = data.next || ''
+                    this.repliesHasMore = !data.isEnd && list.length > 0 && !!this.replyCursor
+                    this.repliesDone = true
+                    this.repliesLoading = false
+                    console.warn('[detail] replies loaded n=' + list.length + ' tops=' + ((data.tops || []).length) + ' next=' + (data.next || '') + ' end=' + data.isEnd + ' total=' + data.total)
+                })
+                .catch(err => {
+                    console.warn('[detail] replies error: ' + (err && err.message ? err.message : JSON.stringify(err)))
+                    this.repliesLoading = false
+                    this.repliesDone = true
+                })
+        },
+        loadMoreReplies() {
+            if (this.tab === 'comment') {
+                this.loadReplies(false)
+            }
+        },
+        onCommentScroll(e) {
+            if (!e || !e.contentOffset) return
+            var y = e.contentOffset.y || 0
+            // 顶部下拉越界即触发刷新（与 index 主页下拉刷新同一模式；refreshLock 防抖防连发）
+            if (y < -60 && !this.refreshLock && !this.repliesLoading) {
+                this.refreshLock = true
+                console.warn('[detail] comment refresh trigger y=' + y)
+                this.refreshComments()
+                setTimeout(() => { this.refreshLock = false }, 800)
+            }
+        },
+        refreshComments() {
+            if (!this.video || !this.video.aid) return
+            this.commentRefreshState = 'refreshing'
+            console.warn('[detail] comment refresh start aid=' + this.video.aid)
+            // 重置并重载第一页
+            this.replies = []
+            this.replyCursor = ''
+            this.repliesHasMore = true
+            this.repliesDone = false
+            this.repliesLoading = true
+            api.getReplies(this.video.aid, '')
+                .then(data => {
+                    var list = (data.tops || []).concat(data.replies || [])
+                    this.replies = list
+                    this.replyCursor = data.next || ''
+                    this.repliesHasMore = !data.isEnd && list.length > 0 && !!this.replyCursor
+                    this.repliesDone = true
+                    this.repliesLoading = false
+                    this.commentRefreshState = ''
+                    console.warn('[detail] comment refresh done n=' + list.length + ' tops=' + ((data.tops || []).length))
+                })
+                .catch(err => {
+                    console.warn('[detail] comment refresh error: ' + (err && err.message ? err.message : JSON.stringify(err)))
+                    this.repliesLoading = false
+                    this.commentRefreshState = ''
+                })
+        },
         rtStart(v, e) {
-            this.rt = { v: v, t: Date.now(), scrollTop: this.relScrollTop }
+            var t = e && e.changedTouches && e.changedTouches[0]
+            this.rt = {
+                v: v,
+                t: Date.now(),
+                scrollTop: this.relScrollTop,
+                x: t ? t.pageX : 0,
+                y: t ? t.pageY : 0
+            }
             console.warn('[detail] r-item touchstart: ' + v.bvid + ' keys=' + (e ? Object.keys(e).join(',') : 'none'))
         },
         rtEnd(v) {
             var rt = this.rt
             this.rt = null
             var scrolled = rt ? (this.relScrollTop !== rt.scrollTop) : false
-            console.warn('[detail] r-item touchend: ' + v.bvid + (rt ? ' scrolled=' + scrolled + ' dt=' + (Date.now() - rt.t) : ''))
-            if (rt && rt.v === v && !scrolled && Date.now() - rt.t < 400) {
+            var dx = rt && v ? (rt.x - (v && v.pageX || rt.x)) : 0
+            var dy = rt && v ? (rt.y - (v && v.pageY || rt.y)) : 0
+            var moved = Math.abs(dx) > 20 || Math.abs(dy) > 20
+            console.warn('[detail] r-item touchend: ' + v.bvid + (rt ? ' moved=' + moved + ' dx=' + dx + ' dy=' + dy + ' dt=' + (Date.now() - rt.t) : ''))
+            if (rt && rt.v === v && !scrolled && !moved && Date.now() - rt.t < 400) {
                 console.warn('[detail] open(touch): ' + v.bvid)
                 this.gotoVideo(v.bvid)
             }
@@ -340,9 +582,38 @@ export default {
             }
             return String(count)
         },
-        // 右列最多展示 6 条：整页单 scroller 高度可控（≈420px），左列信息不会被滚出屏
         topRelated() {
             return (this.related || []).slice(0, 6)
+        },
+        fmtTime(ts) {
+            if (!ts) return ''
+            var now = Math.floor(Date.now() / 1000)
+            var diff = now - ts
+            if (diff < 3600) {
+                return Math.max(1, Math.floor(diff / 60)) + '分钟前'
+            }
+            if (diff < 86400) {
+                return Math.floor(diff / 3600) + '小时前'
+            }
+            if (diff < 86400 * 30) {
+                return Math.floor(diff / 86400) + '天前'
+            }
+            var d = new Date(ts * 1000)
+            return (d.getMonth() + 1) + '-' + d.getDate()
+        },
+        gotoVideo(bvid) {
+            // 切换视频时重置评论区状态
+            if (!bvid || bvid === this.bvid) return
+            this.bvid = bvid
+            this.video = null
+            this.related = []
+            this.commentTotal = 0
+            this.replies = []
+            this.replyPage = 0
+            this.repliesHasMore = true
+            this.tab = 'related'
+            this.loading = true
+            this.loadDetail()
         }
     }
 }

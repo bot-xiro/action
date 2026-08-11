@@ -269,11 +269,187 @@ async function getRelated(bvid) {
   throw new Error('getRelated failed: ' + (data ? data.code : 'no data'))
 }
 
+/**
+ * 视频评论区（新版懒加载接口 /x/v2/reply/wbi/main，需 Wbi 签名；cursor 游标分页）
+ * 【接口依据】参考 beefreely 项目（拦截 B 站 web 端该接口）+ refs/bilibili-api docs/comment/list.md
+ *   - 首页响应同时含 top_replies(置顶) + hots(热评) + replies(普通)，合并展示即"加载更多"
+ *   - 翻页用 data.cursor.next（字符串页码），最后一页 cursor.is_end=true
+ *   - 设备无登录 cookie（无 buvid3）→ 天然绕过"仅返回 3 条评论"的风控，无需额外 hack
+ * 【设备实测策略】Wbi 接口对"无浏览器 UA/Referer"请求风控（搜索页同因），
+ *   故走 native gstPlayer.httpGet（popen curl 带浏览器 UA + Referer），同步阻塞 ~<2s 可接受。
+ * @param {number} aid 稿件 avid (video.aid)
+ * @param {string} cursor 翻页游标（上一页返回的 next；空字符串=第一页）
+ */
+async function getReplies(aid, cursor) {
+  const params = {
+    type: 1,
+    oid: aid,
+    mode: 3, // 仅按热度（B 站 web 端默认）
+    plat: 1
+  }
+  if (cursor) {
+    params.next = cursor
+  }
+  const query = await encWbi(params)
+  const url = BASE + '/x/v2/reply/wbi/main?' + query
+  let body = ''
+  try {
+    body = gstPlayer.httpGet(url, 10)
+  } catch (e) {
+    console.warn('[api] reply httpGet failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
+    throw new Error('reply httpGet: ' + (e && e.message ? e.message : JSON.stringify(e)))
+  }
+  if (!body || body.length === 0) {
+    console.warn('[api] reply empty response: ' + url)
+    throw new Error('reply empty response')
+  }
+  let data = null
+  try {
+    data = JSON.parse(body)
+  } catch (e) {
+    console.warn('[api] reply JSON.parse failed: ' + url + ' :: ' + body.substring(0, 200))
+    throw new Error('reply JSON.parse: ' + e.message)
+  }
+  if (data && data.code === 0 && data.data) {
+    const d = data.data
+    const ci = d.cursor || {}
+    const fresh = !cursor // 仅首页合并置顶/热评
+    return {
+      replies: d.replies || [],
+      // 首页：top_replies(置顶) + hots(热评) 合并去重，标记 _isTop 供 UI 打标
+      tops: fresh ? mergeTops((d.top_replies || []).concat(d.hots || [])) : [],
+      next: ci.next ? String(ci.next) : '',
+      isEnd: ci.is_end === true,
+      total: ci.all_count || 0
+    }
+  }
+  throw new Error('getReplies failed: ' + (data ? data.code : 'no data') + ' msg=' + (data ? data.message : ''))
+}
+
+// 合并置顶/热评并按 rpid 去重，标记 _isTop
+function mergeTops(list) {
+  const seen = {}
+  const out = []
+  for (let i = 0; i < list.length; i++) {
+    const it = list[i]
+    if (!it || !it.rpid || seen[it.rpid]) continue
+    seen[it.rpid] = true
+    it._isTop = true
+    out.push(it)
+  }
+  return out
+}
+
+// ============ 登录相关（预留接口，未来需 native cookie 支持才能生效）===========
+const PASSPORT_BASE = 'https://passport.bilibili.com'
+
+/**
+ * 获取登录状态（复用 nav 接口，code===0 表示已登录）
+ * @returns {Promise<{loggedIn: boolean, mid?: number, uname?: string, face?: string}>}
+ */
+async function getLoginStatus() {
+  try {
+    const data = await request(BASE + '/x/web-interface/nav', { timeout: 8 })
+    if (data && data.code === 0 && data.data && data.data.isLogin === true) {
+      return {
+        loggedIn: true,
+        mid: data.data.mid,
+        uname: data.data.uname,
+        face: data.data.face
+      }
+    }
+  } catch (e) {
+    console.warn('[login] getLoginStatus error: ' + (e && e.message ? e.message : JSON.stringify(e)))
+  }
+  return { loggedIn: false }
+}
+
+/**
+ * 生成登录二维码（需配合轮询 pollLoginQrCode）
+ * @returns {Promise<{url: string, qrcodeKey: string} | null>}
+ */
+async function generateLoginQrCode() {
+  // passport 接口不需要 WBI 签名
+  const url = PASSPORT_BASE + '/x/passport-login/web/qrcode/generate?source=main-fe-header'
+  let body = ''
+  try {
+    body = gstPlayer.httpGet(url, 10)
+  } catch (e) {
+    console.warn('[login] generateQrCode httpGet failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
+    return null
+  }
+  if (!body) return null
+  let data = null
+  try { data = JSON.parse(body) } catch { return null }
+  if (data && data.code === 0 && data.data && data.data.url && data.data.qrcode_key) {
+    return { url: data.data.url, qrcodeKey: data.data.qrcode_key }
+  }
+  console.warn('[login] generateQrCode failed: ' + (data ? data.message : 'no data'))
+  return null
+}
+
+/**
+ * 轮询二维码登录状态
+ * @param {string} qrcodeKey
+ * @returns {Promise<{code: number, message: string, cookie?: string, url?: string}>}
+ * code: 0=成功, 86038=未扫码, 86090=已扫码未确认, 86101=二维码过期
+ * 成功时返回 cookie（需从 data.url 解析 SESSDATA 等）
+ */
+async function pollLoginQrCode(qrcodeKey) {
+  const url = PASSPORT_BASE + '/x/passport-login/web/qrcode/poll?qrcode_key=' + encodeURIComponent(qrcodeKey) + '&source=main-fe-header'
+  let body = ''
+  try {
+    body = gstPlayer.httpGet(url, 10)
+  } catch (e) {
+    console.warn('[login] pollQrCode httpGet failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
+    return { code: -1, message: 'http error' }
+  }
+  if (!body) return { code: -1, message: 'empty response' }
+  let data = null
+  try { data = JSON.parse(body) } catch { return { code: -1, message: 'parse error' } }
+  if (data && data.code === 0 && data.data && data.data.url) {
+    // 成功：data.url 形如 https://passport.bilibili.com/...?SESSDATA=xxx&bili_jct=xxx&...
+    // 从 url query 解析 cookie
+    try {
+      const u = new URL(data.data.url)
+      let cookie = ''
+      for (const [k, v] of u.searchParams.entries()) {
+        if (k === 'SESSDATA' || k === 'bili_jct' || k === 'DedeUserID' || k === 'DedeUserID__ckMd5' || k === 'sid') {
+          cookie += k + '=' + v + '; '
+        }
+      }
+      return { code: 0, message: 'ok', cookie: cookie, url: data.data.url }
+    } catch {}
+  }
+  return { code: data ? data.code : -1, message: data ? data.message : 'unknown' }
+}
+
+/**
+ * 登出（清本地 cookie + 调用登出接口）
+ */
+async function logoutLogin() {
+  // 清本地 cookie（storage 层处理）
+  // 调用登出接口（可选，需登录态）
+  const url = BASE + '/login/logout'
+  try {
+    await request(url, { method: 'POST', timeout: 8 })
+  } catch (e) {
+    console.warn('[login] logout error: ' + (e && e.message ? e.message : JSON.stringify(e)))
+  }
+}
+
 export default {
   getPopular: getPopular,
   getVideoInfo: getVideoInfo,
   getPlayUrl: getPlayUrl,
   searchVideo: searchVideo,
   getRelated: getRelated,
-  encWbi: encWbi
+  getReplies: getReplies,
+  encWbi: encWbi,
+  login: {
+    getLoginStatus: getLoginStatus,
+    generateLoginQrCode: generateLoginQrCode,
+    pollLoginQrCode: pollLoginQrCode,
+    logoutLogin: logoutLogin
+  }
 }
