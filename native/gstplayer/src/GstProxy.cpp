@@ -43,6 +43,15 @@ const char* kReferer = "https://www.bilibili.com/";
 const char* kUserAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+// 代理白名单（lilo 官方 tools_video 同款：B 站 CDN/资源域全部走本地代理 +
+// Referer 绕 403；其余域名不代理直连，避免影响其他网络场景）。
+// 子串匹配（域名 Contains），覆盖 *.<domain> 与裸 domain。
+const char* kWhiteList[] = {
+    "bilibili.com",      // api/www/upos 等
+    "bilivideo.com",     // B 站视频 CDN
+    "hdslb.com",         // 封面/静态资源
+    "mountaintoys.cn",   // B 站 edge CDN（真机 403 实证域）
+};
 
 std::atomic<bool> g_started{false};
 std::mutex g_startMutex;
@@ -332,6 +341,25 @@ std::string maybeRewrite(const std::string& uri)
 {
     if (uri.compare(0, 7, "http://") != 0 && uri.compare(0, 8, "https://") != 0) {
         return uri;  // 本地文件 / 其他协议不代理
+    }
+    // 白名单校验：仅 B 站相关域走代理（含子域；host 取 :// 到第一个 / 之间）
+    std::string host = uri;
+    size_t schemeEnd = host.find("://");
+    if (schemeEnd != std::string::npos) host = host.substr(schemeEnd + 3);
+    size_t pathStart = host.find('/');
+    if (pathStart != std::string::npos) host = host.substr(0, pathStart);
+    size_t colon = host.find(':');
+    if (colon != std::string::npos) host = host.substr(0, colon);  // 去端口
+    bool inWhitelist = false;
+    for (const char* wl : kWhiteList) {
+        if (host.find(wl) != std::string::npos) {
+            inWhitelist = true;
+            break;
+        }
+    }
+    if (!inWhitelist) {
+        PROXY_LOG("host '%s' not in whitelist, keep direct", host.c_str());
+        return uri;
     }
     if (!ensureStarted()) {
         PROXY_LOG("proxy unavailable, keep direct uri");
