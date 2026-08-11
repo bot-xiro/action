@@ -131,7 +131,7 @@ static bool setPlaneZpos(int planeId, uint32_t zpos)
         PLAYER_LOG("setPlaneZpos: plane %d set zpos=%u failed: %s", planeId, zpos, strerror(errno));
         return false;
     }
-    PLAYER_LOG("setPlaneZpos: plane %d zpos=%u OK (video below UI)", planeId, zpos);
+    PLAYER_LOG("setPlaneZpos: plane %d zpos=%u OK", planeId, zpos);
     return true;
 }
 #endif  // KMSSINK_TEST
@@ -291,20 +291,29 @@ void GstPlayer::open(JQFunctionInfo& info)
         return;
     }
 
+#ifdef KMSSINK_TEST
+    // 【2026-08-11 修复】视频 plane 76 置顶（zpos=0→3），盖过 UI 主平面（默认 0）：
+    // 根因：UI 层 XR24 不透明且 JQuick 不支持 hole/透明，双平面挖洞方案不可行。
+    // 现改为视频盖 UI（视频全可见），UI 控制栏布局避让到视频覆盖区之外（见 player.vue）。
+    // plane 76 在 buildPipeline 后由 kmssink 创建，此时设置生效且为内核态持久属性。
+    if (!setPlaneZpos(76, 3)) {
+        PLAYER_LOG("open WARN: video plane 76 zpos set failed (video may be hidden under UI)");
+    }
+#endif
+
     info.GetReturnValue().Set(true);
 }
 
 void GstPlayer::preheat(JQFunctionInfo& info)
 {
-    // 【闪烁修复 2026-08-09 用户诊断】zpos 层级设置必须移出播放路径：
-    // 播放器 open/start 时改 plane 层级会与 UI 平面夺层，导致合成器混乱闪烁。
-    // 本方法由 app.js onLaunch 启动时全局调用一次（幂等），此后播放不再碰 zpos。
+    // 【2026-08-11 修复】不再抬升 UI 主平面 zpos：
+    // 原逻辑 setPlaneZpos(54, 3) 把 UI 抬到视频之上，显示依赖 WebView hole 挖洞，
+    // 但 JQuick 框架不支持 hole/透明（UI 层恒为 XR24 不透明）→ 视频永远被盖 → 黑屏。
+    // 现改为视频 plane 自身置顶（见 open()），UI 保持 weston 默认 zpos=0。
+    // 本方法保留幂等入口（app.js onLaunch 调用），只做日志标记。
     static std::atomic<bool> done{false};
     if (!done.exchange(true)) {
-#ifdef KMSSINK_TEST
-        setPlaneZpos(54, 3);  // UI 主平面 54 zpos=0→3（视频 overlay 平面 76 默认 z=2 < 3）
-#endif
-        PLAYER_LOG("preheat: UI plane zpos lifted once (startup-only, out of play path)");
+        PLAYER_LOG("preheat: UI zpos untouched (video topmost strategy, out of play path)");
     }
     info.GetReturnValue().Set(true);
 }
@@ -331,6 +340,13 @@ void GstPlayer::start(JQFunctionInfo& info)
         return;
     }
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
+#ifdef KMSSINK_TEST
+    // 补设（幂等）：进入 PLAYING 后 kmssink 必然已持有 plane 76，
+    // 确保视频 zpos=3 置顶（open() 时可能因 plane 未建好而失败）。
+    if (!setPlaneZpos(76, 3)) {
+        PLAYER_LOG("start WARN: video plane 76 zpos set failed");
+    }
+#endif
     PLAYER_LOG("start set PLAYING");
     info.GetReturnValue().Set(true);
 }

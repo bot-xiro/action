@@ -9,22 +9,23 @@
         <!-- 双平面播放器工作区：
              WebView UI 平面（本页）+ 原生视频窗口（waylandsink/kmssink，平面叠加） -->
         <div v-else class="stage" @click="onScreenTap" @touchstart="onPinchStart" @touchmove="onPinchMove" @touchend="onPinchEnd">
-            <!-- holE 挖洞：绝对定位铺满页面视口 960×266，使 WebView 画布在该区域完全
-                 透明——底层视频层帧直接"透"上来，实现沉浸画面。
-                 注意：hole 尺寸必须与 JS 传入 gstPlayer.open 的 pos 参数一致（960×266），
-                 否则挖洞区域与 render-rectangle 错位，画面会漏出一圈黑边。 -->
+            <!-- holE 挖洞：绝对定位铺满视频覆盖区（700×266），与 gstPlayer.open 的
+                 pos_w=700 一致。注意：JQuick 框架不支持 hole/透明（UI 层恒为 XR24
+                 不透明），此处仅为语义保留，实际显示依赖视频 plane zpos=3 置顶。 -->
             <hole class="video-hole"></hole>
 
-            <!-- 顶部控制栏（返回 + 标题）：absolute 悬浮，z-index 999 保证在 DOM 最顶层。
-                 默认透明不可见（opacity 0 + pointer-events none），点击屏幕唤出。 -->
+            <!-- 控制栏（返回/标题 + 进度条 + 按钮）：absolute 定位在页面右侧
+                 （逻辑 x=700~960 → 物理 y=700~960 屏幕底部），位于视频覆盖区
+                 （逻辑 x=0~700 → 物理 y=0~700）之外 → 视频 zpos 置顶也不会遮挡。
+                 【2026-08-11 修复】原布局控制栏悬浮于视频之上（hole 挖洞方案），
+                 因框架不支持 hole 而永远被视频盖住；现改为区域分离布局。 -->
             <div class="ctrl-top" :class="{ 'ctrl-visible': controlsVisible }">
                 <text class="back-btn" @click="closePlayer">‹ 返回</text>
                 <text class="bar-title" :lines="1">{{ title }}</text>
             </div>
 
-            <!-- 底部控制栏（按钮行 + 进度条）：绝对定位悬浮，半透明黑底，
-                 与顶部栏共用同一显隐状态。
-                 【布局】两行：上=按钮行（左回退 / 中播放暂停 / 右快进），下=进度条+时间。 -->
+            <!-- 底部控制栏（按钮行 + 进度条）：与顶部栏共用同一显隐状态。
+                 【布局】两行：上=进度条+时间，下=按钮行（左回退 / 中播放暂停 / 右快进）。 -->
             <div class="ctrl-bottom" :class="{ 'ctrl-visible': controlsVisible }">
                 <div class="progress-row">
                     <!-- 进度条：自研实现（原生 seekbar 组件被框架忽略、回调零触发，见 DEV_LOG 2026-08-10，
@@ -57,11 +58,11 @@
 </template>
 
 <style scoped>
-/* 外层容器：铺满 960×480 全屏，背景透明测试（透明背景 → UI 层带 alpha →
-   底层 KMS 视频平面可透出；若框架不支持透明则退化为黑底） */
+/* 外层容器：铺满 960×480 全屏。背景纯黑——透明背景已被证实无效（UI 层恒为
+   XR24 不透明，JQuick 不支持 alpha），黑底保证视频外区域为黑边。 */
 .page {
     flex: 1;
-    background-color: transparent;
+    background-color: #000000;
     flex-direction: column;
 }
 
@@ -74,7 +75,7 @@
     height: 266px;
     align-items: center;
     justify-content: center;
-    background-color: transparent;
+    background-color: rgba(0, 0, 0, 0.8);
     z-index: 10;
 }
 
@@ -108,33 +109,31 @@
     left: 0;
     width: 960px;
     height: 266px;          /* 视口高度：页面恒为 960×266 长条屏 */
-    background-color: transparent;
+    background-color: #000000;
     overflow: hidden;
 }
 
-/* 挖洞区域：覆盖整个视口（top:0 是页面坐标；页面视口 960×266 正好对应
-   逻辑全屏 y=107~373 的视频条——物理竖条 266 宽居中，逻辑高 266。
-   严禁再偏移 top:107px：那会在视口内显示成"下半截洞"，上半部成黑块）
-   与 gstPlayer.open({ pos_x: 0, pos_y: 107, pos_w: 960, pos_h: 266 }) 对应：
-   pos_y=107 是【逻辑全屏】坐标（视频在 480 高逻辑屏中垂直居中），
-   页面在逻辑屏中的位置是 y=107 起，故洞用页面坐标 top:0、高 266。
-   此区域 WebView 画布全透明，KMS 视频平面透出。 */
+/* 挖洞区域：覆盖视频区（页面 x=0~700，逻辑高 266）——对应 gstPlayer.open
+   ({ pos_x: 0, pos_y: 107, pos_w: 700, pos_h: 266 })：
+   视频物理竖条 y=0~700（页面下方 y=700~960 为控制栏区，物理坐标）。
+   JQuick 不支持 hole/透明，此区域实际由视频 plane zpos=3 置顶覆盖。 */
 .video-hole {
     position: absolute;
     top: 0;
     left: 0;
-    width: 960px;
+    width: 700px;
     height: 266px;
     z-index: 1;
 }
 
-/* ---- 悬浮控制栏通用样式：默认隐藏 ---- */
+/* ---- 控制栏：定位页面右侧（逻辑 x=700~960 = 物理屏幕底部 y=700~960），
+   与视频覆盖区（逻辑 x=0~700）互不重叠 → 视频 zpos 置顶也不遮挡控制栏 ---- */
 .ctrl-top,
 .ctrl-bottom {
     position: absolute;
-    left: 0;
-    width: 960px;
-    z-index: 999;               /* DOM 最顶层，保证盖在 hole 之上 */
+    left: 700px;
+    width: 260px;
+    z-index: 999;               /* DOM 最顶层 */
     padding-left: 16px;
     padding-right: 16px;
     opacity: 0;                 /* 默认透明不可见，全屏沉浸播放 */
@@ -142,7 +141,7 @@
     transition: opacity 0.3s;   /* 淡入淡出（框架若不支持 transition 则退化为瞬间切换） */
 }
 
-/* 顶部栏保留半透明黑底：标题/返回键下方衬底保证视频上可读 */
+/* 顶部栏（返回 + 标题）：控制栏区上半部，半透明黑底保证可读 */
 .ctrl-top {
     top: 0;
     height: 60px;
@@ -151,32 +150,32 @@
     background-color: rgba(0, 0, 0, 0.5);
 }
 
-/* 底部控制栏：半透明黑底（正常手机端播放器样式，用户要求与之一致），
+/* 底部控制栏（进度条 + 按钮）：控制栏区下半部，半透明黑底，
    内容顺序：进度条在上、按钮行在下 */
 .ctrl-bottom {
-    bottom: 0;
-    height: 128px;
+    top: 60px;
+    height: 206px;
     flex-direction: column;
     justify-content: center;
     background-color: rgba(0, 0, 0, 0.5);
 }
 
-/* 按钮行：回退 / 播放暂停 / 快进 均匀分布（进度条下方，用户要求进度条在按钮上方） */
+/* 按钮行：回退 / 播放暂停 / 快进 均匀分布（进度条下方） */
 .btn-row {
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
-    width: 928px;               /* 960 - 左右 padding 16*2 */
+    width: 228px;               /* 260 - 左右 padding 16*2 */
 }
 
-/* 快进/回退按钮：小字按钮 */
+/* 快进/回退按钮：小字按钮（控制栏区窄，padding 收窄适配） */
 .seek-btn {
-    font-size: 18px;
+    font-size: 16px;
     color: #ffffff;
     padding-top: 6px;
-    padding-right: 22px;
+    padding-right: 10px;
     padding-bottom: 6px;
-    padding-left: 22px;
+    padding-left: 10px;
     border-radius: 4px;
     background-color: #2a2a2a;
     border-width: 1px;
@@ -185,41 +184,37 @@
 
 /* 播放/暂停小按钮：bilibili 粉红，位于按钮行中间 */
 .mini-play-btn {
-    font-size: 18px;
+    font-size: 16px;
     color: #ffffff;
     padding-top: 6px;
-    padding-right: 26px;
+    padding-right: 14px;
     padding-bottom: 6px;
-    padding-left: 26px;
+    padding-left: 14px;
     border-radius: 4px;
     background-color: #fb7299;  /* bilibili 粉红 */
 }
 
-/* 进度条行：纵向两行——上=轨道(全宽 928px 几何固定，便于坐标换算)，下=时间文本 */
+/* 进度条行：纵向两行——上=轨道（全宽 228px 几何固定，便于坐标换算），下=时间文本 */
 .progress-row {
     flex-direction: column;
     align-items: flex-start;
-    width: 928px;               /* 960 - 左右 padding 16*2 */
+    width: 228px;               /* 260 - 左右 padding 16*2 */
 }
 
-/* 轨道命中容器：高 36px——识别区 2.5× 扩大（用户要求：识别区域大一点，显示不要变大）。
-   背景 rgba(0,0,0,0.3)：与 ctrl-bottom 黑底同色系，视觉上几乎不可见，但满足框架
-   "实背景才可命中"的约束（近透明 div 无法命中，见 DEV_LOG 2026-08-10）。
-   命中区和视觉条分离：手指可触摸上下 11px 的盲区，看到的仍是中间 14px 细条。 */
+/* 轨道命中容器：高 36px——识别区 2.5× 扩大。背景 rgba(0,0,0,0.3)：与 ctrl-bottom
+   黑底同色系视觉近不可见，但满足框架"实背景才可命中"约束。 */
 .progress-track {
     position: relative;
-    width: 928px;
+    width: 228px;
     height: 36px;
     justify-content: center;    /* 内部视觉条垂直居中 */
     background-color: rgba(0, 0, 0, 0.3);
 }
 
-/* 视觉轨道：14px 白灰细条（居中于 36px 命中容器），承载 fill/thumb 视觉。
-   实背景 rgba(255,255,255,0.3)——探测版证实实背景元素可命中 touch；
-   近透明 div 无法命中。 */
+/* 视觉轨道：14px 白灰细条（居中于 36px 命中容器），承载 fill/thumb 视觉。 */
 .progress-track-line {
     position: relative;
-    width: 928px;
+    width: 228px;
     height: 14px;
     border-radius: 7px;
     background-color: rgba(255, 255, 255, 0.3);
@@ -296,8 +291,8 @@ const SEEK_STEP_MS = 10000       // 快进/回退单步时长（10 秒，毫秒�
 const PINCH_MIN_SCALE = 0.5      // 双指缩放下限（相对初始矩形）
 const PINCH_MAX_SCALE = 2.0      // 双指缩放上限（放大 2 倍后宽度超出屏幕，可平移查看细节）
 const PINCH_THROTTLE_MS = 40     // touchmove→setRect 调用节流间隔（JS→C++ 跨调用，减少 UI 线程开销）
-const TRACK_SCREEN_LEFT = 16     // 轨道左缘屏幕/页面坐标（ctrl-bottom padding-left，进度条 x=16 起）
-const TRACK_WIDTH = 928          // 轨道全宽（960 - 左右 padding 16*2，与 .progress-track 保持一致）
+const TRACK_SCREEN_LEFT = 716     // 轨道左缘页面坐标（ctrl-bottom 位于页面 x=700 + padding-left 16）
+const TRACK_WIDTH = 228           // 轨道全宽（260 - 左右 padding 16*2，与 .progress-track 保持一致）
 const TRACK_MOVE_THROTTLE_MS = 60 // 拖动 seek 节流：touchmove 高频触发时限制 JS→C++ 跨调用
 const LOGIC_TOP = 107            // 页面左上角在逻辑屏中的 y（open pos_y=107：页面 y → 逻辑 y = +107）
 
@@ -322,7 +317,9 @@ export default {
             stateCb: null,
             hideTimer: null,           // 自动隐藏定时器句柄
             // 双指缩放：当前渲染矩形（逻辑坐标，与 open pos_* 同坐标系，初始即 open 参数）
-            videoRect: { x: 0, y: 107, w: 960, h: 266 },
+            // 【2026-08-11】视频区收缩为 w=700（物理竖条 y=0~700），右侧 x=700~960
+            // 为控制栏区（物理底部）→ 视频与 UI 区域分离，互不遮挡
+            videoRect: { x: 0, y: 107, w: 700, h: 266 },
             pinch: null,               // 活跃捏合快照 {dist, x, y, w, h}；null=未捏合
             pinchTapGuard: false,      // 捏合结束后的下一个 click 吞噬标志
             trackDrag: null,           // 进度条拖动快照 {startX, startPct}；null=未在拖动
@@ -417,10 +414,9 @@ export default {
         tryPlay(url) {
             // gstplayer 为单例，直接方法调用；open/start 为同步方法。
             // 注意：KMS 双平面模式下 pos 传逻辑坐标。
-            // 【画面尺寸不变原则】：不传 960×480 全屏（会把视频放大），
-            // 保持 960×266 视口尺寸（视频等比 fit，画面不变大），
-            // pos_y=107 使物理竖条 x=107 居中 → 逻辑 y=107~373 垂直居中，
-            // 画面既不偏上也不偏下。
+            // 【2026-08-11 布局分离】pos_w=700：视频物理竖条只占屏幕上方 y=0~700
+            // （逻辑 x=0~700），下方 y=700~960 露出为控制栏区（页面右侧 x=700~960）——
+            // 视频 plane zpos=3 置顶也不遮挡控制栏。画面等比 fit，尺寸不变大。
             this.mPlayer = gstPlayer
             try {
                 var ok = this.mPlayer.open({
@@ -428,7 +424,7 @@ export default {
                     audio: true,
                     pos_x: 0,
                     pos_y: 107,
-                    pos_w: 960,
+                    pos_w: 700,
                     pos_h: 266,
                     // fill 在 KMS 模式下无意义（几何由 render-rectangle 决定），不传
                     loop: 0
@@ -772,10 +768,13 @@ onScreenTap() {
             // 以两指中心为锚：新中心 = 手势中心；矩形左上角随之移动
             var x = Math.round(cxp - w / 2)
             var y = Math.round(cyp - h / 2)
-            // 边界钳制（逻辑坐标 960×480）：始终保留 80×40 可见（放大超屏后可平移，不可完全移出）
-            var minX = 80 - w
+            // 边界钳制（逻辑坐标 960×480）：
+            // 视频下端（逻辑 x + w，物理 y 方向）≤ 700 → 不侵入控制栏区（x=700~960）。
+            // w ≤ 700 时 x 锁定 0；放大（w>700）时 x 可左移（视频顶部超出屏幕），
+            // 可平移查看细节，但下端恒 ≤ 700，控制栏永不被盖。
+            var minX = 700 - w
+            var maxX = 0
             var minY = 40 - h
-            var maxX = 960 - 80
             var maxY = 480 - 40
             if (x < minX) x = minX
             if (x > maxX) x = maxX
