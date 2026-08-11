@@ -7,34 +7,38 @@
             <text class="topbar-right"></text>
         </div>
 
-        <!-- 播放器设置 -->
-        <div class="section">
-            <text class="section-title">播放器</text>
+        <!-- 内容滚动区：视口 960×266 有限，内容超出可上下翻动 -->
+        <scroller scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60">
+            <!-- 播放器设置 -->
+            <div class="section">
+                <text class="section-title">播放器</text>
 
-            <!-- 选项1：自研 gstplayer -->
-            <div class="option" :class="{ 'option-active': mode === 'gst' }" @click="onSelect('gst')">
-                <div class="option-left">
-                    <text class="option-name">自研播放器</text>
-                    <text class="option-desc">KMS 双平面，视频独立平面（gstplayer）</text>
+                <!-- 选项1：自研 gstplayer -->
+                <div class="option" :class="{ 'option-active': mode === 'gst' }" @click="onSelect('gst')">
+                    <div class="option-left">
+                        <text class="option-name">自研播放器</text>
+                        <text class="option-desc">KMS 双平面，视频独立平面（gstplayer）</text>
+                    </div>
+                    <text v-if="mode === 'gst'" class="option-badge">当前</text>
                 </div>
-                <text v-if="mode === 'gst'" class="option-badge">当前</text>
+
+                <!-- 选项2：系统播放器 -->
+                <div class="option" :class="{ 'option-active': mode === 'system' }" @click="onSelect('system')">
+                    <div class="option-left">
+                        <text class="option-name">系统播放器</text>
+                        <text class="option-desc">调起系统播放器应用，自带控制栏悬浮</text>
+                    </div>
+                    <text v-if="mode === 'system'" class="option-badge">当前</text>
+                </div>
             </div>
 
-            <!-- 选项2：系统播放器 CVPlayer -->
-            <div class="option" :class="{ 'option-active': mode === 'system' }" @click="onSelect('system')">
-                <div class="option-left">
-                    <text class="option-name">系统播放器</text>
-                    <text class="option-desc">框架原生视频，控制栏悬浮在视频上</text>
-                </div>
-                <text v-if="mode === 'system'" class="option-badge">当前</text>
+            <!-- 说明 -->
+            <div class="tips">
+                <text class="tips-text">提示：切换后进入播放页生效。</text>
+                <text class="tips-text">系统播放器 = 调起系统视频播放器应用播放（8001661999525016）：自带控制栏悬浮、无层级遮挡问题；播放期间本应用退到后台，返回后继续浏览。</text>
+                <text class="tips-text">自研播放器 = gstplayer（KMS 双平面），视频独立平面渲染；控制栏唤出时视频画面让位。</text>
             </div>
-        </div>
-
-        <!-- 说明 -->
-        <div class="tips">
-            <text class="tips-text">提示：切换后进入播放页生效。</text>
-            <text class="tips-text">系统播放器使用框架原生视频通道，视频在 UI 层内合成，控制栏可悬浮在视频上方。</text>
-        </div>
+        </scroller>
     </div>
 </template>
 

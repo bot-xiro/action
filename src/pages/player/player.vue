@@ -398,6 +398,13 @@ export default {
     },
     methods: {
         async loadPlayUrl() {
+            // 开发自测/直连：bvid 参数直接放完整播放 URL（cid 留空）→ 直连播放
+            // （测试入口见 index.vue"测试"按钮：navTo player 传 bvid=url）
+            if (this.bvid && !this.cid) {
+                console.warn('[player] direct url=' + this.bvid)
+                this.tryPlay(this.bvid)
+                return
+            }
             if (!this.bvid || !this.cid) {
                 this.error = '缺少播放参数 ' + JSON.stringify(this.$page.loadOptions)
                 this.loading = false
@@ -423,14 +430,31 @@ export default {
         },
         tryPlay(url) {
             // 【播放器切换 2026-08-11】按设置选择播放器：
-            //   'gst'    = 自研 gstplayer（KMS 双平面，视频独立平面）
-            //   'system' = 系统播放器 CVPlayer（框架原生，视频在 UI 层内合成，
-            //              控制栏可悬浮在视频上——目标方案，待 CVPlayer 接入）
-            // CVPlayer 探测（app.js [probe]）：getCVPlayerManager/CVPlayer/
-            // getVideoManager 当前 undefined；若框架模块可用则在此分支实现。
-            // 未就绪前 system 模式回退 gstplayer，保证可播。
+            //   'gst'    = 自研 gstplayer（KMS 双平面，视频独立 plane）
+            //   'system' = 系统播放器（appid 8001661999525016）：$falcon.startApp
+            //              打开系统播放器应用播放（DEV_LOG 2026-08-10 已验证可打开；
+            //              系统播放器单平面渲染 + 自带控制栏，无层级遮挡问题）。
+            // CVPlayer/videoproxy 应用层不可用（2026-08-11 probe：getCVPlayerManager
+            // undefined、require videoproxy/cvplayer/bridge/fido 均 unknown module），
+            // 因此系统播放器只能通过 startApp 拉起独立应用（bilibili 退后台，
+            // 播放页显示提示文案，返回后继续浏览）。
             if (this.playerMode === 'system') {
-                console.warn('[player] system player requested, fallback gstplayer (CVPlayer probing)')
+                console.warn('[player] system player: startApp 8001661999525016 url=' + url)
+                try {
+                    var appRet = $falcon.startApp('8001661999525016', {
+                        url: url,
+                        title: this.title || 'bilibili'
+                    })
+                    console.warn('[player] startApp ret=' + JSON.stringify(appRet))
+                    // 调起成功：bilibili 退后台，系统播放器接管播放（自带控制栏悬浮）
+                    this.error = '已调起系统播放器播放，返回后继续浏览'
+                    this.loading = false
+                    this.ready = false
+                    return
+                } catch (e) {
+                    console.warn('[player] startApp error: ' + (e && e.message))
+                    // 调起失败回退 gstplayer，保证可播
+                }
             }
 
             // gstplayer 为单例，直接方法调用；open/start 为同步方法。
