@@ -439,23 +439,26 @@ export default {
             // 因此系统播放器只能通过 startApp 拉起独立应用（bilibili 退后台，
             // 播放页显示提示文案，返回后继续浏览）。
             if (this.playerMode === 'system') {
-                console.warn('[player] system player: navToApp 8001661999525016 url=' + url)
+                console.warn('[player] system player: navTo falcon://8001661999525016 url=' + url)
                 try {
-                    // 【2026-08-11 实测修正】$falcon.startApp 不存在（not a function）——
-                    // 框架正确 API 是 $falcon.navToApp(target, params)（js-framework.min.bin
-                    // 字符串实证：navToApp 与 navTo 同签名；DEV_LOG 的 startApp 是旧分支 API）
-                    var appRet = $falcon.navToApp('8001661999525016', {
+                    // 【2026-08-11 修正2】startApp/navToApp 均不存在（not a function）。
+                    // 框架 JS 字符串实证（js-framework.min.bin）：
+                    //   "startsWith falcon:// navToApp navToPage" 顺序对应 target 分发
+                    //   if → target.startsWith('falcon://') 走 navToApp（跨应用）
+                    //   else → navToPage（页内）
+                    // 故打开系统播放器 = $falcon.navTo('falcon://<appid>', params)
+                    var appRet = $falcon.navTo('falcon://8001661999525016', {
                         url: url,
                         title: this.title || 'bilibili'
                     })
-                    console.warn('[player] navToApp ret=' + JSON.stringify(appRet))
+                    console.warn('[player] navTo falcon:// ret=' + JSON.stringify(appRet))
                     // 调起成功：bilibili 退后台，系统播放器接管播放（自带控制栏悬浮）
                     this.error = '已调起系统播放器播放，返回后继续浏览'
                     this.loading = false
                     this.ready = false
                     return
                 } catch (e) {
-                    console.warn('[player] navToApp error: ' + (e && e.message))
+                    console.warn('[player] navTo falcon:// error: ' + (e && e.message))
                     // 调起失败回退 gstplayer，保证可播
                 }
             }
