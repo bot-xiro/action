@@ -57,10 +57,11 @@
 </template>
 
 <style scoped>
-/* 外层容器：铺满 960×480 全屏，背景纯黑（视频之外的区域保持黑边效果） */
+/* 外层容器：铺满 960×480 全屏，背景透明测试（透明背景 → UI 层带 alpha →
+   底层 KMS 视频平面可透出；若框架不支持透明则退化为黑底） */
 .page {
     flex: 1;
-    background-color: #000000;
+    background-color: transparent;
     flex-direction: column;
 }
 
@@ -73,7 +74,7 @@
     height: 266px;
     align-items: center;
     justify-content: center;
-    background-color: #000000;
+    background-color: transparent;
     z-index: 10;
 }
 
@@ -107,7 +108,7 @@
     left: 0;
     width: 960px;
     height: 266px;          /* 视口高度：页面恒为 960×266 长条屏 */
-    background-color: #000000;
+    background-color: transparent;
     overflow: hidden;
 }
 
