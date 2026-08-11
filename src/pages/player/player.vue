@@ -9,26 +9,19 @@
         <!-- 双平面播放器工作区：
              WebView UI 平面（本页）+ 原生视频窗口（waylandsink/kmssink，平面叠加） -->
         <div v-else class="stage" @click="onScreenTap" @touchstart="onPinchStart" @touchmove="onPinchMove" @touchend="onPinchEnd">
-            <!-- holE 挖洞：绝对定位铺满页面视口 960×266，与 gstPlayer.open 的
-                 pos 参数一致（960×266 全屏视频区）。【2026-08-11 用户指令】层级基线：
-                 视频 plane 76 zpos=0 置底 + UI 平面抬 zpos=1（preheat）→ 控制栏盖住
-                 视频；本 hole 为后续挖洞预留（洞区域透明后视频从洞中透出）。 -->
-            <hole class="video-hole"></hole>
-
-            <!-- 顶部控制栏（返回 + 标题）：absolute 悬浮，z-index 999 保证在 DOM 最顶层。
-                 默认透明不可见（opacity 0 + pointer-events none），点击屏幕唤出。
-                 【2026-08-11】恢复悬浮布局（用户要求）：视频全屏 + 控制栏悬浮在视频上。
-                 gstplayer 双平面下控制栏会被视频 plane 遮挡，需框架原生视频
-                 （CVPlayer，视频在 UI 层内合成）才能让悬浮生效。 -->
-            <div class="ctrl-top" :class="{ 'ctrl-visible': controlsVisible }">
+            <!-- 【2026-08-11 嵌进播放器】视频条缩到页面中间区域（y 60~202，960×142），
+                 zpos=3 常驻置顶但只覆盖中间条；控制栏在上下条（视频 plane 之外）→
+                 控制栏显示时视频始终可见，互不遮挡——无需挖洞（挖洞三重实证不可行：
+                 编译产物无 hole 语义、jsfm 渲染器 0 匹配 "hole"、WebView surface XR24
+                 无 alpha）。logical pos 见 LOGIC_TOP=107 换算。 -->
+            <div v-if="controlsVisible" class="ctrl-top">
                 <text class="back-btn" @click="closePlayer">‹ 返回</text>
                 <text class="bar-title" :lines="1">{{ title }}</text>
             </div>
 
-            <!-- 底部控制栏（按钮行 + 进度条）：绝对定位悬浮，半透明黑底，
-                 与顶部栏共用同一显隐状态。
-                 【布局】两行：上=按钮行（左回退 / 中播放暂停 / 右快进），下=进度条+时间。 -->
-            <div class="ctrl-bottom" :class="{ 'ctrl-visible': controlsVisible }">
+            <!-- 底部控制栏（按钮行 + 进度条）：绝对定位在页面底部条
+                 （视频 plane 覆盖范围之外），常驻显示不遮挡视频。 -->
+            <div v-if="controlsVisible" class="ctrl-bottom">
                 <div class="progress-row">
                     <!-- 进度条：自研实现（原生 seekbar 组件被框架忽略、回调零触发，见 DEV_LOG 2026-08-10，
                          官方应用亦无使用 seekbar 的先例，弃用）。track 全宽 928px 几何确定，
@@ -104,7 +97,7 @@
 }
 
 /* ---- 播放器工作区：覆盖播放页视口 960×266（设备真实视口，见 cap_index_33.png
-     物证），absolute 脱离文档流承载 hole 与悬浮控制栏 ---- */
+     物证），absolute 脱离文档流承载视频条与上下控制栏 ---- */
 .stage {
     position: absolute;
     top: 0;
@@ -115,35 +108,18 @@
     overflow: hidden;
 }
 
-/* 挖洞区域：覆盖整个视口（页面 x=0~960，逻辑高 266）——对应 gstPlayer.open
-   ({ pos_x: 0, pos_y: 107, pos_w: 960, pos_h: 266 })：视频物理全屏竖条。
-   【2026-08-11】视频 zpos=0 置底 + UI zpos=1 盖视频（控制栏可操作），
-   挖洞透出视频后再依赖本区域透明显示。 */
-.video-hole {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 960px;
-    height: 266px;
-    z-index: 1;
-}
-
-/* ---- 悬浮控制栏通用样式：默认隐藏，铺满页面全宽（悬浮于视频之上，
-   系统播放器 CVPlayer 方案下视频在 UI 层内合成，控制栏自然浮在视频上） ---- */
+/* ---- 悬浮控制栏通用样式：位于视频条（页面 y 60~202）上方/下方条带，
+     zpos 与视频 plane 无冲突（视频只覆盖中间条），常驻显示 ---- */
 .ctrl-top,
 .ctrl-bottom {
     position: absolute;
     left: 0;
     width: 960px;
-    z-index: 999;               /* DOM 最顶层，保证盖在 hole 之上 */
     padding-left: 16px;
     padding-right: 16px;
-    opacity: 0;                 /* 默认透明不可见，全屏沉浸播放 */
-    pointer-events: none;       /* 不可点击，点击事件穿透到 stage 唤出控制栏 */
-    transition: opacity 0.3s;   /* 淡入淡出（框架若不支持 transition 则退化为瞬间切换） */
 }
 
-/* 顶部栏保留半透明黑底：标题/返回键下方衬底保证视频上可读 */
+/* 顶部栏保留半透明黑底：标题/返回键下方衬底保证可读 */
 .ctrl-top {
     top: 0;
     height: 60px;
@@ -152,11 +128,10 @@
     background-color: rgba(0, 0, 0, 0.5);
 }
 
-/* 底部控制栏：半透明黑底（正常手机端播放器样式，用户要求与之一致），
-   内容顺序：进度条在上、按钮行在下 */
+/* 底部控制栏：紧凑两行（进度条 + 按钮行），黑底。76 = 进度行(24+20) + 按钮行(~27) */
 .ctrl-bottom {
     bottom: 0;
-    height: 128px;
+    height: 76px;
     flex-direction: column;
     justify-content: center;
     background-color: rgba(0, 0, 0, 0.5);
@@ -174,9 +149,9 @@
 .seek-btn {
     font-size: 18px;
     color: #ffffff;
-    padding-top: 6px;
+    padding-top: 2px;
     padding-right: 22px;
-    padding-bottom: 6px;
+    padding-bottom: 2px;
     padding-left: 22px;
     border-radius: 4px;
     background-color: #2a2a2a;
@@ -188,9 +163,9 @@
 .mini-play-btn {
     font-size: 18px;
     color: #ffffff;
-    padding-top: 6px;
+    padding-top: 2px;
     padding-right: 26px;
-    padding-bottom: 6px;
+    padding-bottom: 2px;
     padding-left: 26px;
     border-radius: 4px;
     background-color: #fb7299;  /* bilibili 粉红 */
@@ -203,17 +178,17 @@
     width: 928px;               /* 960 - 左右 padding 16*2 */
 }
 
-/* 轨道命中容器：高 36px——识别区 2.5× 扩大。背景 rgba(0,0,0,0.3)：与 ctrl-bottom
-   黑底同色系视觉近不可见，但满足框架"实背景才可命中"约束。 */
+/* 轨道命中容器：高 24px——识别区 1.7×（紧凑底栏 76px 内）。背景 rgba(0,0,0,0.3)：
+   与 ctrl-bottom 黑底同色系视觉近不可见，但满足框架"实背景才可命中"约束。 */
 .progress-track {
     position: relative;
     width: 928px;
-    height: 36px;
+    height: 24px;
     justify-content: center;    /* 内部视觉条垂直居中 */
     background-color: rgba(0, 0, 0, 0.3);
 }
 
-/* 视觉轨道：14px 白灰细条（居中于 36px 命中容器），承载 fill/thumb 视觉。 */
+/* 视觉轨道：14px 白灰细条（居中于 24px 命中容器），承载 fill/thumb 视觉。 */
 .progress-track-line {
     position: relative;
     width: 928px;
@@ -249,17 +224,11 @@
 }
 
 .time-text {
-    margin-top: 4px;
-    font-size: 16px;
+    margin-top: 2px;
+    font-size: 14px;
     color: #ffffff;
     text-align: right;
     width: 100%;
-}
-
-/* 唤出状态：完全不透明、可交互 */
-.ctrl-visible {
-    opacity: 1;
-    pointer-events: auto;
 }
 
 .back-btn {
@@ -297,7 +266,7 @@ const PINCH_THROTTLE_MS = 40     // touchmove→setRect 调用节流间隔（JS�
 const TRACK_SCREEN_LEFT = 16     // 轨道左缘屏幕/页面坐标（ctrl-bottom padding-left，进度条 x=16 起）
 const TRACK_WIDTH = 928          // 轨道全宽（960 - 左右 padding 16*2，与 .progress-track 保持一致）
 const TRACK_MOVE_THROTTLE_MS = 60 // 拖动 seek 节流：touchmove 高频触发时限制 JS→C++ 跨调用
-const LOGIC_TOP = 107            // 页面左上角在逻辑屏中的 y（open pos_y=107：页面 y → 逻辑 y = +107）
+const LOGIC_TOP = 107            // 页面左上角在逻辑屏中的 y（open pos_y=167：页面 y=60 → 逻辑 y=167）
 
 export default {
     name: 'player',
@@ -311,18 +280,20 @@ export default {
             loading: true,
             paused: false,
             error: '',
-            controlsVisible: false,   // 控制栏显隐状态（默认隐藏）
+            controlsVisible: true,   // 控制栏常驻显示（视频条在中间，与上下控制栏无重叠）
             btnTapJustOccurred: false, // 按钮点击标志：短路 onScreenTap 的 toggle（防按钮点击冒泡误隐藏）
             duration: 0,               // 总时长（毫秒，getDuration）
             currentPosition: 0,        // 当前播放位置（毫秒，getPosition 轮询）
             progressTimer: null,       // 进度轮询定时器句柄
             mPlayer: null,
             stateCb: null,
-            hideTimer: null,           // 自动隐藏定时器句柄
+            hideTimer: null,           // 自动隐藏定时器句柄（当前常驻显示，保留字段备用）
             playerMode: settings.DEFAULT_MODE,  // 播放器模式：gst=自研 / system=系统播放器
-            // 双指缩放：当前渲染矩形（逻辑坐标，与 open pos_* 同坐标系，初始即 open 参数）
-            // 【2026-08-11】恢复全屏：视频区域 960×266（用户要求视频不缩短/不放大）
-            videoRect: { x: 0, y: 107, w: 960, h: 266 },
+            // 视频渲染矩形（逻辑坐标，与 open pos_* 同坐标系，初始即 open 参数）
+            // 【2026-08-11 嵌进播放器】视频中间条：页面内 y 60~190 → 逻辑 y
+            // 167~297（LOGIC_TOP=107 + 60）；h=130（页面 266 - 顶栏 60 - 底栏 76）。
+            // 控制栏上下条不被视频 plane 覆盖 → 常驻显示互不遮挡。
+            videoRect: { x: 0, y: 167, w: 960, h: 130 },
             pinch: null,               // 活跃捏合快照 {dist, x, y, w, h}；null=未捏合
             pinchTapGuard: false,      // 捏合结束后的下一个 click 吞噬标志
             trackDrag: null,           // 进度条拖动快照 {startX, startPct}；null=未在拖动
@@ -340,14 +311,12 @@ export default {
             console.warn('[player] stateChanged: ' + state)
             if (state === 'playing') {
                 this.paused = false
-                // 【2026-08-11 动态层级】播放中视频置顶（zpos=3）全屏可见，
-                // 不再自动显示控制栏（会触发置底遮挡视频）；用户点击唤出。
-                this.setVideoTopmost(true)
-                // 播放中启动 500ms 进度轮询（获时长/位置驱动进度条）
+                // 【2026-08-11 嵌进播放器】视频已常驻置顶（open 后 zpos=3），
+                // 这里只启动进度轮询（获时长/位置驱动进度条）
                 this.startProgressPolling()
             } else if (state === 'paused') {
                 this.paused = true
-                // 暂停时控制栏常驻，便于用户再次点击播放
+                // 暂停时控制栏常驻显示（本就常驻），便于用户再次点击播放
                 this.showControls()
                 if (this.hideTimer) {
                     clearTimeout(this.hideTimer)
@@ -469,31 +438,28 @@ export default {
                 }
             }
 
-            // gstplayer 为单例，直接方法调用；open/start 为同步方法。
-            // 注意：KMS 双平面模式下 pos 传逻辑坐标。
-            // 【画面尺寸不变原则】：不传 960×480 全屏（会把视频放大），
-            // 保持 960×266 视口尺寸（视频等比 fit，画面不变大），
-            // pos_y=107 使物理竖条 x=107 居中 → 逻辑 y=107~373 垂直居中，
-            // 画面既不偏上也不偏下。
+            // 【画面尺寸不变原则】：视频中间条（页面 y 60~190，逻辑 y 167~297）。
+            // KMS 双平面下视频只覆盖中间条，上下条留给控制栏（常驻可见互不遮挡）。
             this.mPlayer = gstPlayer
             try {
                 var ok = this.mPlayer.open({
                     uri: url,
                     audio: true,
                     pos_x: 0,
-                    pos_y: 107,
+                    pos_y: 167,
                     pos_w: 960,
-                    pos_h: 266,
+                    pos_h: 130,
                     // fill 在 KMS 模式下无意义（几何由 render-rectangle 决定），不传
                     loop: 0
                 })
                 console.warn('[player] open ret: ' + ok)
+                // 【2026-08-11 嵌进播放器】视频常驻置顶（zpos=3）：只覆盖中间条，
+                // 控制栏上下条不受影响，无需再动态切换层级。
+                this.setVideoTopmost(true)
                 this.mPlayer.start()
                 this.ready = true
                 this.loading = false
                 console.warn('[player] play OK')
-                // 播放开始后先唤出控制栏，5 秒自动隐藏
-                this.showControls()
             } catch (e) {
                 var msg = (e && e.message) ? e.message : JSON.stringify(e)
                 this.error = '播放失败: ' + msg
@@ -501,12 +467,9 @@ export default {
                 console.warn('[player] play error: ' + msg)
             }
         },
-        // ---- 控制栏显隐逻辑 ----
-        // 【2026-08-11 动态层级】控制栏与视频层级联动：
-        //   唤出控制栏 → 视频置底(zpos=0, UI zpos=1 盖视频) → 控制栏可操作
-        //   隐藏控制栏 → 视频置顶(zpos=3) → 视频全屏可见
-        // 背景：UI 层 XR24 不透明、JQuick 不支持 hole，双平面下两者互斥，
-        // 只能动态切换（DRM plane zpos 属性即时生效，见 GstPlayer.cpp setVideoZpos）
+// ---- 控制栏显隐逻辑 ----
+        // 【2026-08-11 嵌进播放器】视频常驻置顶（zpos=3）且只覆盖中间条，
+        // 控制栏上下条在视频 plane 之外——显隐不再影响视频层级，仅淡入淡出 UI。
         setVideoTopmost(top) {
             if (!this.mPlayer) return
             try {
@@ -518,18 +481,9 @@ export default {
         },
         showControls() {
             this.controlsVisible = true
-            this.setVideoTopmost(false)   // 控制栏唤出：视频置底让位
-            // 回复 5 秒自动隐藏计时（暂停时由 stateChanged 分支常驻，不在此重启）
-            if (!this.paused && this.hideTimer === null) {
-                var self = this
-                this.hideTimer = setTimeout(function () {
-                    self.controlsVisible = false
-                    self.hideTimer = null
-                    console.warn('[player] controls auto-hide')
-                }, CONTROLS_HIDE_MS)
-            }
+            // 视频常驻置顶，不再置底让位（控制栏在视频 plane 之外）
         },
-onScreenTap() {
+        onScreenTap() {
             // 屏幕点击 toggle 控制栏：隐藏时点击唤出；显示时点击空白区域隐藏。
             // 按钮点击通过 btnTapJustOccurred 标志短路（框架事件冒泡，不支持 .stop 修饰符）
             if (!this.ready) return
@@ -554,7 +508,7 @@ onScreenTap() {
                 this.hideTimer = null
             }
             this.controlsVisible = false
-            this.setVideoTopmost(true)   // 控制栏隐藏：视频恢复置顶全屏可见
+            // 视频已常驻置顶，无需恢复
         },
         onTogglePlay() {
             // 防御：控制栏隐藏/未渲染时不响应（框架若不支持 pointer-events 则防误触）
