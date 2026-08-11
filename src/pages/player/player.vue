@@ -284,6 +284,7 @@
 
 <script>
 import api from '../../utils/api.js'
+import settings from '../../utils/settings.js'
 import { gstPlayer } from 'gstplayer'
 
 const CONTROLS_HIDE_MS = 5000   // 控制栏无操作自动隐藏延时（5 秒）
@@ -317,6 +318,7 @@ export default {
             mPlayer: null,
             stateCb: null,
             hideTimer: null,           // 自动隐藏定时器句柄
+            playerMode: settings.DEFAULT_MODE,  // 播放器模式：gst=自研 / system=系统播放器
             // 双指缩放：当前渲染矩形（逻辑坐标，与 open pos_* 同坐标系，初始即 open 参数）
             // 【2026-08-11】恢复全屏：视频区域 960×266（用户要求视频不缩短/不放大）
             videoRect: { x: 0, y: 107, w: 960, h: 266 },
@@ -369,7 +371,13 @@ export default {
             console.warn('[player] stateChanged.on error: ' + e.message)
         }
 
-        this.loadPlayUrl()
+        // 读取播放器模式（gst=自研 / system=系统播放器），再加载播放地址
+        var self = this
+        settings.getMode().then(function (m) {
+            self.playerMode = m
+            console.warn('[player] playerMode=' + m)
+            self.loadPlayUrl()
+        })
     },
     beforeDestroy() {
         console.warn('[player] beforeDestroy')
@@ -412,6 +420,17 @@ export default {
             }
         },
         tryPlay(url) {
+            // 【播放器切换 2026-08-11】按设置选择播放器：
+            //   'gst'    = 自研 gstplayer（KMS 双平面，视频独立平面）
+            //   'system' = 系统播放器 CVPlayer（框架原生，视频在 UI 层内合成，
+            //              控制栏可悬浮在视频上——目标方案，待 CVPlayer 接入）
+            // CVPlayer 探测（app.js [probe]）：getCVPlayerManager/CVPlayer/
+            // getVideoManager 当前 undefined；若框架模块可用则在此分支实现。
+            // 未就绪前 system 模式回退 gstplayer，保证可播。
+            if (this.playerMode === 'system') {
+                console.warn('[player] system player requested, fallback gstplayer (CVPlayer probing)')
+            }
+
             // gstplayer 为单例，直接方法调用；open/start 为同步方法。
             // 注意：KMS 双平面模式下 pos 传逻辑坐标。
             // 【画面尺寸不变原则】：不传 960×480 全屏（会把视频放大），

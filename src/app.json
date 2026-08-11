@@ -3,7 +3,8 @@
     "index": "pages/index/index.vue",
     "detail": "pages/detail/detail.vue",
     "player": "pages/player/player.vue",
-    "search": "pages/search/search.vue"
+    "search": "pages/search/search.vue",
+    "settings": "pages/settings/settings.vue"
   },
   "options": {
     "external": ["gstplayer"]

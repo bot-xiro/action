@@ -6,6 +6,7 @@
             <div class="topbar-right">
                 <text class="topbar-status">{{ statusText }}</text>
                 <text class="topbar-search" @click="openSearch">搜索</text>
+                <text class="topbar-search" @click="openSettings">设置</text>
             </div>
         </div>
 
@@ -310,6 +311,10 @@ export default {
         openSearch() {
             console.log('[index] openSearch')
             $falcon.navTo('search', {})
+        },
+        openSettings() {
+            console.log('[index] openSettings')
+            $falcon.navTo('settings', {})
         }
     }
 }
