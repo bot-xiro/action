@@ -283,10 +283,11 @@ void GstPlayer::open(JQFunctionInfo& info)
     // 关闭旧管线
     teardown();
 
-    // 【2026-08-11 本地反向代理】http(s) 直链透明改写为
-    // http://127.0.0.1:18600/?u=<原始地址>：代理内部 curl 附加 B 站防 403 所需
-    // Referer/UA 并透传 Range（seek），JQuick 层零改动即自动启用。
-    uri = proxy::maybeRewrite(uri);
+    // 【2026-08-11 用户指令】自研播放器【直连】播放，不走本地反向代理。
+    // GstProxy（GstProxy.h/.cpp）代码保留备用；直连绕过 B 站 CDN 403 依赖
+    // buildPipeline 中 souphttpsrc 的 extra-headers Referer（877be03，见下）：
+    //   extra-headers: { referer: "https://www.bilibili.com/" }
+    // uri = proxy::maybeRewrite(uri);  // 代理改写开关（当前关闭）
 
     PLAYER_LOG("open uri=%s audio=%d rect=%s fill=%s", uri.c_str(), audio ? 1 : 0, rect.str().c_str(), fill.c_str());
     bool ok = buildPipeline(uri, audio, rect.str(), fill);
