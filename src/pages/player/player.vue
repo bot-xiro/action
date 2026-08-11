@@ -438,7 +438,13 @@ export default {
             // undefined、require videoproxy/cvplayer/bridge/fido 均 unknown module），
             // 因此系统播放器只能通过 startApp 拉起独立应用（bilibili 退后台，
             // 播放页显示提示文案，返回后继续浏览）。
-            if (this.playerMode === 'system') {
+            //
+            // 【临时 2026-08-11 代理验证期】8001661999525016 实为 ChineseBook（语文
+            // 课本，非视频播放器；真 VideoPlayer 8001650875810145 未安装），其
+            // videoproxy 无 Referer → B 站直链 403 → "数据错误"。storage 残留
+            // system 会误走死路，故代理验证期强制关闭 system 分支，一律 gst
+            // （gst 已内置本地反向代理自动带 Referer）。验证通过后恢复开关。
+            if (false && this.playerMode === 'system') {
                 console.warn('[player] system player: navTo falcon://8001661999525016 url=' + url)
                 try {
                     // 【2026-08-11 修正2】startApp/navToApp 均不存在（not a function）。
