@@ -324,6 +324,37 @@ void GstPlayer::preheat(JQFunctionInfo& info)
     info.GetReturnValue().Set(true);
 }
 
+// 【2026-08-11 动态层级】运行时切换视频 plane 76 的 zpos：
+// 前端控制栏显隐联动（见 player.vue showControls/hideControls/playing 分支）：
+//   - 播放中：setVideoZpos(3) 视频置顶 → 全屏可见（盖过 UI，zpos 3 > UI 1）
+//   - 控制栏唤出：setVideoZpos(0) 视频置底 → UI 控制栏可操作（zpos 1 > 0）
+// 背景：UI 层恒 XR24 不透明且 JQuick 不支持 hole，双平面下"视频可见"与
+// "控制栏可操作"互斥，只能动态切换层级（调用即时生效，DRM 属性内核态持久）。
+// 入参: setVideoZpos(3) 数字；或 setVideoZpos({zpos:3}) 对象。
+// 非 KMSSINK 构建（waylandsink 单平面）下无需层级切换，直接忽略。
+void GstPlayer::setVideoZpos(JQFunctionInfo& info)
+{
+#ifdef KMSSINK_TEST
+    int zpos = 0;
+    if (info.Length() > 0) {
+        if (JS_ToInt32(info.GetContext(), &zpos, info[0]) != 0) {
+            // 对象形态 {zpos: N} 兜底
+            zpos = jsGetInt(info.GetContext(), info[0], "zpos", 0);
+        }
+    }
+    if (zpos < 0) zpos = 0;
+    if (zpos > 10) zpos = 10;
+    if (!setPlaneZpos(76, (uint32_t)zpos)) {
+        PLAYER_LOG("setVideoZpos: plane 76 zpos=%d set failed", zpos);
+    } else {
+        PLAYER_LOG("setVideoZpos: plane 76 zpos=%d OK", zpos);
+    }
+#else
+    PLAYER_LOG("setVideoZpos: ignored (non-KMSSINK build)");
+#endif
+    info.GetReturnValue().Set(true);
+}
+
 void GstPlayer::start(JQFunctionInfo& info)
 {
     PLAYER_LOG("start enter");
@@ -1049,6 +1080,7 @@ static JSValue createGstPlayer(JQModuleEnv* env)
     tpl->SetProtoMethod("preheat", &GstPlayer::preheat);
     tpl->SetProtoMethod("open", &GstPlayer::open);
     tpl->SetProtoMethod("start", &GstPlayer::start);
+    tpl->SetProtoMethod("setVideoZpos", &GstPlayer::setVideoZpos);
     tpl->SetProtoMethod("pause", &GstPlayer::pause);
     tpl->SetProtoMethod("resume", &GstPlayer::resume);
     tpl->SetProtoMethod("close", &GstPlayer::close);

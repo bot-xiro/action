@@ -340,8 +340,9 @@ export default {
             console.warn('[player] stateChanged: ' + state)
             if (state === 'playing') {
                 this.paused = false
-                // 进入播放后控制栏保持可见 5 秒再自动隐藏（首次唤出便于用户发现）
-                this.showControls()
+                // 【2026-08-11 动态层级】播放中视频置顶（zpos=3）全屏可见，
+                // 不再自动显示控制栏（会触发置底遮挡视频）；用户点击唤出。
+                this.setVideoTopmost(true)
                 // 播放中启动 500ms 进度轮询（获时长/位置驱动进度条）
                 this.startProgressPolling()
             } else if (state === 'paused') {
@@ -465,8 +466,23 @@ export default {
             }
         },
         // ---- 控制栏显隐逻辑 ----
+        // 【2026-08-11 动态层级】控制栏与视频层级联动：
+        //   唤出控制栏 → 视频置底(zpos=0, UI zpos=1 盖视频) → 控制栏可操作
+        //   隐藏控制栏 → 视频置顶(zpos=3) → 视频全屏可见
+        // 背景：UI 层 XR24 不透明、JQuick 不支持 hole，双平面下两者互斥，
+        // 只能动态切换（DRM plane zpos 属性即时生效，见 GstPlayer.cpp setVideoZpos）
+        setVideoTopmost(top) {
+            if (!this.mPlayer) return
+            try {
+                this.mPlayer.setVideoZpos(top ? 3 : 0)
+                console.warn('[player] video zpos=' + (top ? 3 : 0) + (top ? ' (topmost)' : ' (under UI)'))
+            } catch (e) {
+                console.warn('[player] setVideoZpos error: ' + (e && e.message))
+            }
+        },
         showControls() {
             this.controlsVisible = true
+            this.setVideoTopmost(false)   // 控制栏唤出：视频置底让位
             // 回复 5 秒自动隐藏计时（暂停时由 stateChanged 分支常驻，不在此重启）
             if (!this.paused && this.hideTimer === null) {
                 var self = this
@@ -502,6 +518,7 @@ onScreenTap() {
                 this.hideTimer = null
             }
             this.controlsVisible = false
+            this.setVideoTopmost(true)   // 控制栏隐藏：视频恢复置顶全屏可见
         },
         onTogglePlay() {
             // 防御：控制栏隐藏/未渲染时不响应（框架若不支持 pointer-events 则防误触）

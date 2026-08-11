@@ -51,6 +51,10 @@ public:
     //  v_voucher 空结果；curl 带 UA/Referer 实测可正常返回）
     void httpGet(JQUTIL_NS::JQFunctionInfo& info);
 
+    // 【2026-08-11 动态层级】运行时切换视频 plane 76 zpos：
+    // 播放中置顶(3)全屏可见 / 控制栏唤出时置底(0)让 UI 可操作（见 player.vue）
+    void setVideoZpos(JQUTIL_NS::JQFunctionInfo& info);
+
     // ---- JS 信号：gstPlayer.stateChanged.on(cb) / .off(cb) ----
     JQUTIL_NS::JQSignal<std::string> stateChanged;
 
