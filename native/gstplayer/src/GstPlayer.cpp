@@ -1,4 +1,4 @@
-#include "GstPlayer.h"
+﻿#include "GstPlayer.h"
 #include "GstProxy.h"
 #include "ControlBar.h"
 
@@ -916,12 +916,27 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     gboolean skip = false;
     GParamSpec* skipPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "skip-vsync");
     if (skipPspec) g_object_set(videoSink_, "skip-vsync", skip, nullptr);
+
+    // 【抗���� 2026-08-14】kmssink 配置加强：
+    // 1) 关闭 QoS（防止晚��被��导致时间跳变、����）
+    // 2) 设置 max-lateness=-1（无限制晚到，由 VSYNC 决定显现时机）
+    // 3) sync=true（默认，显式确保基于时���同步显现）
+    gboolean qos = false;
+    GParamSpec* qosPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "qos");
+    if (qosPspec) g_object_set(videoSink_, "qos", qos, nullptr);
+    gint64 maxLateness = -1;
+    GParamSpec* latePspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "max-lateness");
+    if (latePspec) g_object_set(videoSink_, "max-lateness", maxLateness, nullptr);
+    gboolean sync = true;
+    GParamSpec* syncPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "sync");
+    if (syncPspec) g_object_set(videoSink_, "sync", sync, nullptr);
+
     // 保持视频原始比例（force-aspect-ratio 默认 true）：KMS 硬件在
     // render-rectangle 划定的物理矩形内等比缩放并居中，不拉伸变形。
     // 注意：16:9 视频放进 266×960 竖条矩形时会等比缩至 472 高、上下留黑边，
     // 这是预期行为（用户方案：只修正坐标对位，不改变画面比例）。
     // 此属性保持默认 true，无需显式设置——绝不设 false（避免强制拉伸变形）。
-    PLAYER_LOG("kmssink created (plane-id=76 driver=rockchip, keep-aspect-ratio)");
+    PLAYER_LOG("kmssink created (plane-id=76 driver=rockchip, keep-aspect-ratio, qos=off, max-lateness=-1, sync=on)");
     if (!rect.empty()) {
         // 致命红线：render-rectangle 是 GstValueArray of gint（Write only），
         // g_object_set 传 C 字符串 → GLib 类型不匹配 abort 崩溃！
@@ -1647,3 +1662,4 @@ void gstplayer_init(JQModuleEnv* env)
 }
 
 }  // namespace gstplayer
+
