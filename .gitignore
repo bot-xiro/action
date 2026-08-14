@@ -2,6 +2,9 @@
 platform-tools/
 .android/
 refs/
+references/
+.tmp/
+tools/
 *.log
 .omo/
 docs/
@@ -10,6 +13,8 @@ opencode.json
 # Node
 node_modules/
 .cache/
+package-lock.json
+pnpm-lock.yaml
 
 # 构建产物
 .falcon_/
