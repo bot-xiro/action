@@ -110,6 +110,7 @@ private:
     GstElement* vcaps_ = nullptr;        // capsfilter（内容尺寸 video/x-raw,width=W,height=H —— 等比后尺寸）
     GstElement* vbox_ = nullptr;         // videobox（黑边补齐到画布尺寸 = sink render-rectangle）
     GstElement* voverlay_ = nullptr;     // gdkpixbufoverlay（悬浮控制栏合入视频帧）
+    GstElement* vtitleoverlay_ = nullptr;// gdkpixbufoverlay（顶部标题条合入视频帧，2026-08-14）
     GstElement* vconvert2_ = nullptr;    // 第二 videoconvert（overlay 输出格式协商缓冲）
     GstElement* decodebin_ = nullptr;    // 音频解码器（AAC → raw，输出接 audioconvert → alsasink）
     GstElement* aconvert_ = nullptr;     // audioconvert（音频格式协商，防 raw caps 与 alsasink 不匹配卡 preroll）
@@ -119,8 +120,10 @@ private:
     GstElement* videoFlip_ = nullptr;    // 遗留：videoflip 已淘汰（mppvideodec rotation 替代），保留指针置空兼容 teardown
 
     // 悬浮控制栏
-    ControlBar* bar_ = nullptr;          // cairo 控制栏渲染器
+    ControlBar* bar_ = nullptr;          // cairo 控制栏渲染器（底部控制栏）
+    ControlBar* titleBar_ = nullptr;     // cairo 标题条渲染器（顶部标题，2026-08-14）
     GdkPixbuf* barPixbuf_ = nullptr;     // 当前叠加的 pixbuf（GdkPixbuf，需 unref）
+    GdkPixbuf* titlePixbuf_ = nullptr;   // 标题条 pixbuf
     int canvasW_ = 0;                    // 画布尺寸（= sink render-rectangle 尺寸）
     int canvasH_ = 0;
     bool barVisible_ = true;
@@ -129,6 +132,7 @@ private:
     bool barError_ = false;
     double barPosMs_ = 0.0;
     double barDurMs_ = 0.0;
+    std::string barTitle_;               // 视频标题（顶部标题条）
 
     std::thread busThread_;
     std::atomic<bool> stopping_{false};

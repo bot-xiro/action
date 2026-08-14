@@ -688,16 +688,47 @@ void GstPlayer::refreshBar()
             barPixbuf_ = nullptr;
             PLAYER_LOG("bar hidden (overlay removed)");
         }
+        // 标题条同样移除（与底部控制栏同显隐，2026-08-14）
+        if (titlePixbuf_) {
+            GValue gv = G_VALUE_INIT;
+            g_value_init(&gv, G_TYPE_OBJECT);
+            g_value_set_object(&gv, nullptr);
+            g_object_set_property(G_OBJECT(vtitleoverlay_), "pixbuf", &gv);
+            g_value_unset(&gv);
+            g_object_unref(titlePixbuf_);
+            titlePixbuf_ = nullptr;
+            PLAYER_LOG("title hidden (overlay removed)");
+        }
         return;
     }
     GdkPixbuf* pb = bar_->render(barVisible_, barPlaying_, barEnded_, barError_,
-                                 barPosMs_, barDurMs_);
+                                 barPosMs_, barDurMs_, nullptr);
     if (!pb) return;
     if (barPixbuf_) g_object_unref(barPixbuf_);
     barPixbuf_ = pb;
     g_object_set(voverlay_, "pixbuf", pb, nullptr);
-    PLAYER_LOG("bar refreshed (visible=%d playing=%d ended=%d pos=%.0f dur=%.0f)",
-        barVisible_ ? 1 : 0, barPlaying_ ? 1 : 0, barEnded_ ? 1 : 0, barPosMs_, barDurMs_);
+    // 【顶部标题条 2026-08-14】与底部控制栏同频刷新；标题为空时移除叠加
+    // （drawTitle 会画半透明黑底，空标题也显示黑条 → 必须无标题则不挂 pixbuf）
+    if (titleBar_ && vtitleoverlay_ && !barTitle_.empty()) {
+        GdkPixbuf* tpb = titleBar_->render(barVisible_, barPlaying_, barEnded_, barError_,
+                                           barPosMs_, barDurMs_, barTitle_.c_str());
+        if (tpb) {
+            if (titlePixbuf_) g_object_unref(titlePixbuf_);
+            titlePixbuf_ = tpb;
+            g_object_set(vtitleoverlay_, "pixbuf", tpb, nullptr);
+        }
+    } else if (titlePixbuf_) {
+        GValue gv = G_VALUE_INIT;
+        g_value_init(&gv, G_TYPE_OBJECT);
+        g_value_set_object(&gv, nullptr);
+        g_object_set_property(G_OBJECT(vtitleoverlay_), "pixbuf", &gv);
+        g_value_unset(&gv);
+        g_object_unref(titlePixbuf_);
+        titlePixbuf_ = nullptr;
+    }
+    PLAYER_LOG("bar refreshed (visible=%d playing=%d ended=%d pos=%.0f dur=%.0f title='%.24s')",
+        barVisible_ ? 1 : 0, barPlaying_ ? 1 : 0, barEnded_ ? 1 : 0, barPosMs_, barDurMs_,
+        barTitle_.c_str());
 }
 
 void GstPlayer::setBarState(JQFunctionInfo& info)
@@ -718,6 +749,17 @@ void GstPlayer::setBarState(JQFunctionInfo& info)
     JS_FreeValue(ctx, v);
     v = JS_GetPropertyStr(ctx, opt, "duration");
     if (JS_IsNumber(v)) JS_ToFloat64(ctx, &dur, v);
+    JS_FreeValue(ctx, v);
+    // 【顶部标题 2026-08-14】title 字符串（视频标题，显示在顶部标题条）
+    v = JS_GetPropertyStr(ctx, opt, "title");
+    if (JS_IsString(v)) {
+        size_t tlen = 0;
+        const char* tstr = JS_ToCStringLen(ctx, &tlen, v);
+        if (tstr) {
+            barTitle_ = std::string(tstr, tlen);
+            JS_FreeCString(ctx, tstr);
+        }
+    }
     JS_FreeValue(ctx, v);
 
     if (pos >= 0) barPosMs_ = pos;
@@ -757,22 +799,24 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     g_object_set(vqueue_, "max-size-time", 0, nullptr);
     vconvert_ = gst_element_factory_make("videoconvert", "vconv"); // 格式协商缓冲（格式不匹配时兜底转换）
     // 【2026-08-14 悬浮控制栏 + 比例修复】视频链：videoscale(→内容尺寸) →
-    // capsfilter(内容尺寸) → videobox(黑边补到画布) → gdkpixbufoverlay(控制栏) → videoconvert
+    // capsfilter(内容尺寸) → videobox(黑边补到画布) → gdkpixbufoverlay(控制栏)
+    // → gdkpixbufoverlay(顶部标题, 2026-08-14) → videoconvert
     vscale_ = gst_element_factory_make("videoscale", "vscale");
     vcaps_ = gst_element_factory_make("capsfilter", "vcaps");
     vbox_ = gst_element_factory_make("videobox", "vbox");
     voverlay_ = gst_element_factory_make("gdkpixbufoverlay", "voverlay");
+    vtitleoverlay_ = gst_element_factory_make("gdkpixbufoverlay", "vtitleoverlay");
     vconvert2_ = gst_element_factory_make("videoconvert", "vconv2");
     decodebin_ = gst_element_factory_make("decodebin", "adec");  // 音频解码链（AAC/MP3 → raw）
     aconvert_ = gst_element_factory_make("audioconvert", "aconv"); // 音频格式协商（raw caps 与 alsasink 解耦）
     aresample_ = gst_element_factory_make("audioresample", "ares"); // 采样率协商（44.1k/48k 自适应）
     if (!src || !queue || !demux_ || !vparse_ || !vdec_ || !vqueue_ || !vconvert_ ||
-        !vscale_ || !vcaps_ || !vbox_ || !voverlay_ || !vconvert2_ ||
+        !vscale_ || !vcaps_ || !vbox_ || !voverlay_ || !vtitleoverlay_ || !vconvert2_ ||
         !decodebin_ || !aconvert_ || !aresample_) {
-        PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparsed=%d vdec=%d vqueue=%d vconv=%d vscale=%d vcaps=%d vbox=%d voverlay=%d vconv2=%d adec=%d aconv=%d ares=%d",
+        PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparsed=%d vdec=%d vqueue=%d vconv=%d vscale=%d vcaps=%d vbox=%d voverlay=%d vtitleoverlay=%d vconv2=%d adec=%d aconv=%d ares=%d",
             src ? 1 : 0, queue ? 1 : 0, demux_ ? 1 : 0,
             vparse_ ? 1 : 0, vdec_ ? 1 : 0, vqueue_ ? 1 : 0, vconvert_ ? 1 : 0,
-            vscale_ ? 1 : 0, vcaps_ ? 1 : 0, vbox_ ? 1 : 0, voverlay_ ? 1 : 0, vconvert2_ ? 1 : 0,
+            vscale_ ? 1 : 0, vcaps_ ? 1 : 0, vbox_ ? 1 : 0, voverlay_ ? 1 : 0, vtitleoverlay_ ? 1 : 0, vconvert2_ ? 1 : 0,
             decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0);
         if (src) gst_object_unref(src);
         if (queue) gst_object_unref(queue);
@@ -785,6 +829,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         if (vcaps_) gst_object_unref(vcaps_);
         if (vbox_) gst_object_unref(vbox_);
         if (voverlay_) gst_object_unref(voverlay_);
+        if (vtitleoverlay_) gst_object_unref(vtitleoverlay_);
         if (vconvert2_) gst_object_unref(vconvert2_);
         if (decodebin_) gst_object_unref(decodebin_);
         if (aconvert_) gst_object_unref(aconvert_);
@@ -800,6 +845,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         vcaps_ = nullptr;
         vbox_ = nullptr;
         voverlay_ = nullptr;
+        vtitleoverlay_ = nullptr;
         vconvert2_ = nullptr;
         decodebin_ = nullptr;
         aconvert_ = nullptr;
@@ -945,7 +991,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 连接，绝不在 PLAYING/PAUSED 切换途中做元素级 gst_element_link——
     // 那会与状态迁移抢锁（3fc0948 lazy-link 实测死锁，回退该方案）。
     gst_bin_add_many(GST_BIN(pipeline_), src, queue, demux_, vparse_, vdec_,
-        vqueue_, vconvert_, vscale_, vcaps_, vbox_, voverlay_, vconvert2_,
+        vqueue_, vconvert_, vscale_, vcaps_, vbox_, voverlay_, vtitleoverlay_, vconvert2_,
         decodebin_, aconvert_, aresample_, videoSink_, audioSink_, nullptr);
     if (!gst_element_link_many(src, queue, demux_, nullptr)) {
         PLAYER_LOG("link src->qtdemux failed");
@@ -957,8 +1003,8 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     // → videobox(黑边补到画布) → gdkpixbufoverlay(悬浮控制栏) → videoconvert → sink；
     // qtdemux h264 pad 出现时只连 vparse sink。
     if (!gst_element_link_many(vparse_, vdec_, vqueue_, vconvert_, vscale_, vcaps_, vbox_,
-                               voverlay_, vconvert2_, videoSink_, nullptr)) {
-        PLAYER_LOG("link vparse->vdec->vqueue->vconv->vscale->vcaps->vbox->overlay->vconv2->sink failed");
+                               voverlay_, vtitleoverlay_, vconvert2_, videoSink_, nullptr)) {
+        PLAYER_LOG("link vparse->vdec->vqueue->vconv->vscale->vcaps->vbox->overlay->titleoverlay->vconv2->sink failed");
         teardown();
         return false;
     }
@@ -988,6 +1034,22 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
                          "offset-y", bar_->stripOffsetY(),
                          "overlay-width", bar_->stripWidth(),
                          "overlay-height", bar_->stripHeight(), nullptr);
+        }
+        // 【顶部标题条 2026-08-14】独立 ControlBar(kind="title") + 独立
+        // gdkpixbufoverlay(vtitleoverlay_)：标题条位于画布顶部（用户空间 y 0~40），
+        // 与底部控制栏互不干扰；空标题时不设 pixbuf（零合成开销）。
+        if (!titleBar_) titleBar_ = new ControlBar();
+        if (!titleBar_->init(canvasW_, canvasH_, canvasH_ > canvasW_, "title")) {
+            PLAYER_LOG("TitleBar init failed (%dx%d)", canvasW_, canvasH_);
+        } else {
+            PLAYER_LOG("TitleBar init ok (%dx%d, portrait=%d) strip=%dx%d @(%d,%d)",
+                canvasW_, canvasH_, canvasH_ > canvasW_ ? 1 : 0,
+                titleBar_->stripWidth(), titleBar_->stripHeight(),
+                titleBar_->stripOffsetX(), titleBar_->stripOffsetY());
+            g_object_set(vtitleoverlay_, "offset-x", titleBar_->stripOffsetX(),
+                         "offset-y", titleBar_->stripOffsetY(),
+                         "overlay-width", titleBar_->stripWidth(),
+                         "overlay-height", titleBar_->stripHeight(), nullptr);
         }
         // 初始叠加帧：透明（等待 JS setBarState 首绘）
         barVisible_ = true;
@@ -1278,6 +1340,7 @@ void GstPlayer::teardown()
     vcaps_ = nullptr;
     vbox_ = nullptr;
     voverlay_ = nullptr;
+    vtitleoverlay_ = nullptr;
     vconvert2_ = nullptr;
     decodebin_ = nullptr;
     aconvert_ = nullptr;
@@ -1289,10 +1352,19 @@ void GstPlayer::teardown()
         g_object_unref(barPixbuf_);
         barPixbuf_ = nullptr;
     }
+    if (titlePixbuf_) {
+        g_object_unref(titlePixbuf_);
+        titlePixbuf_ = nullptr;
+    }
     if (bar_) {
         delete bar_;
         bar_ = nullptr;
     }
+    if (titleBar_) {
+        delete titleBar_;
+        titleBar_ = nullptr;
+    }
+    barTitle_.clear();
     canvasW_ = 0;
     canvasH_ = 0;
     PLAYER_LOG("teardown done");

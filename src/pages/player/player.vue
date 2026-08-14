@@ -275,7 +275,8 @@ export default {
                     ended: !!this.ended,
                     error: !!this.error,
                     position: this.currentPosition,
-                    duration: this.duration
+                    duration: this.duration,
+                    title: this.title
                 })
             } catch (e) {
                 console.warn('[player] setBarState error: ' + (e && e.message))
@@ -335,6 +336,8 @@ export default {
                 if (!reDispatch) {
                     this.seekFromTouchX(x, BAR.trackL, BAR.trackR - BAR.trackL, 'tap')
                 }
+                // 【自动隐藏修复 2026-08-14】轨道交互重置自动隐藏计时
+                this.scheduleBarHide()
                 return
             }
             // 控制栏按钮区
@@ -346,14 +349,16 @@ export default {
                     return
                 }
                 this._barGuardT = Date.now()
-                this.cancelBarHide()
                 if (y >= BAR.btnY && y <= BAR.btnY + BAR.btnH) {
                     if (x >= BAR.backL && x <= BAR.backR) { this.closePlayer(); return }
                     if (x >= BAR.sbkL && x <= BAR.sbkR) { this.onSeekBack(); return }
                     if (x >= BAR.playL && x <= BAR.playR) { this.onTogglePlay(); return }
                     if (x >= BAR.sfwL && x <= BAR.sfwR) { this.onSeekForward(); return }
                 }
-                // 控制栏区域内空白：不切换显隐
+                // 控制栏区域内空白：不切换显隐，但重置自动隐藏计时
+                // 【自动隐藏修复 2026-08-14】此前 bar 区交互一律 cancelBarHide()
+                // 且空白点击不恢复 scheduleBarHide() → 控制栏永不自动隐藏
+                this.scheduleBarHide()
                 return
             }
             // 视频区域：切换控制栏显隐
@@ -377,6 +382,8 @@ export default {
             var target = Math.round(this.duration * pct)
             console.warn('[player] track drag x=' + x + ' pct=' + Math.round(pct * 100) + '% target=' + target + 'ms')
             this.seekTo(target, 'drag')
+            // 【自动隐藏修复 2026-08-14】拖动过程持续重置自动隐藏计时
+            this.scheduleBarHide()
         },
         onStageTouchEnd(e) {
             if (this.trackDrag) {

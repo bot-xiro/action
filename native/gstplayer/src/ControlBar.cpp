@@ -85,6 +85,7 @@ namespace bargeom {
 const double W = 960.0;   // 用户空间宽
 const double H = 266.0;   // 用户空间高
 const double BAR_TOP = 190.0;   // 控制栏顶（y 190~266）
+const double TITLE_H = 40.0;    // 顶部标题条高（y 0~40）
 const double TRACK_Y = 202.0;   // 进度轨道 y
 const double TRACK_H = 14.0;
 const double TRACK_L = 24.0;    // 轨道左缘
@@ -111,26 +112,28 @@ ControlBar::~ControlBar()
     if (data_) delete[] data_;
 }
 
-bool ControlBar::init(int canvasW, int canvasH, bool portrait)
+bool ControlBar::init(int canvasW, int canvasH, bool portrait, const char* kind)
 {
     if (canvasW <= 0 || canvasH <= 0) return false;
     if (!ensureOverlayLibs()) return false;   // 库不可用 → 降级（无悬浮栏）
     ensureFonts();                            // 注册设备字体（时间/文字渲染）
     portrait_ = portrait;
+    titleMode_ = (kind && strcmp(kind, "title") == 0);
 
-    // 只渲染"控制栏条带"（用户空间底部 BAR_TOP~H 区域），减小逐帧合成面积：
-    //   portrait（KMS 竖画布 266×960）：条带 = 画布 x∈[BAR_TOP, W]，y 全幅
-    //   landscape（waylandsink 960×266）：条带 = 画布 x 全幅，y∈[BAR_TOP, H]
+    // 只渲染"条带"（非整幅画布），减小逐帧合成面积：
+    //   bar（底部控制栏）：portrait 条带=画布 x∈[BAR_TOP,W] y 全幅；landscape 对称
+    //   title（顶部标题条，2026-08-14）：portrait 条带=画布 x∈[0,TITLE_H] y 全幅；landscape 对称
+    int regionTop = titleMode_ ? static_cast<int>(bargeom::TITLE_H) : static_cast<int>(bargeom::BAR_TOP);
     if (portrait_) {
-        w_ = canvasW - static_cast<int>(bargeom::BAR_TOP);
+        w_ = titleMode_ ? regionTop : canvasW - regionTop;
         h_ = canvasH;
-        stripOffX_ = static_cast<int>(bargeom::BAR_TOP);
+        stripOffX_ = titleMode_ ? 0 : regionTop;
         stripOffY_ = 0;
     } else {
         w_ = canvasW;
-        h_ = canvasH - static_cast<int>(bargeom::BAR_TOP);
+        h_ = titleMode_ ? regionTop : canvasH - regionTop;
         stripOffX_ = 0;
-        stripOffY_ = static_cast<int>(bargeom::BAR_TOP);
+        stripOffY_ = titleMode_ ? 0 : regionTop;
     }
     if (w_ <= 0 || h_ <= 0) return false;
 
@@ -300,13 +303,22 @@ void ControlBar::drawErrorIcon(cairo_t* cr, double cy, double cx, double s)
     cairo_stroke(cr);
 }
 
+// 顶部标题条（2026-08-14）：半透明黑底 + 视频标题（左对齐，超长被条带边界裁剪）
+void ControlBar::drawTitle(cairo_t* cr)
+{
+    cairo_set_source_rgba(cr, 0, 0, 0, 0.5);
+    uRect(cr, 0, 0, bargeom::TITLE_H, bargeom::W);
+    cairo_fill(cr);
+    if (title_.empty()) return;
+    uText(cr, bargeom::TITLE_H - 14, 16, title_.c_str(), 20, 1, 1, 1);
+}
+
 void ControlBar::drawBar(cairo_t* cr)
 {
     // 背景条（半透明黑）
     cairo_set_source_rgba(cr, 0, 0, 0, 0.55);
     uRect(cr, bargeom::BAR_TOP, 0, bargeom::H - bargeom::BAR_TOP, bargeom::W);
     cairo_fill(cr);
-
     // 进度轨道
     double pct = 0;
     if (durMs_ > 0) {
@@ -369,7 +381,7 @@ void ControlBar::drawBar(cairo_t* cr)
 }
 
 GdkPixbuf* ControlBar::render(bool visible, bool playing, bool ended, bool error,
-                              double posMs, double durMs)
+                              double posMs, double durMs, const char* title)
 {
     if (!ready_) return nullptr;
     visible_ = visible;
@@ -378,6 +390,8 @@ GdkPixbuf* ControlBar::render(bool visible, bool playing, bool ended, bool error
     error_ = error;
     posMs_ = posMs;
     durMs_ = durMs;
+    if (title) title_ = title;
+    else title_.clear();
 
     cairo_t* cr = cairo_create(surf_);
     // 画布坐标 → 条带缓冲坐标（条带位于画布 (stripOffX_, stripOffY_)）
@@ -387,7 +401,8 @@ GdkPixbuf* ControlBar::render(bool visible, bool playing, bool ended, bool error
     cairo_paint(cr);
     if (visible_) {
         cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-        drawBar(cr);
+        if (titleMode_) drawTitle(cr);
+        else drawBar(cr);
     }
     cairo_destroy(cr);
 

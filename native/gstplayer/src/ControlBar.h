@@ -7,13 +7,15 @@
 //   canvas (cx, cy) = (userY, userX)   （物理 px = 逻辑 ly，物理 py = 逻辑 lx）
 // waylandsink 模式下画布即 960×266（横向），无需旋转（portrait=false）。
 //
-// 性能：只渲染"控制栏条带"（非整幅画布），gdkpixbufoverlay 用 offset/width/height
-// 定位到画布底部，逐帧合成面积最小化（2026-08-14 掉帧修复）。
+// 性能：只渲染"条带"（非整幅画布），gdkpixbufoverlay 用 offset/width/height
+// 定位到画布指定区域，逐帧合成面积最小化（2026-08-14 掉帧修复）。
+// 支持两种条带：底部控制栏（bar）与顶部标题（title，2026-08-14 新增）。
 //
 // 字节序：cairo ARGB32 内存序为 BGRA，gdk-pixbuf 按 RGBA 读取 → 渲染后原地
 // R/B 交换（否则红蓝互换、图标颜色全错，2026-08-14 修复）。
 
 #include <cstdint>
+#include <string>
 
 typedef struct _cairo_surface cairo_surface_t;
 typedef struct _cairo cairo_t;
@@ -32,12 +34,15 @@ public:
 
     // canvasW/canvasH：渲染画布尺寸（= sink render-rectangle 尺寸）。
     // portrait：画布为竖条（KMS 物理方向）时 true，绘制自动旋转。
-    bool init(int canvasW, int canvasH, bool portrait);
+    // kind: "bar"=底部控制栏 / "title"=顶部标题条；条带几何由 kind 决定：
+    //   bar:   画布 x∈[BAR_TOP, W]，y 全幅（用户空间底部）
+    //   title: 画布 x∈[0, TITLE_H]，y 全幅（用户空间顶部）
+    bool init(int canvasW, int canvasH, bool portrait, const char* kind);
 
     // 更新状态并重新渲染；返回当前 GdkPixbuf*（新引用，调用方负责 unref）。
     // 未 init 时返回 nullptr。
     GdkPixbuf* render(bool visible, bool playing, bool ended, bool error,
-                      double posMs, double durMs);
+                      double posMs, double durMs, const char* title);
 
     // 条带在画布中的偏移/尺寸（gdkpixbufoverlay offset-x/offset-y/overlay-width/overlay-height）
     int stripOffsetX() const { return stripOffX_; }
@@ -64,6 +69,7 @@ private:
     void drawBackIcon(cairo_t* cr, double cy, double cx, double s);
     void drawErrorIcon(cairo_t* cr, double cy, double cx, double s);
     void drawBar(cairo_t* cr);
+    void drawTitle(cairo_t* cr);
 
     cairo_surface_t* surf_ = nullptr;
     unsigned char* data_ = nullptr;
@@ -73,6 +79,7 @@ private:
     int stripOffX_ = 0;      // 条带在画布中的偏移
     int stripOffY_ = 0;
     bool portrait_ = false;
+    bool titleMode_ = false; // true=顶部标题条
     bool ready_ = false;
 
     bool visible_ = true;
@@ -81,6 +88,7 @@ private:
     bool error_ = false;
     double posMs_ = 0.0;
     double durMs_ = 0.0;
+    std::string title_;
 };
 
 }  // namespace gstplayer

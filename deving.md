@@ -88,3 +88,31 @@
 - 源码（native/ + src/ + .github/）、bilibili.amr（CI 产物）、testseek（CI 产物）、
   docs/（X6PRO_ENV、STUDY_NOTES、PROJECT_SUMMARY、PROGRESS_SUMMARY、VERIFY_FLOW、
   SCREEN_WAKE、PORTING_NOTES、DEV_LOG、X6PRO_TEST_LOG/）、deving.md
+
+---
+
+## 2026-08-14（顶部标题条 + 自动隐藏修复）
+
+### 功能：用户需求"添加顶部显示标题" + "控制栏自动隐藏行为修正"
+
+- **顶部标题条**：新增第二条 gdkpixbufoverlay（vtitleoverlay_）+ 独立 ControlBar 实例
+  （kind="title"）：半透明黑底条带（用户空间 y 0~40）+ 左对齐标题文字（size 20）。
+  - ControlBar::init 增加 kind 参数（"bar"/"title"），条带几何按 kind 计算
+    （title：portrait 条带=画布 x∈[0,40] y 全幅；landscape 对称）。
+  - 管线链：...→ voverlay_(控制栏) → **vtitleoverlay_(标题)** → vconvert2_ → sink。
+  - refreshBar 双条带同频刷新：barTitle_ 为空时不挂 pixbuf（drawTitle 会画黑底，
+    空标题必须移除叠加，避免顶部黑条）。
+  - setBarState 新增 title 字段解析（JS_ToCStringLen 兼容中文 UTF-8）。
+  - player.vue pushBarState 传 title: this.title（详情页 navTo 已带 title）。
+- **自动隐藏修复**：根因——bar 区交互一律 cancelBarHide() 且空白点击不恢复
+  scheduleBarHide() → 控制栏永不自动隐藏（用户反馈"控制栏不可以自动隐藏"）。
+  修复：bar 区空白点击 / 轨道点击 / 轨道拖动均重置自动隐藏计时（6s）。
+
+### 结果
+- 待 Action 构建 + 真机验证：顶部标题显示、自动隐藏恢复、回归（seek/竖屏/横屏/拖动）。
+
+### 问题 / 待办
+- [ ] 真机验证顶部标题条（位置/文字/中文渲染）与自动隐藏恢复
+- [ ] 回归：seek、竖屏 9:16、横屏比例、控制栏交互
+
+---
