@@ -810,15 +810,14 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     decodebin_ = gst_element_factory_make("decodebin", "adec");  // 音频解码链（AAC/MP3 → raw）
     aconvert_ = gst_element_factory_make("audioconvert", "aconv"); // 音频格式协商（raw caps 与 alsasink 解耦）
     aresample_ = gst_element_factory_make("audioresample", "ares"); // 采样率协商（44.1k/48k 自适应）
-    volume_ = gst_element_factory_make("volume", "vol");          // 音量控制
     if (!src || !queue || !demux_ || !vparse_ || !vdec_ || !vqueue_ || !vconvert_ ||
         !vscale_ || !vcaps_ || !vbox_ || !voverlay_ || !vtitleoverlay_ || !vconvert2_ ||
-        !decodebin_ || !aconvert_ || !aresample_ || !volume_) {
+        !decodebin_ || !aconvert_ || !aresample_) {
         PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparsed=%d vdec=%d vqueue=%d vconv=%d vscale=%d vcaps=%d vbox=%d voverlay=%d vtitleoverlay=%d vconv2=%d adec=%d aconv=%d ares=%d",
             src ? 1 : 0, queue ? 1 : 0, demux_ ? 1 : 0,
             vparse_ ? 1 : 0, vdec_ ? 1 : 0, vqueue_ ? 1 : 0, vconvert_ ? 1 : 0,
             vscale_ ? 1 : 0, vcaps_ ? 1 : 0, vbox_ ? 1 : 0, voverlay_ ? 1 : 0, vtitleoverlay_ ? 1 : 0, vconvert2_ ? 1 : 0,
-            decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0, volume_ ? 1 : 0);
+            decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0);
         if (src) gst_object_unref(src);
         if (queue) gst_object_unref(queue);
         if (demux_) gst_object_unref(demux_);
@@ -835,7 +834,6 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         if (decodebin_) gst_object_unref(decodebin_);
         if (aconvert_) gst_object_unref(aconvert_);
         if (aresample_) gst_object_unref(aresample_);
-        if (volume_) gst_object_unref(volume_);
         gst_object_unref(pipeline_);
         pipeline_ = nullptr;
         demux_ = nullptr;
@@ -1009,7 +1007,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 那会与状态迁移抢锁（3fc0948 lazy-link 实测死锁，回退该方案）。
     gst_bin_add_many(GST_BIN(pipeline_), src, queue, demux_, vparse_, vdec_,
         vqueue_, vconvert_, vscale_, vcaps_, vbox_, voverlay_, vtitleoverlay_, vconvert2_,
-        decodebin_, aconvert_, aresample_, volume_, videoSink_, audioSink_, nullptr);
+        decodebin_, aconvert_, aresample_, videoSink_, audioSink_, nullptr);
     if (!gst_element_link_many(src, queue, demux_, nullptr)) {
         PLAYER_LOG("link src->qtdemux failed");
         teardown();
@@ -1083,8 +1081,8 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         PLAYER_LOG("no canvas rect, overlay disabled");
     }
     // 音频后端链静态预链接：decodebin 音频 pad 出现时连 aconvert sink。
-    if (!gst_element_link_many(aconvert_, aresample_, volume_, audioSink_, nullptr)) {
-        PLAYER_LOG("link aconv->ares->vol->asink failed");
+    if (!gst_element_link_many(aconvert_, aresample_, audioSink_, nullptr)) {
+        PLAYER_LOG("link aconv->ares->asink failed");
         teardown();
         return false;
     }
@@ -1362,7 +1360,6 @@ void GstPlayer::teardown()
     decodebin_ = nullptr;
     aconvert_ = nullptr;
     aresample_ = nullptr;
-    volume_ = nullptr;
     videoSink_ = nullptr;
     audioSink_ = nullptr;
     videoFlip_ = nullptr;
@@ -1682,10 +1679,6 @@ void gstplayer_init(JQModuleEnv* env)
 }
 
 }  // namespace gstplayer
-
-
-
-
 
 
 
