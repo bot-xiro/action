@@ -510,6 +510,7 @@ void GstPlayer::seek(JQFunctionInfo& info)
     if (ns < 0) ns = 0;
     bool ok = gst_element_seek_simple(pipeline_, GST_FORMAT_TIME,
         static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT), ns);
+    PLAYER_LOG("seek to %.0f ms ret=%d", ms, ok ? 1 : 0);
     info.GetReturnValue().Set(ok);
 }
 
@@ -1164,8 +1165,13 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
         gint w = 0, h = 0;
         gst_structure_get_int(s, "width", &w);
         gst_structure_get_int(s, "height", &h);
-        // 【比例修复 2026-08-14】用真实源尺寸校正画布内容几何（等比内容 + 黑边）
-        if (w > 0 && h > 0) applyCanvasContent(w, h);
+        // 【seek 修复 2026-08-14】不再在 pad-added 动态改 capsfilter caps：
+        // 真机实证动态重协商会让后续 FLUSH seek 失效（位置跳转后立即回退）。
+        // B 站 durl 均为 16:9，构建期 applyCanvasContent(1280,720) 已按 266×473
+        // 预置；如源尺寸非常规比例仅记录警告（黑边略有偏差，可接受）。
+        if (w > 0 && h > 0 && (w != 1280 || h != 720)) {
+            PLAYER_LOG("video src non-16:9 %dx%d (canvas keeps 16:9 default)", w, h);
+        }
         sink = vqueue_;
         PLAYER_LOG("video %dx%d fallback -> vqueue (static backend)", w, h);
     } else if (media && g_str_has_prefix(media, "audio/")) {
