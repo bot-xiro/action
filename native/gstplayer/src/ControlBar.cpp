@@ -356,11 +356,7 @@ void ControlBar::drawBar(cairo_t* cr)
     double tw = strlen(tbuf) * 9.5;   // 粗估 9.5px/字符 @18px
     uText(cr, bargeom::BTN_Y + 8, bargeom::TRACK_R - tw, tbuf, 18, 1, 1, 1);
 
-    // 返回按钮（图标 + 文字）
-    cairo_set_source_rgba(cr, 1, 1, 1, 0.9);
-    drawBackIcon(cr, bargeom::BTN_Y + bargeom::BTN_H / 2 - 2, bargeom::BACK_L + 14, 10);
-    uText(cr, bargeom::BTN_Y + 8, bargeom::BACK_L + 32, "返回", 16, 1, 1, 1);
-
+    // 【2026-08-14 删除左下角返回】返回按钮已移到左上角标题区，底部控制栏不再绘制
     // 快退/快进
     cairo_set_source_rgba(cr, 1, 1, 1, 0.9);
     drawSeekIcon(cr, bargeom::BTN_Y + bargeom::BTN_H / 2, (bargeom::SBK_L + bargeom::SBK_R) / 2, 10, false);

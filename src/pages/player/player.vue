@@ -91,7 +91,7 @@ const BAR = {
     trackY: 196, trackH: 22,     // 进度轨道
     trackL: 24, trackR: 936,
     btnY: 226, btnH: 36,         // 按钮行
-    backL: 24, backR: 140,
+    // 【2026-08-14 删除左下角返回】backL/backR 已废弃
     sbkL: 330, sbkR: 430,
     playL: 448, playR: 512,
     sfwL: 530, sfwR: 630,
@@ -361,7 +361,7 @@ export default {
                 }
                 this._barGuardT = Date.now()
                 if (y >= BAR.btnY && y <= BAR.btnY + BAR.btnH) {
-                    if (x >= BAR.backL && x <= BAR.backR) { this.closePlayer(); return }
+                    // 【2026-08-14 删除左下角返回】返回按钮已移到左上角标题区
                     if (x >= BAR.sbkL && x <= BAR.sbkR) { this.onSeekBack(); return }
                     if (x >= BAR.playL && x <= BAR.playR) { this.onTogglePlay(); return }
                     if (x >= BAR.sfwL && x <= BAR.sfwR) { this.onSeekForward(); return }
