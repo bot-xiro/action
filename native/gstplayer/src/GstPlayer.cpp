@@ -810,14 +810,27 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     decodebin_ = gst_element_factory_make("decodebin", "adec");  // 音频解码链（AAC/MP3 → raw）
     aconvert_ = gst_element_factory_make("audioconvert", "aconv"); // 音频格式协商（raw caps 与 alsasink 解耦）
     aresample_ = gst_element_factory_make("audioresample", "ares"); // 采样率协商（44.1k/48k 自适应）
+    acaps_ = gst_element_factory_make("capsfilter", "acaps");    // 强制 caps（S16LE/44.1k/2ch，2026-08-15 修复沙沙声）
+    avolume_ = gst_element_factory_make("volume", "avol");       // 音量控制（2026-08-15 重写）
+    // 强制 audio/x-raw, format=S16LE, rate=44100, channels=2：所有 AAC/MP3 解码后转成
+    // 这个固定格式，消除 alsasink 的 channels/rate 不匹配导致"沙沙声/无声"问题。
+    if (acaps_) {
+        GstCaps* forcedCaps = gst_caps_from_string("audio/x-raw,format=S16LE,rate=44100,channels=2,layout=interleaved");
+        g_object_set(acaps_, "caps", forcedCaps, nullptr);
+        gst_caps_unref(forcedCaps);
+    }
+    // 音量初始 1.0
+    if (avolume_) {
+        g_object_set(avolume_, "volume", 1.0, nullptr);
+    }
     if (!src || !queue || !demux_ || !vparse_ || !vdec_ || !vqueue_ || !vconvert_ ||
         !vscale_ || !vcaps_ || !vbox_ || !voverlay_ || !vtitleoverlay_ || !vconvert2_ ||
-        !decodebin_ || !aconvert_ || !aresample_) {
-        PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparsed=%d vdec=%d vqueue=%d vconv=%d vscale=%d vcaps=%d vbox=%d voverlay=%d vtitleoverlay=%d vconv2=%d adec=%d aconv=%d ares=%d",
+        !decodebin_ || !aconvert_ || !aresample_ || !acaps_ || !avolume_) {
+        PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparsed=%d vdec=%d vqueue=%d vconv=%d vscale=%d vcaps=%d vbox=%d voverlay=%d vtitleoverlay=%d vconv2=%d adec=%d aconv=%d ares=%d acaps=%d avol=%d",
             src ? 1 : 0, queue ? 1 : 0, demux_ ? 1 : 0,
             vparse_ ? 1 : 0, vdec_ ? 1 : 0, vqueue_ ? 1 : 0, vconvert_ ? 1 : 0,
             vscale_ ? 1 : 0, vcaps_ ? 1 : 0, vbox_ ? 1 : 0, voverlay_ ? 1 : 0, vtitleoverlay_ ? 1 : 0, vconvert2_ ? 1 : 0,
-            decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0);
+            decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0, acaps_ ? 1 : 0, avolume_ ? 1 : 0);
         if (src) gst_object_unref(src);
         if (queue) gst_object_unref(queue);
         if (demux_) gst_object_unref(demux_);
@@ -834,6 +847,8 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         if (decodebin_) gst_object_unref(decodebin_);
         if (aconvert_) gst_object_unref(aconvert_);
         if (aresample_) gst_object_unref(aresample_);
+        if (acaps_) gst_object_unref(acaps_);
+        if (avolume_) gst_object_unref(avolume_);
         gst_object_unref(pipeline_);
         pipeline_ = nullptr;
         demux_ = nullptr;
@@ -850,6 +865,8 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         decodebin_ = nullptr;
         aconvert_ = nullptr;
         aresample_ = nullptr;
+        acaps_ = nullptr;
+        avolume_ = nullptr;
         return false;
     }
 
@@ -983,14 +1000,15 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     }
 #endif
 
-    // 音频输出：alsasink（device=speaker）；audio=false 时用 fakesink 静音
+    // 音频输出：alsasink（device 由 ALSA 默认决定，不显式指定）；audio=false 时用 fakesink 静音
     audioSink_ = audio
         ? gst_element_factory_make("alsasink", "asink")
         : gst_element_factory_make("fakesink", "asink");
     if (audioSink_ && audio) {
-        // 尝试多种 ALSA 设备名称
-        g_object_set(audioSink_, "device", "default", "volume", 1.0, "sync", TRUE, nullptr);
-        PLAYER_LOG("alsasink device=default volume=1.0 sync=true");
+        // 2026-08-15 重写：不显式设 device/sync，由 ALSA 默认走 default sink；
+        // 音量由 avolume_ 元素控制（更可靠），alsasink volume 保留默认。
+        g_object_set(audioSink_, "buffer-time", (gint64)40000, "latency-time", (gint64)20000, nullptr);
+        PLAYER_LOG("alsasink buffer-time=40000 latency-time=20000");
     }
     PLAYER_LOG("audio-sink created: %s", audio ? "alsasink" : "fakesink");
 
@@ -1009,7 +1027,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 那会与状态迁移抢锁（3fc0948 lazy-link 实测死锁，回退该方案）。
     gst_bin_add_many(GST_BIN(pipeline_), src, queue, demux_, vparse_, vdec_,
         vqueue_, vconvert_, vscale_, vcaps_, vbox_, voverlay_, vtitleoverlay_, vconvert2_,
-        decodebin_, aconvert_, aresample_, videoSink_, audioSink_, nullptr);
+        decodebin_, aconvert_, aresample_, acaps_, avolume_, videoSink_, audioSink_, nullptr);
     if (!gst_element_link_many(src, queue, demux_, nullptr)) {
         PLAYER_LOG("link src->qtdemux failed");
         teardown();
@@ -1083,8 +1101,9 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         PLAYER_LOG("no canvas rect, overlay disabled");
     }
     // 音频后端链静态预链接：decodebin 音频 pad 出现时连 aconvert sink。
-    if (!gst_element_link_many(aconvert_, aresample_, audioSink_, nullptr)) {
-        PLAYER_LOG("link aconv->ares->asink failed");
+    // 链路：aconvert → aresample → acaps(强制 S16LE/44100/2ch) → avolume(音量) → alsasink
+    if (!gst_element_link_many(aconvert_, aresample_, acaps_, avolume_, audioSink_, nullptr)) {
+        PLAYER_LOG("link aconv->ares->acaps->avol->asink failed");
         teardown();
         return false;
     }
@@ -1362,6 +1381,8 @@ void GstPlayer::teardown()
     decodebin_ = nullptr;
     aconvert_ = nullptr;
     aresample_ = nullptr;
+    acaps_ = nullptr;
+    avolume_ = nullptr;
     videoSink_ = nullptr;
     audioSink_ = nullptr;
     videoFlip_ = nullptr;
