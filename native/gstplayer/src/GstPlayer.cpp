@@ -817,7 +817,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
             src ? 1 : 0, queue ? 1 : 0, demux_ ? 1 : 0,
             vparse_ ? 1 : 0, vdec_ ? 1 : 0, vqueue_ ? 1 : 0, vconvert_ ? 1 : 0,
             vscale_ ? 1 : 0, vcaps_ ? 1 : 0, vbox_ ? 1 : 0, voverlay_ ? 1 : 0, vtitleoverlay_ ? 1 : 0, vconvert2_ ? 1 : 0,
-            decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0);
+            decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0, volume_ ? 1 : 0);
         if (src) gst_object_unref(src);
         if (queue) gst_object_unref(queue);
         if (demux_) gst_object_unref(demux_);
@@ -834,6 +834,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         if (decodebin_) gst_object_unref(decodebin_);
         if (aconvert_) gst_object_unref(aconvert_);
         if (aresample_) gst_object_unref(aresample_);
+        if (volume_) gst_object_unref(volume_);
         gst_object_unref(pipeline_);
         pipeline_ = nullptr;
         demux_ = nullptr;
@@ -1680,6 +1681,8 @@ void gstplayer_init(JQModuleEnv* env)
 }
 
 }  // namespace gstplayer
+
+
 
 
 
