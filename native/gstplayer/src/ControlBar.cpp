@@ -311,16 +311,19 @@ void ControlBar::drawErrorIcon(cairo_t* cr, double cy, double cx, double s)
     cairo_stroke(cr);
 }
 
-// 顶部标题条（2026-08-14）：半透明黑底 + 视频标题（左对齐，超长被条带边界裁剪）
+// 顶部标题条（2026-08-14）：无外框，只画返回图标 + 视频标题
+// 【2026-08-14 去掉外框】用户要求"顶部文字不要外面添加外框"，移除半透明黑底
 void ControlBar::drawTitle(cairo_t* cr)
 {
-    cairo_set_source_rgba(cr, 0, 0, 0, 0.5);
-    uRect(cr, 0, 0, bargeom::TITLE_H, bargeom::W);
-    // \u8fd4\u56de\u56fe\u6807\u3008\u5de6\u4e0a\u89d2\u3009
+    // 不画面框/背景（用户需求：不要外框）
+    // 返回图标（左上角）
     cairo_set_source_rgba(cr, 1, 1, 1, 0.9);
     drawBackIcon(cr, bargeom::TITLE_BACK_CY, (bargeom::TITLE_BACK_L + bargeom::TITLE_BACK_R) / 2, bargeom::TITLE_BACK_S);
-    // \u6807\u9898\u6587\u672c\u3008\u8fd4\u56de\u56fe\u6807\u53f3\u8fb9\u3009
-    if (!title_.empty()) { uText(cr, bargeom::TITLE_H - 14, bargeom::TITLE_TEXT_L, title_.c_str(), 20, 1, 1, 1); } }
+    // 标题文本（返回图标右边）
+    if (!title_.empty()) {
+        uText(cr, bargeom::TITLE_H - 14, bargeom::TITLE_TEXT_L, title_.c_str(), 20, 1, 1, 1);
+    }
+}
 
 void ControlBar::drawBar(cairo_t* cr)
 {
