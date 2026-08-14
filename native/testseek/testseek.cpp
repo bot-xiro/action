@@ -171,6 +171,7 @@ static void run_variant(const char* url, bool contentCaps, bool withVbox, const 
 
 int main(int argc, char** argv)
 {
+    setvbuf(stdout, NULL, _IONBF, 0);   // 无缓冲：崩溃时输出不丢
     preload_gst();
     gst_init(&argc, &argv);
     const char* url = getenv("TEST_URL");
