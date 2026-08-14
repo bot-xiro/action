@@ -1,4 +1,4 @@
-﻿<template>
+<template>
     <div class="page">
         <!-- 加载/错误覆盖层：铺满视口；仅在视频 plane 激活前可见（打开失败/加载中） -->
         <div v-if="!ready" class="overlay">
@@ -94,7 +94,10 @@ const BAR = {
     backL: 24, backR: 140,
     sbkL: 330, sbkR: 430,
     playL: 448, playR: 512,
-    sfwL: 530, sfwR: 630
+    sfwL: 530, sfwR: 630,
+    // 【2026-08-14 返回左上角】标题区返回按钮命中区
+    titleBackY: 0, titleBackH: 40,
+    titleBackL: 8, titleBackR: 48
 }
 
 export default {
@@ -328,6 +331,13 @@ export default {
                 return
             }
             var x = p.x, y = p.y
+            // 【2026-08-14 返回左上角】标题区返回按钮（左上角 y 0-40）
+            if (y >= BAR.titleBackY && y <= BAR.titleBackY + BAR.titleBackH &&
+                x >= BAR.titleBackL && x <= BAR.titleBackR) {
+                console.warn('[player] title back tap -> close')
+                this.closePlayer()
+                return
+            }
             // 进度轨道：点击立即 seek + 记录拖动锚点（重派发 120ms 内只更新锚点）
             if (y >= BAR.trackY - 4 && y <= BAR.trackY + BAR.trackH + 6) {
                 var now = Date.now()
@@ -536,5 +546,6 @@ export default {
     }
 }
 </script>
+
 
 
