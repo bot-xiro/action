@@ -3,6 +3,7 @@
 #include "jqutil_v2/jqutil.h"
 
 #include <atomic>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -114,6 +115,7 @@ private:
 
     std::thread busThread_;
     std::atomic<bool> stopping_{false};
+    std::mutex barMutex_;        // 控制栏刷新互斥（JS 线程 setBarState 与 bus 线程状态联动）
 };
 
 }  // namespace gstplayer

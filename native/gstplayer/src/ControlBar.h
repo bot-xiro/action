@@ -16,6 +16,10 @@ typedef struct _GdkPixbuf GdkPixbuf;
 
 namespace gstplayer {
 
+// 模块加载时调用：dlopen cairo/gdk-pixbuf/fontconfig（RTLD_GLOBAL），
+// 供本 .so 与 gstgdkpixbuf 插件懒解析；失败返回 false（悬浮栏降级）。
+bool ensureOverlayLibsGlobal();
+
 class ControlBar {
 public:
     ControlBar();

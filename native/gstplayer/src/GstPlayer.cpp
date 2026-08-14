@@ -616,6 +616,7 @@ void GstPlayer::httpGet(JQFunctionInfo& info)
 void GstPlayer::refreshBar()
 {
     if (!bar_ || !voverlay_) return;
+    std::lock_guard<std::mutex> lk(barMutex_);
     GdkPixbuf* pb = bar_->render(barVisible_, barPlaying_, barEnded_, barError_,
                                  barPosMs_, barDurMs_);
     if (!pb) return;
@@ -897,6 +898,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         // 控制栏渲染器（画布竖条 = KMS 物理方向时启用旋转映射）
         canvasW_ = canvasW;
         canvasH_ = canvasH;
+        PLAYER_LOG("overlay chain: vscale+vcaps(%dx%d)+gdkpixbufoverlay inserted", canvasW, canvasH);
         if (!bar_) bar_ = new ControlBar();
         if (!bar_->init(canvasW_, canvasH_, canvasH_ > canvasW_)) {
             PLAYER_LOG("ControlBar init failed (%dx%d)", canvasW_, canvasH_);
@@ -911,6 +913,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         barPosMs_ = 0.0;
         barDurMs_ = 0.0;
         refreshBar();
+        PLAYER_LOG("overlay initial pixbuf set");
     } else {
         canvasW_ = 0;
         canvasH_ = 0;
@@ -1204,6 +1207,9 @@ static JSValue createGstPlayer(JQModuleEnv* env)
     // 预热 GStreamer：模块加载（app 启动 import gstplayer）即完成 gst_init，
     // 把插件扫描开销从首次 open 播放路径上移走，缩短首帧延迟
     ensureGstInit();
+    // 预热悬浮控制栏依赖库（cairo/gdk-pixbuf/fontconfig，RTLD_GLOBAL），
+    // 避免首次使用时的懒解析崩溃（2026-08-14 闪退修复，见 ControlBar.cpp）
+    ensureOverlayLibsGlobal();
 
     JQFunctionTemplateRef tpl = JQFunctionTemplate::New(env, "gstPlayer");
     tpl->InstanceTemplate()->setObjectCreator([]() {

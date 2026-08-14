@@ -3,10 +3,56 @@
 #include <cmath>
 #include <cstring>
 
+#include <dlfcn.h>
+#include <syslog.h>
+
 #include <cairo.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
 
 namespace gstplayer {
+
+// 【崩溃红线 2026-08-14】本 .so 交叉编译自 x86 宿主，直接链接的 cairo/gdk-pixbuf
+// 符号在设备上采用 lazy 解析：若 miniapp 进程未加载对应动态库，首次调用即
+// SIGSEGV（真机实证：open() 在 audio-sink 之后无任何日志即整进程闪退）。
+// 必须在此处主动 dlopen + RTLD_GLOBAL（把符号注入全局作用域供本 .so 懒解析），
+// 与前期 libdrm dlopen 处理同款（见 GstPlayer.cpp setPlaneZpos 注释）。
+// 任一失败 → 返回 false，调用方安全降级（无悬浮栏，视频照常播放）。
+static bool ensureOverlayLibs()
+{
+    static bool inited = false;
+    static bool ok = false;
+    if (inited) return ok;
+    inited = true;
+    const char* libs[] = {
+        "libcairo.so.2", "libcairo.so",
+        "libgdk_pixbuf-2.0.so.0", "libgdk_pixbuf-2.0.so",
+        "libfontconfig.so.1", "libfontconfig.so",
+        nullptr
+    };
+    for (int i = 0; libs[i]; i++) {
+        void* h = dlopen(libs[i], RTLD_NOW | RTLD_GLOBAL);
+        if (h) {
+            syslog(LOG_LOCAL7 | LOG_ERR, "[gstplayer] dlopen %s ok", libs[i]);
+        } else {
+            syslog(LOG_LOCAL7 | LOG_ERR, "[gstplayer] dlopen %s failed: %s", libs[i], dlerror());
+        }
+    }
+    // cairo 与 gdk-pixbuf 必须可用；fontconfig 缺失时仅文字不渲染（图标仍可画）
+    void* cairoLib = dlopen("libcairo.so.2", RTLD_NOW | RTLD_GLOBAL);
+    if (!cairoLib) cairoLib = dlopen("libcairo.so", RTLD_NOW | RTLD_GLOBAL);
+    void* gdkLib = dlopen("libgdk_pixbuf-2.0.so.0", RTLD_NOW | RTLD_GLOBAL);
+    if (!gdkLib) gdkLib = dlopen("libgdk_pixbuf-2.0.so", RTLD_NOW | RTLD_GLOBAL);
+    ok = (cairoLib != nullptr) && (gdkLib != nullptr);
+    syslog(LOG_LOCAL7 | LOG_ERR, "[gstplayer] overlay libs %s (cairo=%p gdk=%p)",
+        ok ? "OK" : "UNAVAILABLE", (void*)cairoLib, (void*)gdkLib);
+    return ok;
+}
+
+// 供 GstPlayer 模块加载时提前调用（见 createGstPlayer）
+bool ensureOverlayLibsGlobal()
+{
+    return ensureOverlayLibs();
+}
 
 // 布局常量（用户空间 960×266；JS 侧 player.vue 保持同一组常量做命中测试）
 namespace bargeom {
@@ -42,6 +88,7 @@ ControlBar::~ControlBar()
 bool ControlBar::init(int canvasW, int canvasH, bool portrait)
 {
     if (canvasW <= 0 || canvasH <= 0) return false;
+    if (!ensureOverlayLibs()) return false;   // 库不可用 → 降级（无悬浮栏）
     w_ = canvasW;
     h_ = canvasH;
     portrait_ = portrait;
