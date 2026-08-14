@@ -1,4 +1,4 @@
-<template>
+﻿<template>
     <div class="page">
         <!-- 加载/错误覆盖层：铺满视口；仅在视频 plane 激活前可见（打开失败/加载中） -->
         <div v-if="!ready" class="overlay">
@@ -536,3 +536,5 @@ export default {
     }
 }
 </script>
+
+

@@ -1,4 +1,4 @@
-#include "GstPlayer.h"
+﻿#include "GstPlayer.h"
 #include "GstProxy.h"
 #include "ControlBar.h"
 
@@ -1679,5 +1679,6 @@ void gstplayer_init(JQModuleEnv* env)
 }
 
 }  // namespace gstplayer
+
 
 
