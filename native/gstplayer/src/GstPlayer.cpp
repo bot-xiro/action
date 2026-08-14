@@ -1221,9 +1221,12 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
         // 非 h264 fallback 视频：接入静态视频后端入口 vqueue_（vqueue→videoconvert→
         // kmssink 已在 buildPipeline 静态链接）。旋转由 mppvideodec 硬链负责；
         // fallback（av1/hevc 软解）极少触发（API 已锁 codecid=7），保持直通即可。
-        // （尺寸核对/重建请求已在 video/ 分支统一处理，见上）
+        // （尺寸核对/重建请求已在 onQtdemuxPadAdded video/ 分支统一处理）
+        gint w = 0, h = 0;
+        gst_structure_get_int(s, "width", &w);
+        gst_structure_get_int(s, "height", &h);
         sink = vqueue_;
-        PLAYER_LOG("video %dx%d fallback -> vqueue (static backend)", vw, vh);
+        PLAYER_LOG("video %dx%d fallback -> vqueue (static backend)", w, h);
     } else if (media && g_str_has_prefix(media, "audio/")) {
         // 音频解码输出 → 静态音频后端入口 aconvert_（aconvert→audioresample→
         // alsasink 已在 buildPipeline 静态链接；audioresample 保证 44.1k/48k
