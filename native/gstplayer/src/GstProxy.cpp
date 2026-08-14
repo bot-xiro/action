@@ -142,6 +142,46 @@ pid_t spawnCurl(const std::string& cmd, int* outFd)
     return pid;
 }
 
+// HEAD 获取文件总长度（带 Referer/UA 绕 403）。失败返回 0。
+// 简单缓存：同一 URL 短时间重复请求（首播+seek）只 HEAD 一次。
+long long getContentLength(const std::string& url)
+{
+    static std::string cachedUrl;
+    static long long cachedLen = 0;
+    if (cachedUrl == url && cachedLen > 0) return cachedLen;
+
+    std::string cmd = "curl -sI --connect-timeout 8 --max-time 15"
+        " -e '" + std::string(kReferer) + "'"
+        " -A '" + std::string(kUserAgent) + "'";
+    std::string escUrl;
+    for (char c : url) {
+        if (c == '\'') escUrl += "'\\''";
+        else escUrl += c;
+    }
+    cmd += " '" + escUrl + "' 2>/dev/null";
+
+    long long len = 0;
+    FILE* fp = popen(cmd.c_str(), "r");
+    if (fp) {
+        char line[1024];
+        while (fgets(line, sizeof(line), fp)) {
+            if (strncasecmp(line, "Content-Length:", 15) == 0) {
+                len = atoll(line + 15);
+                break;
+            }
+        }
+        pclose(fp);
+    }
+    if (len > 0) {
+        cachedUrl = url;
+        cachedLen = len;
+        PROXY_LOG("HEAD len=%lld for %.80s", len, url.c_str());
+    } else {
+        PROXY_LOG("HEAD failed (no Content-Length) for %.80s", url.c_str());
+    }
+    return len;
+}
+
 // 处理单个客户端连接：读请求头 → curl 转发（chunked）
 void handleClient(int fd)
 {
@@ -220,19 +260,50 @@ void handleClient(int fd)
     }
     cmd += " '" + escUrl + "' 2>/dev/null";
 
-    // 响应头：chunked 流式（不过 Content-Length，长度由 curl 决定、未知）。
-    // 【seek 修复 2026-08-14】必须声明 Accept-Ranges: bytes（+ 206 的 Content-Range），
-    // 否则 souphttpsrc 判定源不可 seek → FLUSH seek 后源不重启 → 位置回退。
+    // 响应头：Content-Length 方案（2026-08-14 seek 修复）。
+    // 【根因】souphttpsrc 判定源可 seek 需要 Content-Length（chunked 传输 length=0
+    // → seekable=false → FLUSH seek 后源不重启 → 位置回退，代理请求日志实证：
+    // seek 后无任何新 Range 请求）。先 HEAD 拿总长度 L，响应带 Content-Length：
+    //   range 空 → 200 + CL=L；range=X- → 206 + Content-Range: bytes X-(L-1)/L + CL=L-X
+    // 传输改为裸流（非 chunked）。HEAD 失败时回退 chunked（不 seek 也保播放）。
     std::string hdr;
+    long long totalLen = getContentLength(targetUrl);
+    bool useCL = (totalLen > 0);
     if (range.empty()) {
-        hdr = "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n"
-              "Accept-Ranges: bytes\r\n"
-              "Cache-Control: no-store\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+        if (useCL) {
+            char cl[32];
+            snprintf(cl, sizeof(cl), "%lld", totalLen);
+            hdr = "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n"
+                  "Accept-Ranges: bytes\r\n"
+                  "Cache-Control: no-store\r\nConnection: close\r\n"
+                  "Content-Length: " + std::string(cl) + "\r\n\r\n";
+        } else {
+            hdr = "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n"
+                  "Accept-Ranges: bytes\r\n"
+                  "Cache-Control: no-store\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+        }
     } else {
-        hdr = "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
-              "Accept-Ranges: bytes\r\n"
-              "Content-Range: bytes " + range + "/*\r\n"
-              "Cache-Control: no-store\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+        if (useCL) {
+            // range 形如 "X-"：取起始字节
+            long long start = 0;
+            sscanf(range.c_str(), "%lld", &start);
+            if (start < 0) start = 0;
+            if (start >= totalLen) start = totalLen - 1;
+            long long remain = totalLen - start;
+            char cl[32], cr[96];
+            snprintf(cl, sizeof(cl), "%lld", remain);
+            snprintf(cr, sizeof(cr), "bytes %lld-%lld/%lld", start, totalLen - 1, totalLen);
+            hdr = "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
+                  "Accept-Ranges: bytes\r\n"
+                  "Content-Range: " + std::string(cr) + "\r\n"
+                  "Cache-Control: no-store\r\nConnection: close\r\n"
+                  "Content-Length: " + std::string(cl) + "\r\n\r\n";
+        } else {
+            hdr = "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
+                  "Accept-Ranges: bytes\r\n"
+                  "Content-Range: bytes " + range + "/*\r\n"
+                  "Cache-Control: no-store\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+        }
     }
     if (!writeAll(fd, hdr.data(), hdr.size())) {
         close(fd);
@@ -242,32 +313,39 @@ void handleClient(int fd)
     int srcFd = -1;
     pid_t pid = spawnCurl(cmd, &srcFd);
     if (pid < 0) {
-        const char* term = "0\r\n\r\n";
-        writeAll(fd, term, strlen(term));
+        if (!useCL) writeAll(fd, "0\r\n\r\n", 5);
         close(fd);
         return;
     }
 
-    // 管道 → chunked 转发；客户端断开（写失败）立即终止 curl
+    // 管道 → 转发（CL 方案为裸流；chunked 回退路径保留分帧）
     char cbuf[65536];
     bool clientAlive = true;
     for (;;) {
         ssize_t n = read(srcFd, cbuf, sizeof(cbuf));
         if (n <= 0) break;
-        char hb[32];
-        int hl = snprintf(hb, sizeof(hb), "%zx\r\n", (size_t)n);
-        if (!clientAlive) break;
-        if (!writeAll(fd, hb, hl) ||
-            !writeAll(fd, cbuf, (size_t)n) ||
-            !writeAll(fd, "\r\n", 2)) {
-            clientAlive = false;
-            break;
+        if (useCL) {
+            if (!clientAlive) break;
+            if (!writeAll(fd, cbuf, (size_t)n)) {
+                clientAlive = false;
+                break;
+            }
+        } else {
+            char hb[32];
+            int hl = snprintf(hb, sizeof(hb), "%zx\r\n", (size_t)n);
+            if (!clientAlive) break;
+            if (!writeAll(fd, hb, hl) ||
+                !writeAll(fd, cbuf, (size_t)n) ||
+                !writeAll(fd, "\r\n", 2)) {
+                clientAlive = false;
+                break;
+            }
         }
     }
     close(srcFd);
-    if (clientAlive) {
+    if (!useCL && clientAlive) {
         writeAll(fd, "0\r\n\r\n", 5);
-    } else {
+    } else if (!clientAlive) {
         // 客户端已断：杀 curl 避免后台空下载
         kill(pid, SIGKILL);
         int st = 0;
