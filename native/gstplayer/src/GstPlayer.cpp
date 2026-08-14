@@ -1007,7 +1007,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 那会与状态迁移抢锁（3fc0948 lazy-link 实测死锁，回退该方案）。
     gst_bin_add_many(GST_BIN(pipeline_), src, queue, demux_, vparse_, vdec_,
         vqueue_, vconvert_, vscale_, vcaps_, vbox_, voverlay_, vtitleoverlay_, vconvert2_,
-        decodebin_, aconvert_, aresample_, videoSink_, audioSink_, nullptr);
+        decodebin_, aconvert_, aresample_, volume_, videoSink_, audioSink_, nullptr);
     if (!gst_element_link_many(src, queue, demux_, nullptr)) {
         PLAYER_LOG("link src->qtdemux failed");
         teardown();
@@ -1081,8 +1081,8 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         PLAYER_LOG("no canvas rect, overlay disabled");
     }
     // 音频后端链静态预链接：decodebin 音频 pad 出现时连 aconvert sink。
-    if (!gst_element_link_many(aconvert_, aresample_, audioSink_, nullptr)) {
-        PLAYER_LOG("link aconv->ares->asink failed");
+    if (!gst_element_link_many(aconvert_, aresample_, volume_, audioSink_, nullptr)) {
+        PLAYER_LOG("link aconv->ares->vol->asink failed");
         teardown();
         return false;
     }
@@ -1360,6 +1360,7 @@ void GstPlayer::teardown()
     decodebin_ = nullptr;
     aconvert_ = nullptr;
     aresample_ = nullptr;
+    volume_ = nullptr;
     videoSink_ = nullptr;
     audioSink_ = nullptr;
     videoFlip_ = nullptr;
@@ -1679,6 +1680,8 @@ void gstplayer_init(JQModuleEnv* env)
 }
 
 }  // namespace gstplayer
+
+
 
 
 
