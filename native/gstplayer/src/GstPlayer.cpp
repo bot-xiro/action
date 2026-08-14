@@ -384,15 +384,6 @@ void GstPlayer::start(JQFunctionInfo& info)
         info.GetReturnValue().ThrowInternalError("start: not opened");
         return;
     }
-    // 【竖屏支持 2026-08-14】pad-added 请求了重建（非 16:9 源）→ 先重建管线，
-    // 使 vcaps/vbox 按真实源尺寸设置（构建期固定，seek 不受影响）
-    if (rebuildNeeded_) {
-        rebuildForSource();
-        if (!pipeline_) {
-            info.GetReturnValue().ThrowInternalError("start: rebuild failed");
-            return;
-        }
-    }
     // 【死锁红线 2026-08-09】open() 返回时 PAUSED 预滚仍是 ASYNC（ret=2），
     // 若直接切 PLAYING，状态迁移会与流线程的 pad-added 动态链接（KMSSINK 下
     // 音频 decodebin pad、h264 vdec 链）并发互斥，真机实证全线 futex 死锁：
@@ -406,6 +397,21 @@ void GstPlayer::start(JQFunctionInfo& info)
     if (preroll == GST_STATE_CHANGE_FAILURE) {
         info.GetReturnValue().ThrowInternalError("start: preroll failed");
         return;
+    }
+    // 【竖屏支持 2026-08-14】pad-added 在预滚期间触发（重建请求在预滚后才出现），
+    // 故重建检查必须放在预滚等待【之后】；重建后对新管线再走一次预滚
+    if (rebuildNeeded_) {
+        rebuildForSource();
+        if (!pipeline_) {
+            info.GetReturnValue().ThrowInternalError("start: rebuild failed");
+            return;
+        }
+        preroll = gst_element_get_state(pipeline_, nullptr, nullptr, 10LL * GST_SECOND);
+        PLAYER_LOG("start wait preroll (after rebuild) ret=%d", (int)preroll);
+        if (preroll == GST_STATE_CHANGE_FAILURE) {
+            info.GetReturnValue().ThrowInternalError("start: rebuild preroll failed");
+            return;
+        }
     }
     // 【诊断 2026-08-14】预滚后打印视频链实际协商 caps（帧尺寸/格式），
     // 用于核对画布/叠加几何是否与预期一致（266×960 或 960×266）
@@ -523,12 +529,11 @@ void GstPlayer::seek(JQFunctionInfo& info)
     }
     gint64 ns = static_cast<gint64>(ms * 1000000.0);   // ms -> ns
     if (ns < 0) ns = 0;
-    // 【seek 修复实验 2026-08-14】FLUSH seek 在 videobox 链下 ret=1 但位置回退
-    // （真机：seek 256866 → 下一秒位置回 1034）。改非冲刷 seek（仅 KEY_UNIT）：
-    // 源不中断，段更新后从目标位置继续，代价是 seek 瞬间可能有短暂画面残留。
+    // 【seek 修复 2026-08-14】源可 seek 性由代理响应头决定（Accept-Ranges，见
+    // GstProxy.cpp）：恢复 FLUSH seek（无 FLUSH 时被源拒绝 ret=0）。
     bool ok = gst_element_seek_simple(pipeline_, GST_FORMAT_TIME,
-        static_cast<GstSeekFlags>(GST_SEEK_FLAG_KEY_UNIT), ns);
-    PLAYER_LOG("seek to %.0f ms ret=%d (no-flush)", ms, ok ? 1 : 0);
+        static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT), ns);
+    PLAYER_LOG("seek to %.0f ms ret=%d", ms, ok ? 1 : 0);
     info.GetReturnValue().Set(ok);
 }
 

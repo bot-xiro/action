@@ -219,13 +219,21 @@ void handleClient(int fd)
     }
     cmd += " '" + escUrl + "' 2>/dev/null";
 
-    // 响应头：chunked 流式（不过 Content-Length，长度由 curl 决定、未知）
-    const char* hdr = range.empty()
-        ? "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n"
-          "Cache-Control: no-store\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"
-        : "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
-          "Cache-Control: no-store\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
-    if (!writeAll(fd, hdr, strlen(hdr))) {
+    // 响应头：chunked 流式（不过 Content-Length，长度由 curl 决定、未知）。
+    // 【seek 修复 2026-08-14】必须声明 Accept-Ranges: bytes（+ 206 的 Content-Range），
+    // 否则 souphttpsrc 判定源不可 seek → FLUSH seek 后源不重启 → 位置回退。
+    std::string hdr;
+    if (range.empty()) {
+        hdr = "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n"
+              "Accept-Ranges: bytes\r\n"
+              "Cache-Control: no-store\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+    } else {
+        hdr = "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
+              "Accept-Ranges: bytes\r\n"
+              "Content-Range: bytes " + range + "/*\r\n"
+              "Cache-Control: no-store\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+    }
+    if (!writeAll(fd, hdr.data(), hdr.size())) {
         close(fd);
         return;
     }
