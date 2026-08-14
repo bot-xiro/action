@@ -1107,10 +1107,13 @@ void GstPlayer::rebuildForSource()
         rebuildNeeded_ = false;
         return;
     }
+    // 【修复 2026-08-14】teardown() 会清零 canvasW_/canvasH_（含控制栏清理），
+    // 必须先保存，否则重建后画布丢失 → overlay disabled、无控制栏/黑边
+    int cw = canvasW_, ch = canvasH_;
     rebuilding_ = true;
     teardown();
     bool ok = buildPipeline(rebuildUri_, rebuildAudio_, rebuildRect_, rebuildFill_,
-                            canvasW_, canvasH_);
+                            cw, ch);
     if (ok) {
         // 用真实源尺寸直接覆盖内容几何（构建期固定，后续不再变化）
         applyCanvasContent(sw, sh);

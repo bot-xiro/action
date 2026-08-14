@@ -55,6 +55,13 @@ jobs:
           ls -la libs/libjsapi_gstplayer.so
           file libs/libjsapi_gstplayer.so
 
+      - name: Build testseek (aarch64, 设备端 seek 实验)
+        run: |
+          aarch64-linux-gnu-g++ -o testseek native/testseek/testseek.cpp \
+            $(pkg-config --cflags gstreamer-1.0) \
+            -Wl,-unresolved-symbols=ignore-all -ldl -lpthread
+          file testseek
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -80,4 +87,11 @@ jobs:
         with:
           name: libjsapi_gstplayer.so
           path: libs/libjsapi_gstplayer.so
+          retention-days: 7
+
+      - name: Upload testseek
+        uses: actions/upload-artifact@v4
+        with:
+          name: testseek
+          path: testseek
           retention-days: 7
