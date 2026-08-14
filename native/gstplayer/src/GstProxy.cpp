@@ -195,6 +195,7 @@ void handleClient(int fd)
             range = head.substr(rbeg + 6, rend - rbeg - 6);
         }
     }
+    PROXY_LOG("req: range='%s' url=%.80s", range.c_str(), targetUrl.c_str());
 
     // 组装 curl 命令（POSIX sh 单引号包裹，url 内单引号按 sh 拼接规则转义）
     std::string escUrl;
