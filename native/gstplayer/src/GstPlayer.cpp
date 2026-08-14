@@ -303,6 +303,12 @@ void GstPlayer::open(JQFunctionInfo& info)
     // 控制栏 cairo 画布与之一致 → 1:1 映射，无二次缩放。
     int canvasW = (posW > 0 && posH > 0) ? posW : 0;
     int canvasH = (posW > 0 && posH > 0) ? posH : 0;
+    // 【竖屏支持 2026-08-14】记录重建参数（非常规比例源在 start() 前重建）
+    rebuildUri_ = uri;
+    rebuildAudio_ = audio;
+    rebuildRect_ = rect.str();
+    rebuildFill_ = fill;
+    rebuildNeeded_ = false;
     bool ok = buildPipeline(uri, audio, rect.str(), fill, canvasW, canvasH);
     PLAYER_LOG("open buildPipeline ret=%d", ok ? 1 : 0);
     if (!ok) {
@@ -377,6 +383,15 @@ void GstPlayer::start(JQFunctionInfo& info)
     if (!pipeline_) {
         info.GetReturnValue().ThrowInternalError("start: not opened");
         return;
+    }
+    // 【竖屏支持 2026-08-14】pad-added 请求了重建（非 16:9 源）→ 先重建管线，
+    // 使 vcaps/vbox 按真实源尺寸设置（构建期固定，seek 不受影响）
+    if (rebuildNeeded_) {
+        rebuildForSource();
+        if (!pipeline_) {
+            info.GetReturnValue().ThrowInternalError("start: rebuild failed");
+            return;
+        }
     }
     // 【死锁红线 2026-08-09】open() 返回时 PAUSED 预滚仍是 ASYNC（ret=2），
     // 若直接切 PLAYING，状态迁移会与流线程的 pad-added 动态链接（KMSSINK 下
@@ -1064,8 +1079,37 @@ void GstPlayer::applyCanvasContent(int srcW, int srcH)
     gst_caps_unref(caps);
     // 注意：videobox 的 left/right/top/bottom 为【负数】时加边框（正数裁剪）
     g_object_set(vbox_, "left", -borderL, "right", -borderR, "top", -borderT, "bottom", -borderB, nullptr);
+    appliedSrcW_ = srcW;
+    appliedSrcH_ = srcH;
     PLAYER_LOG("canvas content: src=%dx%d disp=%dx%d -> content=%dx%d borders L%d R%d T%d B%d",
         srcW, srcH, dispW, dispH, contentW, contentH, borderL, borderR, borderT, borderB);
+}
+
+// 【竖屏支持 2026-08-14】按真实源尺寸重建管线（16:9 源不触发）。
+// 背景：动态改 capsfilter caps 会破坏 FLUSH seek（真机实证位置跳转后回退），
+// 因此非 16:9 源（如 9:16 竖屏）在 open 时先用 16:9 预置构建 → pad-added
+// 检测到尺寸不一致并记录真实尺寸 → start() 前在此 teardown + 用真实尺寸
+// 重建（applyCanvasContent 构建期直接设置，之后不再变化）。
+void GstPlayer::rebuildForSource()
+{
+    int sw = rebuildSrcW_, sh = rebuildSrcH_;
+    PLAYER_LOG("rebuildForSource enter (real src %dx%d)", sw, sh);
+    if (sw <= 0 || sh <= 0) {
+        PLAYER_LOG("rebuildForSource: no real src dims, skip");
+        rebuildNeeded_ = false;
+        return;
+    }
+    rebuilding_ = true;
+    teardown();
+    bool ok = buildPipeline(rebuildUri_, rebuildAudio_, rebuildRect_, rebuildFill_,
+                            canvasW_, canvasH_);
+    if (ok) {
+        // 用真实源尺寸直接覆盖内容几何（构建期固定，后续不再变化）
+        applyCanvasContent(sw, sh);
+    }
+    rebuilding_ = false;
+    rebuildNeeded_ = false;
+    PLAYER_LOG("rebuildForSource done ret=%d", ok ? 1 : 0);
 }
 
 // qtdemux pad-added 静态回调 → 转成员函数（userdata=this）
@@ -1165,12 +1209,15 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
         gint w = 0, h = 0;
         gst_structure_get_int(s, "width", &w);
         gst_structure_get_int(s, "height", &h);
-        // 【seek 修复 2026-08-14】不再在 pad-added 动态改 capsfilter caps：
-        // 真机实证动态重协商会让后续 FLUSH seek 失效（位置跳转后立即回退）。
-        // B 站 durl 均为 16:9，构建期 applyCanvasContent(1280,720) 已按 266×473
-        // 预置；如源尺寸非常规比例仅记录警告（黑边略有偏差，可接受）。
-        if (w > 0 && h > 0 && (w != 1280 || h != 720)) {
-            PLAYER_LOG("video src non-16:9 %dx%d (canvas keeps 16:9 default)", w, h);
+        // 【竖屏支持 2026-08-14】源尺寸与当前 vcaps 预设不一致（非 16:9）：
+        // 不动态改 caps（真机实证会破坏 FLUSH seek），记录真实尺寸并置重建标志，
+        // 由 start() 前 rebuildForSource() 用真实尺寸重建管线（16:9 源不重建）。
+        if (w > 0 && h > 0 && (w != appliedSrcW_ || h != appliedSrcH_) && !rebuilding_) {
+            rebuildNeeded_ = true;
+            rebuildSrcW_ = w;
+            rebuildSrcH_ = h;
+            PLAYER_LOG("video src %dx%d != applied %dx%d, rebuild scheduled",
+                w, h, appliedSrcW_, appliedSrcH_);
         }
         sink = vqueue_;
         PLAYER_LOG("video %dx%d fallback -> vqueue (static backend)", w, h);

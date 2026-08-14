@@ -81,9 +81,24 @@ private:
     void onQtdemuxPadAdded(GstPad* pad);          // qtdemux 动态 pad：video→显式硬解链 / audio→音频解码
     void onDecodebinPadAdded(GstPad* pad);        // 音频解码 decodebin 输出 → alsasink
     void refreshBar();                            // 重绘悬浮控制栏（状态由成员变量决定）
+    void rebuildForSource();                      // 【竖屏支持 2026-08-14】按真实源尺寸重建管线
 
     static void qtdemuxPadAddedCb(GstElement* element, GstPad* pad, gpointer userdata);
     static void decodebinPadAddedCb(GstElement* element, GstPad* pad, gpointer userdata);
+
+    // 重建支持（竖屏/非常规比例视频）：open 后首个 pad-added 若发现源尺寸与
+    // 默认 16:9 不一致 → start() 前重建管线（caps 构建期固定，避免动态改
+    // capsfilter caps 破坏 FLUSH seek）
+    std::string rebuildUri_;
+    bool rebuildAudio_ = true;
+    std::string rebuildRect_;
+    std::string rebuildFill_;
+    int appliedSrcW_ = 1280;    // 当前 vcaps 按此源尺寸设置
+    int appliedSrcH_ = 720;
+    int rebuildSrcW_ = 0;       // pad-added 记录的真实源尺寸（重建用）
+    int rebuildSrcH_ = 0;
+    bool rebuildNeeded_ = false; // pad-added 请求重建
+    bool rebuilding_ = false;    // 重建进行中（防 pad-added 重入）
 
     GstElement* pipeline_ = nullptr;     // gst_pipeline
     GstElement* demux_ = nullptr;        // qtdemux（mp4/m4s 解复用，B 站 CDN 均为 mp4 容器）
