@@ -1390,8 +1390,11 @@ static void runSeekSelfTest()
     PLAYER_LOG("=== seek self-test variant=%s ===", variant);
 
     const char* path = "/tmp/video.mp4";
+    bool useSoup = (strstr(variant, "soup") != NULL);
     GstElement* pipe = gst_pipeline_new("selftest");
-    GstElement* src = gst_element_factory_make("filesrc", "src");
+    GstElement* src = useSoup
+        ? gst_element_factory_make("souphttpsrc", "src")
+        : gst_element_factory_make("filesrc", "src");
     GstElement* demux = gst_element_factory_make("qtdemux", "demux");
     GstElement* vparse = gst_element_factory_make("h264parse", "vp");
     GstElement* vdec = gst_element_factory_make("mppvideodec", "vd");
@@ -1422,7 +1425,34 @@ static void runSeekSelfTest()
         PLAYER_LOG("selftest factory failed");
         return;
     }
-    g_object_set(src, "location", path, NULL);
+    if (useSoup) {
+        // 直连 CDN（带 Referer/UA，绕 403）：验证 souphttpsrc 本身是否可 seek
+        FILE* uf = fopen("/tmp/playurl2.txt", "r");
+        char urlbuf[2048] = "";
+        if (uf) {
+            if (fgets(urlbuf, sizeof(urlbuf), uf)) {
+                size_t n = strlen(urlbuf);
+                while (n > 0 && (urlbuf[n - 1] == '\n' || urlbuf[n - 1] == '\r')) urlbuf[--n] = 0;
+            }
+            fclose(uf);
+        }
+        if (!*urlbuf) {
+            PLAYER_LOG("selftest soup: no /tmp/playurl2.txt");
+            return;
+        }
+        g_object_set(src, "location", urlbuf, NULL);
+        GstStructure* hdrs = gst_structure_new_empty("headers");
+        gst_structure_set(hdrs, "referer", G_TYPE_STRING, "https://www.bilibili.com/", NULL);
+        g_object_set(src, "extra-headers", hdrs, NULL);
+        gst_structure_free(hdrs);
+        g_object_set(src, "user-agent",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            NULL);
+        g_object_set(src, "timeout", 15, NULL);
+        PLAYER_LOG("selftest soup url: %.100s", urlbuf);
+    } else {
+        g_object_set(src, "location", path, NULL);
+    }
     g_object_set(vqueue, "max-size-buffers", 8, "max-size-bytes", 4 * 1024 * 1024, "max-size-time", 0, NULL);
     g_object_set(vscale, "add-borders", FALSE, NULL);
     if (useContent) {
