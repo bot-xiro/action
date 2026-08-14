@@ -34,6 +34,8 @@ jobs:
             libunwind-dev \
             libgstreamer1.0-dev \
             libgstreamer-plugins-base1.0-dev \
+            libcairo2-dev \
+            libgdk-pixbuf-2.0-dev \
             && sudo rm -rf /var/lib/apt/lists/*
 
       - name: Build libjsapi_gstplayer.so (aarch64)

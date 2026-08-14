@@ -1,10 +1,13 @@
 #include "GstPlayer.h"
 #include "GstProxy.h"
+#include "ControlBar.h"
 
 #include <cstdio>
 #include <sstream>
 #include <syslog.h>
 #include <cstring>
+
+#include <gdk-pixbuf/gdk-pixbuf.h>
 
 #ifdef KMSSINK_TEST
 #include <fcntl.h>
@@ -296,7 +299,11 @@ void GstPlayer::open(JQFunctionInfo& info)
     uri = proxy::maybeRewrite(uri);
 
     PLAYER_LOG("open uri=%s audio=%d rect=%s fill=%s", uri.c_str(), audio ? 1 : 0, rect.str().c_str(), fill.c_str());
-    bool ok = buildPipeline(uri, audio, rect.str(), fill);
+    // 【2026-08-14 悬浮控制栏】画布尺寸 = sink render-rectangle 尺寸（KMSSINK 物理坐标 / waylandsink 逻辑坐标），
+    // 控制栏 cairo 画布与之一致 → 1:1 映射，无二次缩放。
+    int canvasW = (posW > 0 && posH > 0) ? posW : 0;
+    int canvasH = (posW > 0 && posH > 0) ? posH : 0;
+    bool ok = buildPipeline(uri, audio, rect.str(), fill, canvasW, canvasH);
     PLAYER_LOG("open buildPipeline ret=%d", ok ? 1 : 0);
     if (!ok) {
         teardown();
@@ -602,9 +609,57 @@ void GstPlayer::httpGet(JQFunctionInfo& info)
     info.GetReturnValue().Set(body);
 }
 
+// ---- 悬浮控制栏（2026-08-14）----
+// 控制栏以 cairo 渲染成 ARGB 位图 → GdkPixbuf → gdkpixbufoverlay 合入视频帧，
+// 因此视频 plane 置顶时控制栏仍悬浮在视频上方（JS 触摸命中由 player.vue 负责）。
+
+void GstPlayer::refreshBar()
+{
+    if (!bar_ || !voverlay_) return;
+    GdkPixbuf* pb = bar_->render(barVisible_, barPlaying_, barEnded_, barError_,
+                                 barPosMs_, barDurMs_);
+    if (!pb) return;
+    if (barPixbuf_) g_object_unref(barPixbuf_);
+    barPixbuf_ = pb;
+    g_object_set(voverlay_, "pixbuf", pb, nullptr);
+    PLAYER_LOG("bar refreshed (visible=%d playing=%d ended=%d pos=%.0f dur=%.0f)",
+        barVisible_ ? 1 : 0, barPlaying_ ? 1 : 0, barEnded_ ? 1 : 0, barPosMs_, barDurMs_);
+}
+
+void GstPlayer::setBarState(JQFunctionInfo& info)
+{
+    JSContext* ctx = info.GetContext();
+    if (info.Length() < 1 || !JS_IsObject(info[0])) {
+        info.GetReturnValue().Set(true);
+        return;
+    }
+    JSValueConst opt = info[0];
+    bool visible = jsGetBool(ctx, opt, "visible", barVisible_);
+    bool playing = jsGetBool(ctx, opt, "playing", barPlaying_);
+    bool ended = jsGetBool(ctx, opt, "ended", barEnded_);
+    bool error = jsGetBool(ctx, opt, "error", barError_);
+    double pos = 0, dur = 0;
+    JSValue v = JS_GetPropertyStr(ctx, opt, "position");
+    if (JS_IsNumber(v)) JS_ToFloat64(ctx, &pos, v);
+    JS_FreeValue(ctx, v);
+    v = JS_GetPropertyStr(ctx, opt, "duration");
+    if (JS_IsNumber(v)) JS_ToFloat64(ctx, &dur, v);
+    JS_FreeValue(ctx, v);
+
+    if (pos >= 0) barPosMs_ = pos;
+    if (dur >= 0) barDurMs_ = dur;
+    barVisible_ = visible;
+    barPlaying_ = playing;
+    barEnded_ = ended;
+    barError_ = error;
+    refreshBar();
+    info.GetReturnValue().Set(true);
+}
+
 // ---- 管线构建（手动管线：souphttpsrc → queue → decodebin → 音视频分流）----
 
-bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::string& rect, const std::string& fill)
+bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::string& rect,
+                              const std::string& fill, int canvasW, int canvasH)
 {
     ensureGstInit();
 
@@ -627,14 +682,22 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     g_object_set(vqueue_, "max-size-bytes", 4 * 1024 * 1024, nullptr);
     g_object_set(vqueue_, "max-size-time", 0, nullptr);
     vconvert_ = gst_element_factory_make("videoconvert", "vconv"); // 格式协商缓冲（格式不匹配时兜底转换）
+    // 【2026-08-14 悬浮控制栏】视频链追加：videoscale(等比+黑边铺满画布) →
+    // capsfilter(画布尺寸) → gdkpixbufoverlay(控制栏合入视频帧) → videoconvert
+    vscale_ = gst_element_factory_make("videoscale", "vscale");
+    vcaps_ = gst_element_factory_make("capsfilter", "vcaps");
+    voverlay_ = gst_element_factory_make("gdkpixbufoverlay", "voverlay");
+    vconvert2_ = gst_element_factory_make("videoconvert", "vconv2");
     decodebin_ = gst_element_factory_make("decodebin", "adec");  // 音频解码链（AAC/MP3 → raw）
     aconvert_ = gst_element_factory_make("audioconvert", "aconv"); // 音频格式协商（raw caps 与 alsasink 解耦）
     aresample_ = gst_element_factory_make("audioresample", "ares"); // 采样率协商（44.1k/48k 自适应）
     if (!src || !queue || !demux_ || !vparse_ || !vdec_ || !vqueue_ || !vconvert_ ||
+        !vscale_ || !vcaps_ || !voverlay_ || !vconvert2_ ||
         !decodebin_ || !aconvert_ || !aresample_) {
-        PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparsed=%d vdec=%d vqueue=%d vconv=%d adec=%d aconv=%d ares=%d",
+        PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparsed=%d vdec=%d vqueue=%d vconv=%d vscale=%d vcaps=%d voverlay=%d vconv2=%d adec=%d aconv=%d ares=%d",
             src ? 1 : 0, queue ? 1 : 0, demux_ ? 1 : 0,
             vparse_ ? 1 : 0, vdec_ ? 1 : 0, vqueue_ ? 1 : 0, vconvert_ ? 1 : 0,
+            vscale_ ? 1 : 0, vcaps_ ? 1 : 0, voverlay_ ? 1 : 0, vconvert2_ ? 1 : 0,
             decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0);
         if (src) gst_object_unref(src);
         if (queue) gst_object_unref(queue);
@@ -643,6 +706,10 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         if (vdec_) gst_object_unref(vdec_);
         if (vqueue_) gst_object_unref(vqueue_);
         if (vconvert_) gst_object_unref(vconvert_);
+        if (vscale_) gst_object_unref(vscale_);
+        if (vcaps_) gst_object_unref(vcaps_);
+        if (voverlay_) gst_object_unref(voverlay_);
+        if (vconvert2_) gst_object_unref(vconvert2_);
         if (decodebin_) gst_object_unref(decodebin_);
         if (aconvert_) gst_object_unref(aconvert_);
         if (aresample_) gst_object_unref(aresample_);
@@ -653,6 +720,10 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         vdec_ = nullptr;
         vqueue_ = nullptr;
         vconvert_ = nullptr;
+        vscale_ = nullptr;
+        vcaps_ = nullptr;
+        voverlay_ = nullptr;
+        vconvert2_ = nullptr;
         decodebin_ = nullptr;
         aconvert_ = nullptr;
         aresample_ = nullptr;
@@ -797,18 +868,53 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 连接，绝不在 PLAYING/PAUSED 切换途中做元素级 gst_element_link——
     // 那会与状态迁移抢锁（3fc0948 lazy-link 实测死锁，回退该方案）。
     gst_bin_add_many(GST_BIN(pipeline_), src, queue, demux_, vparse_, vdec_,
-        vqueue_, vconvert_, decodebin_, aconvert_, aresample_, videoSink_, audioSink_, nullptr);
+        vqueue_, vconvert_, vscale_, vcaps_, voverlay_, vconvert2_,
+        decodebin_, aconvert_, aresample_, videoSink_, audioSink_, nullptr);
     if (!gst_element_link_many(src, queue, demux_, nullptr)) {
         PLAYER_LOG("link src->qtdemux failed");
         teardown();
         return false;
     }
     // 视频后端链静态预链接（sink pad 空闲等动态 pad 接入）：
-    // vparse → vdec → vqueue → videoconvert → kmssink，qtdemux h264 pad 出现时只连 vparse sink。
-    if (!gst_element_link_many(vparse_, vdec_, vqueue_, vconvert_, videoSink_, nullptr)) {
-        PLAYER_LOG("link vparse->vdec->vqueue->vconv->sink failed");
+    // vparse → vdec → vqueue → videoconvert → videoscale(等比+黑边) → capsfilter(画布)
+    // → gdkpixbufoverlay(悬浮控制栏) → videoconvert → sink；qtdemux h264 pad 出现时只连 vparse sink。
+    if (!gst_element_link_many(vparse_, vdec_, vqueue_, vconvert_, vscale_, vcaps_, voverlay_,
+                               vconvert2_, videoSink_, nullptr)) {
+        PLAYER_LOG("link vparse->vdec->vqueue->vconv->vscale->vcaps->overlay->vconv2->sink failed");
         teardown();
         return false;
+    }
+    // 【2026-08-14 悬浮控制栏】videoscale 等比缩放 + 黑边铺满画布（不拉伸变形）；
+    // capsfilter 固定画布尺寸（= sink render-rectangle 尺寸，1:1 映射）
+    g_object_set(vscale_, "force-aspect-ratio", TRUE, nullptr);
+    g_object_set(vscale_, "add-borders", TRUE, nullptr);
+    if (canvasW > 0 && canvasH > 0) {
+        GstCaps* caps = gst_caps_new_simple("video/x-raw",
+            "width", G_TYPE_INT, canvasW,
+            "height", G_TYPE_INT, canvasH, nullptr);
+        g_object_set(vcaps_, "caps", caps, nullptr);
+        gst_caps_unref(caps);
+        // 控制栏渲染器（画布竖条 = KMS 物理方向时启用旋转映射）
+        canvasW_ = canvasW;
+        canvasH_ = canvasH;
+        if (!bar_) bar_ = new ControlBar();
+        if (!bar_->init(canvasW_, canvasH_, canvasH_ > canvasW_)) {
+            PLAYER_LOG("ControlBar init failed (%dx%d)", canvasW_, canvasH_);
+        } else {
+            PLAYER_LOG("ControlBar init ok (%dx%d, portrait=%d)", canvasW_, canvasH_, canvasH_ > canvasW_ ? 1 : 0);
+        }
+        // 初始叠加帧：透明（等待 JS setBarState 首绘）
+        barVisible_ = true;
+        barPlaying_ = false;
+        barEnded_ = false;
+        barError_ = false;
+        barPosMs_ = 0.0;
+        barDurMs_ = 0.0;
+        refreshBar();
+    } else {
+        canvasW_ = 0;
+        canvasH_ = 0;
+        PLAYER_LOG("no canvas rect, overlay disabled");
     }
     // 音频后端链静态预链接：decodebin 音频 pad 出现时连 aconvert sink。
     if (!gst_element_link_many(aconvert_, aresample_, audioSink_, nullptr)) {
@@ -995,12 +1101,26 @@ void GstPlayer::teardown()
     vdec_ = nullptr;
     vqueue_ = nullptr;
     vconvert_ = nullptr;
+    vscale_ = nullptr;
+    vcaps_ = nullptr;
+    voverlay_ = nullptr;
+    vconvert2_ = nullptr;
     decodebin_ = nullptr;
     aconvert_ = nullptr;
     aresample_ = nullptr;
     videoSink_ = nullptr;
     audioSink_ = nullptr;
     videoFlip_ = nullptr;
+    if (barPixbuf_) {
+        g_object_unref(barPixbuf_);
+        barPixbuf_ = nullptr;
+    }
+    if (bar_) {
+        delete bar_;
+        bar_ = nullptr;
+    }
+    canvasW_ = 0;
+    canvasH_ = 0;
     PLAYER_LOG("teardown done");
 }
 
@@ -1024,6 +1144,9 @@ void GstPlayer::busLoop()
         switch (GST_MESSAGE_TYPE(msg)) {
         case GST_MESSAGE_EOS:
             PLAYER_LOG("bus EOS");
+            barEnded_ = true;
+            barPlaying_ = false;
+            refreshBar();
             emitState("ended");
             break;
         case GST_MESSAGE_ERROR: {
@@ -1034,6 +1157,9 @@ void GstPlayer::busLoop()
             PLAYER_LOG("bus ERROR: %s", emsg.c_str());
             if (debug) g_free(debug);
             if (err) g_error_free(err);
+            barError_ = true;
+            barPlaying_ = false;
+            refreshBar();
             emitState("error:" + emsg);
             break;
         }
@@ -1044,8 +1170,12 @@ void GstPlayer::busLoop()
                 PLAYER_LOG("bus state %s -> %s",
                     gst_element_state_get_name(oldState), gst_element_state_get_name(newState));
                 if (newState == GST_STATE_PLAYING) {
+                    barPlaying_ = true;
+                    refreshBar();
                     emitState("playing");
                 } else if (newState == GST_STATE_PAUSED) {
+                    barPlaying_ = false;
+                    refreshBar();
                     emitState("paused");
                 }
             }
@@ -1096,6 +1226,7 @@ static JSValue createGstPlayer(JQModuleEnv* env)
     tpl->SetProtoMethod("getPosition", &GstPlayer::getPosition);
     tpl->SetProtoMethod("seek", &GstPlayer::seek);
     tpl->SetProtoMethod("setRect", &GstPlayer::setRect);
+    tpl->SetProtoMethod("setBarState", &GstPlayer::setBarState);
     tpl->SetProtoMethod("httpGet", &GstPlayer::httpGet);
 
     // JS 侧: gstPlayer.stateChanged.on(cb) / .off(cb)

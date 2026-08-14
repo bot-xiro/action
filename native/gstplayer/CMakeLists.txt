@@ -37,12 +37,18 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include pthread.h")
 # 运行时符号从设备 GStreamer 1.22 动态库解析（-Wl,-unresolved-symbols=ignore-all）
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(GST REQUIRED gstreamer-1.0 gstreamer-base-1.0 gstreamer-plugins-base-1.0)
+# 悬浮控制栏（2026-08-14）：cairo 渲染 + gdk-pixbuf 位图 → gdkpixbufoverlay 合入视频帧
+# （设备有 libcairo.so.2 / libgdk_pixbuf-2.0.so.0 / libfontconfig.so.1，符号运行时解析）
+pkg_check_modules(CAIRO REQUIRED cairo)
+pkg_check_modules(GDK REQUIRED gdk-pixbuf-2.0)
 # 交叉编译时剔除宿主 libc 头目录（/usr/include/x86_64-linux-gnu），
 # 防止与 aarch64 工具链 glibc 头混用导致 gnu/stubs-32.h 缺失
 if(CMAKE_CROSSCOMPILING)
     list(FILTER GST_INCLUDE_DIRS EXCLUDE REGEX "^/usr/include/x86_64-linux-gnu$")
+    list(FILTER CAIRO_INCLUDE_DIRS EXCLUDE REGEX "^/usr/include/x86_64-linux-gnu$")
+    list(FILTER GDK_INCLUDE_DIRS EXCLUDE REGEX "^/usr/include/x86_64-linux-gnu$")
 endif()
-include_directories(${GST_INCLUDE_DIRS})
+include_directories(${GST_INCLUDE_DIRS} ${CAIRO_INCLUDE_DIRS} ${GDK_INCLUDE_DIRS})
 
 # libdrm（仅头文件）：KMSSINK 分支用 drmModeObjectSetProperty 直接控制视频
 # plane 的 zpos，绕开 kmssink 缺失的 zpos 属性（运行时符号从设备解析）

@@ -11,6 +11,10 @@
 
 namespace gstplayer {
 
+class ControlBar;
+
+typedef struct _GdkPixbuf GdkPixbuf;
+
 // 自研 gstplayer 原生模块（全新实现，不依赖系统 videoplayer）
 //
 // JS 侧使用（单例实例，无需 new）：
@@ -18,11 +22,14 @@ namespace gstplayer {
 //   gstPlayer.open({ uri, audio, pos_x, pos_y, pos_w, pos_h })
 //   gstPlayer.start() / gstPlayer.pause() / gstPlayer.resume() / gstPlayer.close()
 //   gstPlayer.stateChanged.on(function(state) { ... })   // "playing"/"paused"/"ended"/"error:..."
+//   gstPlayer.setBarState({visible, playing, ended, error, position, duration})  // 悬浮控制栏
 //
 // 实现：手动构建 GStreamer 管线（souphttpsrc → queue → decodebin → 音视频分流）
 //   - souphttpsrc: 直接创建，设置浏览器 UA + Referer（B站 CDN 防盗链必需；playbin 内部 source 无法获取）
 //   - decodebin: pad-added 信号按媒体类型分流到 waylandsink / alsasink
-//   - video-sink: waylandsink（weston 环境；kmssink 会死锁，禁用）
+//   - 视频链：qtdemux → h264parse → mppvideodec → videoconvert → videoscale(等比留边)
+//     → capsfilter(画布尺寸) → gdkpixbufoverlay(悬浮控制栏) → videoconvert → sink
+//   - video-sink: kmssink(KMSSINK_TEST) / waylandsink
 //   - audio-sink: alsasink（device=speaker）
 //   - 状态/错误/EOS 通过 bus 轮询线程 → JQSignal 回调 JS 线程
 class GstPlayer : public JQUTIL_NS::JQBaseObject {
@@ -55,16 +62,23 @@ public:
     // 播放中置顶(3)全屏可见 / 控制栏唤出时置底(0)让 UI 可操作（见 player.vue）
     void setVideoZpos(JQUTIL_NS::JQFunctionInfo& info);
 
+    // 【2026-08-14 悬浮控制栏】更新叠加在视频帧上的控制栏状态并重绘
+    // 入参: setBarState({visible:bool, playing:bool, ended:bool, error:bool,
+    //                    position:ms, duration:ms})
+    void setBarState(JQUTIL_NS::JQFunctionInfo& info);
+
     // ---- JS 信号：gstPlayer.stateChanged.on(cb) / .off(cb) ----
     JQUTIL_NS::JQSignal<std::string> stateChanged;
 
 private:
-    bool buildPipeline(const std::string& uri, bool audio, const std::string& rect, const std::string& fill);
+    bool buildPipeline(const std::string& uri, bool audio, const std::string& rect,
+                       const std::string& fill, int canvasW, int canvasH);
     void teardown();
     void busLoop();
     void emitState(const std::string& state);
     void onQtdemuxPadAdded(GstPad* pad);          // qtdemux 动态 pad：video→显式硬解链 / audio→音频解码
     void onDecodebinPadAdded(GstPad* pad);        // 音频解码 decodebin 输出 → alsasink
+    void refreshBar();                            // 重绘悬浮控制栏（状态由成员变量决定）
 
     static void qtdemuxPadAddedCb(GstElement* element, GstPad* pad, gpointer userdata);
     static void decodebinPadAddedCb(GstElement* element, GstPad* pad, gpointer userdata);
@@ -75,12 +89,28 @@ private:
     GstElement* vdec_ = nullptr;         // mppvideodec（RK MPP 硬解，rotation 硬件旋转，DMA-BUF 输出）
     GstElement* vqueue_ = nullptr;       // 视频缓冲 queue（静态后端入口；动态 pad（h264/fallback）统一接此）
     GstElement* vconvert_ = nullptr;     // videoconvert（格式协商缓冲：解码 DMA-BUF → sink 可接受格式）
+    GstElement* vscale_ = nullptr;       // videoscale（等比缩放 + 黑边，铺满画布不拉伸）
+    GstElement* vcaps_ = nullptr;        // capsfilter（画布尺寸 video/x-raw,width=W,height=H）
+    GstElement* voverlay_ = nullptr;     // gdkpixbufoverlay（悬浮控制栏合入视频帧）
+    GstElement* vconvert2_ = nullptr;    // 第二 videoconvert（overlay 输出格式协商缓冲）
     GstElement* decodebin_ = nullptr;    // 音频解码器（AAC → raw，输出接 audioconvert → alsasink）
     GstElement* aconvert_ = nullptr;     // audioconvert（音频格式协商，防 raw caps 与 alsasink 不匹配卡 preroll）
     GstElement* aresample_ = nullptr;    // audioresample（采样率协商，防 44.1k/48k 不匹配卡 preroll）
-    GstElement* videoSink_ = nullptr;    // waylandsink
+    GstElement* videoSink_ = nullptr;    // kmssink / waylandsink
     GstElement* audioSink_ = nullptr;    // alsasink
     GstElement* videoFlip_ = nullptr;    // 遗留：videoflip 已淘汰（mppvideodec rotation 替代），保留指针置空兼容 teardown
+
+    // 悬浮控制栏
+    ControlBar* bar_ = nullptr;          // cairo 控制栏渲染器
+    GdkPixbuf* barPixbuf_ = nullptr;     // 当前叠加的 pixbuf（GdkPixbuf，需 unref）
+    int canvasW_ = 0;                    // 画布尺寸（= sink render-rectangle 尺寸）
+    int canvasH_ = 0;
+    bool barVisible_ = true;
+    bool barPlaying_ = false;
+    bool barEnded_ = false;
+    bool barError_ = false;
+    double barPosMs_ = 0.0;
+    double barDurMs_ = 0.0;
 
     std::thread busThread_;
     std::atomic<bool> stopping_{false};
