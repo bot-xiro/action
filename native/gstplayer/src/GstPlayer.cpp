@@ -1107,6 +1107,36 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         teardown();
         return false;
     }
+    // 【2026-08-15 详细 caps 协商日志】排查沙沙声根因
+    {
+        GstPad* aresampleSrcPad = gst_element_get_static_pad(aresample_, "src");
+        GstPad* acapsSinkPad = gst_element_get_static_pad(acaps_, "sink");
+        GstPad* avolumeSinkPad = gst_element_get_static_pad(avolume_, "sink");
+        if (aresampleSrcPad) {
+            GstCaps* caps = gst_pad_get_current_caps(aresampleSrcPad);
+            if (caps) {
+                PLAYER_LOG("audio caps after aresample: %s", gst_caps_to_string(caps));
+                gst_caps_unref(caps);
+            }
+            gst_object_unref(aresampleSrcPad);
+        }
+        if (acapsSinkPad) {
+            GstCaps* caps = gst_pad_get_current_caps(acapsSinkPad);
+            if (caps) {
+                PLAYER_LOG("audio caps at acaps sink: %s", gst_caps_to_string(caps));
+                gst_caps_unref(caps);
+            }
+            gst_object_unref(acapsSinkPad);
+        }
+        if (avolumeSinkPad) {
+            GstCaps* caps = gst_pad_get_current_caps(avolumeSinkPad);
+            if (caps) {
+                PLAYER_LOG("audio caps at avolume sink: %s", gst_caps_to_string(caps));
+                gst_caps_unref(caps);
+            }
+            gst_object_unref(avolumeSinkPad);
+        }
+    }
 #ifdef KMSSINK_TEST
     // mppvideodec 硬件旋转（消灭 videoflip CPU 逐帧旋转 + 一次 DMA 拷贝）：
     // kmssink 直出物理 plane，不经 weston rotate-90 变换，所有视频必须顺时针转 90°
@@ -1322,6 +1352,10 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
     const GstStructure* s = gst_caps_get_structure(caps, 0);
     const gchar* media = s ? gst_structure_get_name(s) : nullptr;  // "video/x-h264" / "audio/mpeg"
     PLAYER_LOG("pad-added: %s", media ? media : "?");
+    // 【2026-08-15 详细 caps 日志】排查沙沙声根因
+    if (media && g_str_has_prefix(media, "audio/")) {
+        PLAYER_LOG("decodebin audio caps: %s", gst_caps_to_string(caps));
+    }
     GstElement* sink = nullptr;
     if (media && g_str_has_prefix(media, "video/")) {
         // 非 h264 fallback 视频：接入静态视频后端入口 vqueue_（vqueue→videoconvert→
