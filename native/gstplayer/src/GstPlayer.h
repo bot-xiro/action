@@ -130,6 +130,7 @@ private:
     bool barPlaying_ = false;
     bool barEnded_ = false;
     bool barError_ = false;
+    bool barHiddenSet_ = false;    // 隐藏时透明条带已设置（轮询防重复分配）
     double barPosMs_ = 0.0;
     double barDurMs_ = 0.0;
     std::string barTitle_;               // 视频标题（顶部标题条）

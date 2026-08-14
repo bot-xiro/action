@@ -4,6 +4,24 @@
 
 ---
 
+## 2026-08-14（自动��藏第二轮：透明条带方案）
+
+### 真机复��（用户"还是一样"）定论前版修复无效
+
+- **18:17 用户��试日志实证**：新 .so（1441775879）已加载、`bar hidden (overlay removed)`
+  ����行，但控制��仍定格画面 → **g_object_set_property 置 NULL 这条"清除"路径在该
+  gdkpixbufoverlay 实现上不可��**（无论 GValue 用 G_TYPE_OBJECT 还是
+  G_PARAM_SPEC_VALUE_TYPE，都不生效；真机两次实证）。
+- **改为"透明条带"方案**：��藏时���� `ControlBar::render(false,...)` 得到的全透明
+  pixbuf，走【设置 pixbuf】路径（`g_object_set`）——该路径被反复验证可��（控制��
+  正常显示/��新）。全透明条带 alpha=0 合成后视觉无内容 → ��制��消失。加
+  `barHiddenSet_` flag ��止进度轮��期间重复分���（��藏后零开�� return）。
+
+### 结果
+- 待真机验证：��藏是否真正消失（日志看 `bar hidden (transparent pixbuf set)`）。
+
+---
+
 ## 2026-08-14（会话恢复日）
 
 ### 功能：环境恢复 + 项目接管（0a-0d + 步骤 1）
@@ -23,6 +41,24 @@
 - [x] 首次装机验证（13:35）：`miniapp_cli install` ret:0 → 启动成功 → **首页热门列表加载 20 条**，封面图从 hdslb.com 正常拉取；加载的 .so 为本次 Action 产物（pkg libs/libjsapi_gstplayer_386948451.so）
 - [x] **发现 appid 冲突**：8002000000000001 实为系统媒体播放器 appid（/userdisk/8002000000000001.0_0_1.amr 为 7-26 系统文件，早于本项目 8-06 起步；商店检查返回 rollingBack:407 有回滚压力）→ **已更换为 8001812345678901**（v0.0.2）
 - [x] **发现构建缺陷**：build 未加 -q → amr 内是 .js 而非 .js.bin，设置页模块报 `settings.js.bin open failed`（框架按 .js.bin 查找）→ build 脚本改为 `aiot-cli build -q -p`
+
+---
+
+## 2026-08-14（自动��藏第二轮：透明条带方案）
+
+### 真机复��（用户"还是一样"）定论前版修复无效
+
+- **18:17 用户��试日志实证**：新 .so（1441775879）已加载、`bar hidden (overlay removed)`
+  ����行，但控制��仍定格画面 → **g_object_set_property 置 NULL 这条"清除"路径在该
+  gdkpixbufoverlay 实现上不可��**（无论 GValue 用 G_TYPE_OBJECT 还是
+  G_PARAM_SPEC_VALUE_TYPE，都不生效；真机两次实证）。
+- **改为"透明条带"方案**：��藏时���� `ControlBar::render(false,...)` 得到的全透明
+  pixbuf，走【设置 pixbuf】路径（`g_object_set`）——该路径被反复验证可��（控制��
+  正常显示/��新）。全透明条带 alpha=0 合成后视觉无内容 → ��制��消失。加
+  `barHiddenSet_` flag ��止进度轮��期间重复分���（��藏后零开�� return）。
+
+### 结果
+- 待真机验证：��藏是否真正消失（日志看 `bar hidden (transparent pixbuf set)`）。
 
 ---
 
@@ -51,6 +87,24 @@
 - [ ] 首页为"热门"而非个性化推荐（登录态 rcmd 依赖 cookie，暂不引入；决策记录于 PROJECT_SUMMARY）
 - [ ] 登录（QR）为预留实现：cookie 已可存取，但 httpGet 尚未带 cookie，真正登录后历史/收藏需 native 支持 cookie
 - [ ] 首次装机时系统曾自动清理 pkg（会话开始 13:03 观测到）——新 appid 是否被系统定期清理需长期观察
+
+---
+
+## 2026-08-14（自动��藏第二轮：透明条带方案）
+
+### 真机复��（用户"还是一样"）定论前版修复无效
+
+- **18:17 用户��试日志实证**：新 .so（1441775879）已加载、`bar hidden (overlay removed)`
+  ����行，但控制��仍定格画面 → **g_object_set_property 置 NULL 这条"清除"路径在该
+  gdkpixbufoverlay 实现上不可��**（无论 GValue 用 G_TYPE_OBJECT 还是
+  G_PARAM_SPEC_VALUE_TYPE，都不生效；真机两次实证）。
+- **改为"透明条带"方案**：��藏时���� `ControlBar::render(false,...)` 得到的全透明
+  pixbuf，走【设置 pixbuf】路径（`g_object_set`）——该路径被反复验证可��（控制��
+  正常显示/��新）。全透明条带 alpha=0 合成后视觉无内容 → ��制��消失。加
+  `barHiddenSet_` flag ��止进度轮��期间重复分���（��藏后零开�� return）。
+
+### 结果
+- 待真机验证：��藏是否真正消失（日志看 `bar hidden (transparent pixbuf set)`）。
 
 ---
 
@@ -91,6 +145,24 @@
 
 ---
 
+## 2026-08-14（自动��藏第二轮：透明条带方案）
+
+### 真机复��（用户"还是一样"）定论前版修复无效
+
+- **18:17 用户��试日志实证**：新 .so（1441775879）已加载、`bar hidden (overlay removed)`
+  ����行，但控制��仍定格画面 → **g_object_set_property 置 NULL 这条"清除"路径在该
+  gdkpixbufoverlay 实现上不可��**（无论 GValue 用 G_TYPE_OBJECT 还是
+  G_PARAM_SPEC_VALUE_TYPE，都不生效；真机两次实证）。
+- **改为"透明条带"方案**：��藏时���� `ControlBar::render(false,...)` 得到的全透明
+  pixbuf，走【设置 pixbuf】路径（`g_object_set`）——该路径被反复验证可��（控制��
+  正常显示/��新）。全透明条带 alpha=0 合成后视觉无内容 → ��制��消失。加
+  `barHiddenSet_` flag ��止进度轮��期间重复分���（��藏后零开�� return）。
+
+### 结果
+- 待真机验证：��藏是否真正消失（日志看 `bar hidden (transparent pixbuf set)`）。
+
+---
+
 ## 2026-08-14（顶部标题条 + 自动隐藏修复）
 
 ### 功能：用户需求"添加顶部显示标题" + "控制栏自动隐藏行为修正"
@@ -114,6 +186,24 @@
 ### 问题 / 待办
 - [ ] 真机验证顶部标题条（位置/文字/中文渲染）与自动隐藏恢复
 - [ ] 回归：seek、竖屏 9:16、横屏比例、控制栏交互
+
+---
+
+## 2026-08-14（自动��藏第二轮：透明条带方案）
+
+### 真机复��（用户"还是一样"）定论前版修复无效
+
+- **18:17 用户��试日志实证**：新 .so（1441775879）已加载、`bar hidden (overlay removed)`
+  ����行，但控制��仍定格画面 → **g_object_set_property 置 NULL 这条"清除"路径在该
+  gdkpixbufoverlay 实现上不可��**（无论 GValue 用 G_TYPE_OBJECT 还是
+  G_PARAM_SPEC_VALUE_TYPE，都不生效；真机两次实证）。
+- **改为"透明条带"方案**：��藏时���� `ControlBar::render(false,...)` 得到的全透明
+  pixbuf，走【设置 pixbuf】路径（`g_object_set`）——该路径被反复验证可��（控制��
+  正常显示/��新）。全透明条带 alpha=0 合成后视觉无内容 → ��制��消失。加
+  `barHiddenSet_` flag ��止进度轮��期间重复分���（��藏后零开�� return）。
+
+### 结果
+- 待真机验证：��藏是否真正消失（日志看 `bar hidden (transparent pixbuf set)`）。
 
 ---
 
@@ -141,5 +231,23 @@
 
 ### 结果
 - 待 Action 构建 + 真机验证：自动隐藏真正消失、控制栏加大后布局/命中正确。
+
+---
+
+## 2026-08-14（自动��藏第二轮：透明条带方案）
+
+### 真机复��（用户"还是一样"）定论前版修复无效
+
+- **18:17 用户��试日志实证**：新 .so（1441775879）已加载、`bar hidden (overlay removed)`
+  ����行，但控制��仍定格画面 → **g_object_set_property 置 NULL 这条"清除"路径在该
+  gdkpixbufoverlay 实现上不可��**（无论 GValue 用 G_TYPE_OBJECT 还是
+  G_PARAM_SPEC_VALUE_TYPE，都不生效；真机两次实证）。
+- **改为"透明条带"方案**：��藏时���� `ControlBar::render(false,...)` 得到的全透明
+  pixbuf，走【设置 pixbuf】路径（`g_object_set`）——该路径被反复验证可��（控制��
+  正常显示/��新）。全透明条带 alpha=0 合成后视觉无内容 → ��制��消失。加
+  `barHiddenSet_` flag ��止进度轮��期间重复分���（��藏后零开�� return）。
+
+### 结果
+- 待真机验证：��藏是否真正消失（日志看 `bar hidden (transparent pixbuf set)`）。
 
 ---

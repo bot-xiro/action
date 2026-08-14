@@ -669,51 +669,47 @@ void GstPlayer::httpGet(JQFunctionInfo& info)
 // 控制栏以 cairo 渲染成 ARGB 位图 → GdkPixbuf → gdkpixbufoverlay 合入视频帧，
 // 因此视频 plane 置顶时控制栏仍悬浮在视频上方（JS 触摸命中由 player.vue 负责）。
 
-// 【自动隐藏修复 2026-08-14】移除 gdkpixbufoverlay 的 pixbuf（隐藏叠加层）。
-// 关键：pixbuf 属性类型是 GDK_TYPE_PIXBUF（GObject 子类），GValue 必须用
-// 【属性真实类型】初始化——用 G_TYPE_OBJECT（父类）时 g_object_set_property
-// 类型不兼容 → 静默失败，旧 pixbuf 保留（真机实证：日志打 "hidden (overlay
-// removed)" 但控制栏定格在画面）。g_object_set 传 NULL 会被当作变参终止符
-// （对象属性不能 NULL 值），同样不可用。此处从 param spec 取属性类型，稳妥。
-static void clearOverlayPixbuf(GstElement* overlay, GdkPixbuf** slot)
+// 【自动隐藏修复 2026-08-14（第二轮）】隐藏 = 设置【全透明条带】，而非清除 pixbuf。
+// 真机实证：g_object_set_property 把 pixbuf 置 NULL（无论 G_TYPE_OBJECT 还是
+// G_PARAM_SPEC_VALUE_TYPE 初始化 GValue）在该 gdkpixbufoverlay 实现上都不生效——
+// 日志打 "hidden (overlay removed)" 但控制栏定格在画面（用户复测"还是一样"）。
+// 而"设置真实 pixbuf"（g_object_set）路径一直可靠（控制栏能正常显示/刷新）。
+// 故隐藏时渲染 visible=false 的全透明条带并设置：视觉上无任何内容，且复用
+// 已验证可靠的设置路径，必然生效。首次设置后 barHiddenSet_ 防重复分配。
+static void setTransparentOverlay(GstElement* overlay, ControlBar* bar, GdkPixbuf** slot)
 {
-    if (!overlay || !slot || !*slot) return;
-    GParamSpec* pspec = g_object_class_find_property(G_OBJECT_GET_CLASS(overlay), "pixbuf");
-    if (pspec) {
-        GValue gv = G_VALUE_INIT;
-        g_value_init(&gv, G_PARAM_SPEC_VALUE_TYPE(pspec));
-        g_object_set_property(G_OBJECT(overlay), "pixbuf", &gv);
-        g_value_unset(&gv);
-    }
-    g_object_unref(*slot);
-    *slot = nullptr;
+    GdkPixbuf* tp = bar ? bar->render(false, false, false, false, 0, 0, nullptr) : nullptr;
+    if (!tp) return;
+    if (*slot) g_object_unref(*slot);
+    *slot = tp;
+    g_object_set(overlay, "pixbuf", tp, nullptr);
 }
 
 void GstPlayer::refreshBar()
 {
     if (!bar_ || !voverlay_) return;
     std::lock_guard<std::mutex> lk(barMutex_);
-    // 隐藏且无错误/结束标记：无需重绘（进度轮询期间省 CPU/内存分配）
-    if (!barVisible_ && !barError_ && !barEnded_) {
-        if (barPixbuf_) {
-            clearOverlayPixbuf(voverlay_, &barPixbuf_);
-            PLAYER_LOG("bar hidden (overlay removed)");
-        }
-        // 标题条同样移除（与底部控制栏同显隐，2026-08-14）
-        if (titlePixbuf_) {
-            clearOverlayPixbuf(vtitleoverlay_, &titlePixbuf_);
-            PLAYER_LOG("title hidden (overlay removed)");
+    bool showBar = barVisible_ || barError_ || barEnded_;
+    if (!showBar) {
+        // 隐藏：设置全透明条带（bar + title 同显隐）。轮询期间只做一次。
+        if (!barHiddenSet_) {
+            setTransparentOverlay(voverlay_, bar_, &barPixbuf_);
+            if (titleBar_ && vtitleoverlay_)
+                setTransparentOverlay(vtitleoverlay_, titleBar_, &titlePixbuf_);
+            barHiddenSet_ = true;
+            PLAYER_LOG("bar hidden (transparent pixbuf set)");
         }
         return;
     }
+    barHiddenSet_ = false;
     GdkPixbuf* pb = bar_->render(barVisible_, barPlaying_, barEnded_, barError_,
                                  barPosMs_, barDurMs_, nullptr);
     if (!pb) return;
     if (barPixbuf_) g_object_unref(barPixbuf_);
     barPixbuf_ = pb;
     g_object_set(voverlay_, "pixbuf", pb, nullptr);
-    // 【顶部标题条 2026-08-14】与底部控制栏同频刷新；标题为空时移除叠加
-    // （drawTitle 会画半透明黑底，空标题也显示黑条 → 必须无标题则不挂 pixbuf）
+    // 【顶部标题条 2026-08-14】与底部控制栏同频刷新；标题为空时挂透明条带
+    // （drawTitle 会画半透明黑底，空标题也显示黑条 → 无标题则透明，避免黑条）
     if (titleBar_ && vtitleoverlay_ && !barTitle_.empty()) {
         GdkPixbuf* tpb = titleBar_->render(barVisible_, barPlaying_, barEnded_, barError_,
                                            barPosMs_, barDurMs_, barTitle_.c_str());
@@ -722,8 +718,8 @@ void GstPlayer::refreshBar()
             titlePixbuf_ = tpb;
             g_object_set(vtitleoverlay_, "pixbuf", tpb, nullptr);
         }
-    } else if (titlePixbuf_) {
-        clearOverlayPixbuf(vtitleoverlay_, &titlePixbuf_);
+    } else {
+        setTransparentOverlay(vtitleoverlay_, titleBar_, &titlePixbuf_);
     }
     PLAYER_LOG("bar refreshed (visible=%d playing=%d ended=%d pos=%.0f dur=%.0f title='%.24s')",
         barVisible_ ? 1 : 0, barPlaying_ ? 1 : 0, barEnded_ ? 1 : 0, barPosMs_, barDurMs_,
