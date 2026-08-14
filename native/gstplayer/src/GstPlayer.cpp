@@ -988,7 +988,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         ? gst_element_factory_make("alsasink", "asink")
         : gst_element_factory_make("fakesink", "asink");
     if (audioSink_ && audio) {
-        g_object_set(audioSink_, "device", "speaker", nullptr);
+        g_object_set(audioSink_, "device", "speaker", "volume", 1.0, nullptr);
     }
     PLAYER_LOG("audio-sink created: %s", audio ? "alsasink" : "fakesink");
 
