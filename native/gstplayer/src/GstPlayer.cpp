@@ -438,7 +438,22 @@ void GstPlayer::getDuration(JQFunctionInfo& info)
         return;
     }
     gint64 dur = 0;
-    if (gst_element_query_duration(pipeline_, GST_FORMAT_TIME, &dur) && dur > 0) {
+    // 多源查询（2026-08-14 实测 pipeline 查询在叠加链下返回 0）：
+    // 1) pipeline → 2) qtdemux（moov 已知时长）→ 3) 视频 sink
+    if (!(gst_element_query_duration(pipeline_, GST_FORMAT_TIME, &dur) && dur > 0)) {
+        dur = 0;
+        if (demux_ && gst_element_query_duration(demux_, GST_FORMAT_TIME, &dur) && dur > 0) {
+            PLAYER_LOG("duration from qtdemux: %lld ms", (long long)(dur / 1000000));
+        } else {
+            dur = 0;
+            if (videoSink_ && gst_element_query_duration(videoSink_, GST_FORMAT_TIME, &dur) && dur > 0) {
+                PLAYER_LOG("duration from video sink: %lld ms", (long long)(dur / 1000000));
+            } else {
+                dur = 0;
+            }
+        }
+    }
+    if (dur > 0) {
         info.GetReturnValue().Set(static_cast<double>(dur) / 1000000.0);   // ns -> ms
     } else {
         info.GetReturnValue().Set(0);
@@ -617,6 +632,8 @@ void GstPlayer::refreshBar()
 {
     if (!bar_ || !voverlay_) return;
     std::lock_guard<std::mutex> lk(barMutex_);
+    // 隐藏且无错误/结束标记：无需重绘（进度轮询期间省 CPU/内存分配）
+    if (!barVisible_ && !barError_ && !barEnded_) return;
     GdkPixbuf* pb = bar_->render(barVisible_, barPlaying_, barEnded_, barError_,
                                  barPosMs_, barDurMs_);
     if (!pb) return;
