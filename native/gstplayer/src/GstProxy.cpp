@@ -34,7 +34,8 @@
 namespace gstplayer {
 namespace proxy {
 
-#define PROXY_LOG(fmt, ...) syslog(LOG_ERR, "[gstproxy] " fmt, ##__VA_ARGS__)
+// 与 GstPlayer.cpp 一致，走 local7 设施（→ /data/applog/YD_PEN_APP.log）
+#define PROXY_LOG(fmt, ...) syslog(LOG_LOCAL7 | LOG_ERR, "[gstproxy] " fmt, ##__VA_ARGS__)
 
 namespace {
 

@@ -19,7 +19,9 @@ using namespace JQUTIL_NS;
 
 namespace gstplayer {
 
-#define PLAYER_LOG(fmt, ...) syslog(LOG_ERR, "[gstplayer] " fmt, ##__VA_ARGS__)
+// 日志统一走 local7 设施（设备 syslog.conf: local7.* → /data/applog/YD_PEN_APP.log），
+// 否则 user.* 无路由 → 原生日志不可见（2026-08-14 实证排查）
+#define PLAYER_LOG(fmt, ...) syslog(LOG_LOCAL7 | LOG_ERR, "[gstplayer] " fmt, ##__VA_ARGS__)
 
 namespace {
 
