@@ -1426,7 +1426,8 @@ static void runSeekSelfTest()
         return;
     }
     if (useSoup) {
-        // 直连 CDN（带 Referer/UA，绕 403）：验证 souphttpsrc 本身是否可 seek
+        // 走本地代理（与 app 完全一致：GstProxy 白名单 + Range + Referer），
+        // 验证 seek 在代理路径下的行为
         FILE* uf = fopen("/tmp/playurl2.txt", "r");
         char urlbuf[2048] = "";
         if (uf) {
@@ -1440,16 +1441,14 @@ static void runSeekSelfTest()
             PLAYER_LOG("selftest soup: no /tmp/playurl2.txt");
             return;
         }
-        g_object_set(src, "location", urlbuf, NULL);
-        GstStructure* hdrs = gst_structure_new_empty("headers");
-        gst_structure_set(hdrs, "referer", G_TYPE_STRING, "https://www.bilibili.com/", NULL);
-        g_object_set(src, "extra-headers", hdrs, NULL);
-        gst_structure_free(hdrs);
+        std::string rawUrl(urlbuf);
+        std::string proxied = proxy::maybeRewrite(rawUrl);
+        g_object_set(src, "location", proxied.c_str(), NULL);
         g_object_set(src, "user-agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             NULL);
         g_object_set(src, "timeout", 15, NULL);
-        PLAYER_LOG("selftest soup url: %.100s", urlbuf);
+        PLAYER_LOG("selftest soup(proxy) url: %.120s", proxied.c_str());
     } else {
         g_object_set(src, "location", path, NULL);
     }
