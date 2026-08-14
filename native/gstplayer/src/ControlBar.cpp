@@ -1,4 +1,4 @@
-﻿#include "ControlBar.h"
+#include "ControlBar.h"
 
 #include <cmath>
 #include <cstring>
@@ -102,6 +102,12 @@ const double PLAY_L = 448.0;    // 播放/暂停
 const double PLAY_R = 512.0;
 const double SFW_L = 530.0;     // 快进 10s
 const double SFW_R = 630.0;
+// 标题区返回按钮（左上角，2026-08-14）
+const double TITLE_BACK_L = 8.0;      // 返回图标左边缘
+const double TITLE_BACK_R = 48.0;     // 返回图标右边缘
+const double TITLE_BACK_CY = 20.0;    // 返回图标垂直居中
+const double TITLE_BACK_S = 12.0;     // 返回图标大小
+const double TITLE_TEXT_L = 56.0;     // 标题文本左边缘（避开返回图标）
 const double PINK_R = 0.984;
 const double PINK_G = 0.447;
 const double PINK_B = 0.6;
@@ -310,10 +316,11 @@ void ControlBar::drawTitle(cairo_t* cr)
 {
     cairo_set_source_rgba(cr, 0, 0, 0, 0.5);
     uRect(cr, 0, 0, bargeom::TITLE_H, bargeom::W);
-    cairo_fill(cr);
-    if (title_.empty()) return;
-    uText(cr, bargeom::TITLE_H - 14, 16, title_.c_str(), 20, 1, 1, 1);
-}
+    // \u8fd4\u56de\u56fe\u6807\u3008\u5de6\u4e0a\u89d2\u3009
+    cairo_set_source_rgba(cr, 1, 1, 1, 0.9);
+    drawBackIcon(cr, bargeom::TITLE_BACK_CY, (bargeom::TITLE_BACK_L + bargeom::TITLE_BACK_R) / 2, bargeom::TITLE_BACK_S);
+    // \u6807\u9898\u6587\u672c\u3008\u8fd4\u56de\u56fe\u6807\u53f3\u8fb9\u3009
+    if (!title_.empty()) { uText(cr, bargeom::TITLE_H - 14, bargeom::TITLE_TEXT_L, title_.c_str(), 20, 1, 1, 1); } }
 
 void ControlBar::drawBar(cairo_t* cr)
 {
@@ -438,5 +445,7 @@ GdkPixbuf* ControlBar::render(bool visible, bool playing, bool ended, bool error
 }
 
 }  // namespace gstplayer
+
+
 
 
