@@ -523,9 +523,12 @@ void GstPlayer::seek(JQFunctionInfo& info)
     }
     gint64 ns = static_cast<gint64>(ms * 1000000.0);   // ms -> ns
     if (ns < 0) ns = 0;
+    // 【seek 修复实验 2026-08-14】FLUSH seek 在 videobox 链下 ret=1 但位置回退
+    // （真机：seek 256866 → 下一秒位置回 1034）。改非冲刷 seek（仅 KEY_UNIT）：
+    // 源不中断，段更新后从目标位置继续，代价是 seek 瞬间可能有短暂画面残留。
     bool ok = gst_element_seek_simple(pipeline_, GST_FORMAT_TIME,
-        static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT), ns);
-    PLAYER_LOG("seek to %.0f ms ret=%d", ms, ok ? 1 : 0);
+        static_cast<GstSeekFlags>(GST_SEEK_FLAG_KEY_UNIT), ns);
+    PLAYER_LOG("seek to %.0f ms ret=%d (no-flush)", ms, ok ? 1 : 0);
     info.GetReturnValue().Set(ok);
 }
 
@@ -1135,6 +1138,18 @@ void GstPlayer::onQtdemuxPadAdded(GstPad* pad)
     PLAYER_LOG("qtdemux pad-added: %s", media ? media : "?");
     GstElement* sink = nullptr;
     if (media && g_str_has_prefix(media, "video/")) {
+        // 【竖屏支持 2026-08-14】所有视频路径统一做源尺寸核对（h264 主路径此前遗漏，
+        // 导致 9:16 视频不触发重建、被按 16:9 拉伸）
+        gint vw = 0, vh = 0;
+        gst_structure_get_int(s, "width", &vw);
+        gst_structure_get_int(s, "height", &vh);
+        if (vw > 0 && vh > 0 && (vw != appliedSrcW_ || vh != appliedSrcH_) && !rebuilding_) {
+            rebuildNeeded_ = true;
+            rebuildSrcW_ = vw;
+            rebuildSrcH_ = vh;
+            PLAYER_LOG("video src %dx%d != applied %dx%d, rebuild scheduled",
+                vw, vh, appliedSrcW_, appliedSrcH_);
+        }
         // H.264 → 显式硬解链（mppvideodec rotation 硬件旋转，KMSSINK 下已在 build 时设 90）
         if (g_str_equal(media, "video/x-h264")) {
 #ifndef KMSSINK_TEST
@@ -1206,21 +1221,9 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
         // 非 h264 fallback 视频：接入静态视频后端入口 vqueue_（vqueue→videoconvert→
         // kmssink 已在 buildPipeline 静态链接）。旋转由 mppvideodec 硬链负责；
         // fallback（av1/hevc 软解）极少触发（API 已锁 codecid=7），保持直通即可。
-        gint w = 0, h = 0;
-        gst_structure_get_int(s, "width", &w);
-        gst_structure_get_int(s, "height", &h);
-        // 【竖屏支持 2026-08-14】源尺寸与当前 vcaps 预设不一致（非 16:9）：
-        // 不动态改 caps（真机实证会破坏 FLUSH seek），记录真实尺寸并置重建标志，
-        // 由 start() 前 rebuildForSource() 用真实尺寸重建管线（16:9 源不重建）。
-        if (w > 0 && h > 0 && (w != appliedSrcW_ || h != appliedSrcH_) && !rebuilding_) {
-            rebuildNeeded_ = true;
-            rebuildSrcW_ = w;
-            rebuildSrcH_ = h;
-            PLAYER_LOG("video src %dx%d != applied %dx%d, rebuild scheduled",
-                w, h, appliedSrcW_, appliedSrcH_);
-        }
+        // （尺寸核对/重建请求已在 video/ 分支统一处理，见上）
         sink = vqueue_;
-        PLAYER_LOG("video %dx%d fallback -> vqueue (static backend)", w, h);
+        PLAYER_LOG("video %dx%d fallback -> vqueue (static backend)", vw, vh);
     } else if (media && g_str_has_prefix(media, "audio/")) {
         // 音频解码输出 → 静态音频后端入口 aconvert_（aconvert→audioresample→
         // alsasink 已在 buildPipeline 静态链接；audioresample 保证 44.1k/48k
