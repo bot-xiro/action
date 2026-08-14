@@ -5,8 +5,13 @@
 // 坐标系：用户看到的播放页为 960×266（横向）。KMS 模式下渲染画布为物理方向
 // （如 266×960 竖条，与 kmssink render-rectangle 1:1），用户空间需 90° 映射：
 //   canvas (cx, cy) = (userY, userX)   （物理 px = 逻辑 ly，物理 py = 逻辑 lx）
-// 本类提供 uRect/uText 等"用户空间"绘制助手，内部自动完成旋转/交换。
 // waylandsink 模式下画布即 960×266（横向），无需旋转（portrait=false）。
+//
+// 性能：只渲染"控制栏条带"（非整幅画布），gdkpixbufoverlay 用 offset/width/height
+// 定位到画布底部，逐帧合成面积最小化（2026-08-14 掉帧修复）。
+//
+// 字节序：cairo ARGB32 内存序为 BGRA，gdk-pixbuf 按 RGBA 读取 → 渲染后原地
+// R/B 交换（否则红蓝互换、图标颜色全错，2026-08-14 修复）。
 
 #include <cstdint>
 
@@ -34,14 +39,39 @@ public:
     GdkPixbuf* render(bool visible, bool playing, bool ended, bool error,
                       double posMs, double durMs);
 
+    // 条带在画布中的偏移/尺寸（gdkpixbufoverlay offset-x/offset-y/overlay-width/overlay-height）
+    int stripOffsetX() const { return stripOffX_; }
+    int stripOffsetY() const { return stripOffY_; }
+    int stripWidth() const { return w_; }
+    int stripHeight() const { return h_; }
+
 private:
+    // 用户空间 → 画布坐标映射（portrait 时 90° 交换）
+    double mapX(double ux, double uy) const;
+    double mapY(double ux, double uy) const;
+    void uRect(cairo_t* cr, double uy, double ux, double uh, double uw) const;
+    void uRoundRect(cairo_t* cr, double uy, double ux, double uh, double uw, double r) const;
+    void uText(cairo_t* cr, double uy, double ux, const char* text,
+               double size, double r, double g, double b) const;
+    void uCircle(cairo_t* cr, double uy, double ux, double r) const;
+    void uTriangle(cairo_t* cr, double y1, double x1, double y2, double x2,
+                   double y3, double x3) const;
+    void uLine(cairo_t* cr, double y1, double x1, double y2, double x2) const;
+    void drawTrack(cairo_t* cr, double pct);
+    void drawPlayIcon(cairo_t* cr, double cy, double cx, double s);
+    void drawPauseIcon(cairo_t* cr, double cy, double cx, double s);
+    void drawSeekIcon(cairo_t* cr, double cy, double cx, double s, bool forward);
+    void drawBackIcon(cairo_t* cr, double cy, double cx, double s);
+    void drawErrorIcon(cairo_t* cr, double cy, double cx, double s);
     void drawBar(cairo_t* cr);
 
     cairo_surface_t* surf_ = nullptr;
     unsigned char* data_ = nullptr;
-    int w_ = 0;
-    int h_ = 0;
+    int w_ = 0;              // 条带宽（画布坐标）
+    int h_ = 0;              // 条带高（画布坐标）
     int stride_ = 0;
+    int stripOffX_ = 0;      // 条带在画布中的偏移
+    int stripOffY_ = 0;
     bool portrait_ = false;
     bool ready_ = false;
 

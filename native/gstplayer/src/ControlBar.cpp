@@ -89,9 +89,24 @@ bool ControlBar::init(int canvasW, int canvasH, bool portrait)
 {
     if (canvasW <= 0 || canvasH <= 0) return false;
     if (!ensureOverlayLibs()) return false;   // 库不可用 → 降级（无悬浮栏）
-    w_ = canvasW;
-    h_ = canvasH;
     portrait_ = portrait;
+
+    // 只渲染"控制栏条带"（用户空间底部 BAR_TOP~H 区域），减小逐帧合成面积：
+    //   portrait（KMS 竖画布 266×960）：条带 = 画布 x∈[BAR_TOP, W]，y 全幅
+    //   landscape（waylandsink 960×266）：条带 = 画布 x 全幅，y∈[BAR_TOP, H]
+    if (portrait_) {
+        w_ = canvasW - static_cast<int>(bargeom::BAR_TOP);
+        h_ = canvasH;
+        stripOffX_ = static_cast<int>(bargeom::BAR_TOP);
+        stripOffY_ = 0;
+    } else {
+        w_ = canvasW;
+        h_ = canvasH - static_cast<int>(bargeom::BAR_TOP);
+        stripOffX_ = 0;
+        stripOffY_ = static_cast<int>(bargeom::BAR_TOP);
+    }
+    if (w_ <= 0 || h_ <= 0) return false;
+
     stride_ = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, w_);
     data_ = new unsigned char[static_cast<size_t>(stride_) * h_];
     std::memset(data_, 0, static_cast<size_t>(stride_) * h_);
@@ -107,20 +122,34 @@ bool ControlBar::init(int canvasW, int canvasH, bool portrait)
     return true;
 }
 
-// ================= 用户空间绘制助手 =================
-// 坐标映射：canvas (cx, cy) = (userY, userX)
-// 画布矩形 (x=userY, y=userX, w=userH, h=userW)
+// ================= 用户空间 → 画布坐标映射 =================
+// portrait: canvas (cx, cy) = (userY, userX)；landscape: canvas = 用户原坐标
 
-// 用户空间矩形：uRect(userY, userX, userH, userW)
-static void uRect(cairo_t* cr, double uy, double ux, double uh, double uw)
+double ControlBar::mapX(double ux, double uy) const
 {
-    cairo_rectangle(cr, uy, ux, uh, uw);
+    return portrait_ ? uy : ux;
 }
 
-// 用户空间圆角矩形（画布空间圆角半径与用户一致）
-static void uRoundRect(cairo_t* cr, double uy, double ux, double uh, double uw, double r)
+double ControlBar::mapY(double ux, double uy) const
 {
-    double x = uy, y = ux, w = uh, h = uw;
+    return portrait_ ? ux : uy;
+}
+
+// 用户矩形 (uy, ux, uh, uw) → 画布
+void ControlBar::uRect(cairo_t* cr, double uy, double ux, double uh, double uw) const
+{
+    if (portrait_) {
+        cairo_rectangle(cr, uy, ux, uh, uw);
+    } else {
+        cairo_rectangle(cr, ux, uy, uw, uh);
+    }
+}
+
+void ControlBar::uRoundRect(cairo_t* cr, double uy, double ux, double uh, double uw, double r) const
+{
+    double x = mapX(ux, uy), y = mapY(ux, uy);
+    double w = portrait_ ? uh : uw;
+    double h = portrait_ ? uw : uh;
     if (r > w / 2) r = w / 2;
     if (r > h / 2) r = h / 2;
     cairo_new_sub_path(cr);
@@ -131,13 +160,16 @@ static void uRoundRect(cairo_t* cr, double uy, double ux, double uh, double uw, 
     cairo_close_path(cr);
 }
 
-// 用户空间文本：基线起点 (userY, userX)，文字沿用户 x 正向
-static void uText(cairo_t* cr, double uy, double ux, const char* text,
-                  double size, double r, double g, double b)
+void ControlBar::uText(cairo_t* cr, double uy, double ux, const char* text,
+                       double size, double r, double g, double b) const
 {
     cairo_save(cr);
-    cairo_translate(cr, uy, ux);
-    cairo_rotate(cr, M_PI / 2);
+    if (portrait_) {
+        cairo_translate(cr, uy, ux);
+        cairo_rotate(cr, M_PI / 2);
+    } else {
+        cairo_translate(cr, ux, uy);
+    }
     cairo_set_font_size(cr, size);
     cairo_select_font_face(cr, "sans", CAIRO_FONT_SLANT_NORMAL, CAIRO_FONT_WEIGHT_NORMAL);
     cairo_set_source_rgb(cr, r, g, b);
@@ -146,30 +178,28 @@ static void uText(cairo_t* cr, double uy, double ux, const char* text,
     cairo_restore(cr);
 }
 
-// 用户空间圆：圆心 (userY, userX)，半径 r
-static void uCircle(cairo_t* cr, double uy, double ux, double r)
+void ControlBar::uCircle(cairo_t* cr, double uy, double ux, double r) const
 {
-    cairo_arc(cr, uy, ux, r, 0, 2 * M_PI);
+    cairo_arc(cr, mapX(ux, uy), mapY(ux, uy), r, 0, 2 * M_PI);
 }
 
-// 用户空间填充三角形：顶点 (userY, userX)
-static void uTriangle(cairo_t* cr, double y1, double x1, double y2, double x2, double y3, double x3)
+void ControlBar::uTriangle(cairo_t* cr, double y1, double x1, double y2, double x2,
+                           double y3, double x3) const
 {
-    cairo_move_to(cr, y1, x1);
-    cairo_line_to(cr, y2, x2);
-    cairo_line_to(cr, y3, x3);
+    cairo_move_to(cr, mapX(x1, y1), mapY(x1, y1));
+    cairo_line_to(cr, mapX(x2, y2), mapY(x2, y2));
+    cairo_line_to(cr, mapX(x3, y3), mapY(x3, y3));
     cairo_close_path(cr);
 }
 
-// 用户空间直线
-static void uLine(cairo_t* cr, double y1, double x1, double y2, double x2)
+void ControlBar::uLine(cairo_t* cr, double y1, double x1, double y2, double x2) const
 {
-    cairo_move_to(cr, y1, x1);
-    cairo_line_to(cr, y2, x2);
+    cairo_move_to(cr, mapX(x1, y1), mapY(x1, y1));
+    cairo_line_to(cr, mapX(x2, y2), mapY(x2, y2));
 }
 
 // ---- 进度轨道 ----
-static void drawTrack(cairo_t* cr, double pct)
+void ControlBar::drawTrack(cairo_t* cr, double pct)
 {
     cairo_set_source_rgba(cr, 1, 1, 1, 0.3);
     uRoundRect(cr, bargeom::TRACK_Y, bargeom::TRACK_L,
@@ -188,12 +218,12 @@ static void drawTrack(cairo_t* cr, double pct)
 }
 
 // ---- 播放/暂停图标（中心 userY=cy, userX=cx）----
-static void drawPlayIcon(cairo_t* cr, double cy, double cx, double s)
+void ControlBar::drawPlayIcon(cairo_t* cr, double cy, double cx, double s)
 {
     uTriangle(cr, cy, cx + s, cy - s, cx - s, cy + s, cx - s);
 }
 
-static void drawPauseIcon(cairo_t* cr, double cy, double cx, double s)
+void ControlBar::drawPauseIcon(cairo_t* cr, double cy, double cx, double s)
 {
     double w = s * 0.42;
     uRect(cr, cy - s, cx - s * 0.9, 2 * s, w);
@@ -201,7 +231,7 @@ static void drawPauseIcon(cairo_t* cr, double cy, double cx, double s)
 }
 
 // ---- 快进/快退（双三角）----
-static void drawSeekIcon(cairo_t* cr, double cy, double cx, double s, bool forward)
+void ControlBar::drawSeekIcon(cairo_t* cr, double cy, double cx, double s, bool forward)
 {
     for (int i = 0; i < 2; i++) {
         double off = (i - 0.5) * s * 1.1;   // 用户 x 偏移
@@ -214,7 +244,7 @@ static void drawSeekIcon(cairo_t* cr, double cy, double cx, double s, bool forwa
 }
 
 // ---- 返回箭头 ‹ ----
-static void drawBackIcon(cairo_t* cr, double cy, double cx, double s)
+void ControlBar::drawBackIcon(cairo_t* cr, double cy, double cx, double s)
 {
     cairo_set_line_width(cr, 3);
     uLine(cr, cy - s, cx + s * 0.5, cy, cx - s * 0.5);
@@ -223,7 +253,7 @@ static void drawBackIcon(cairo_t* cr, double cy, double cx, double s)
 }
 
 // ---- 错误：红圈 + 叉 ----
-static void drawErrorIcon(cairo_t* cr, double cy, double cx, double s)
+void ControlBar::drawErrorIcon(cairo_t* cr, double cy, double cx, double s)
 {
     cairo_set_source_rgb(cr, 0.9, 0.25, 0.25);
     cairo_set_line_width(cr, 3);
@@ -314,6 +344,8 @@ GdkPixbuf* ControlBar::render(bool visible, bool playing, bool ended, bool error
     durMs_ = durMs;
 
     cairo_t* cr = cairo_create(surf_);
+    // 画布坐标 → 条带缓冲坐标（条带位于画布 (stripOffX_, stripOffY_)）
+    cairo_translate(cr, -stripOffX_, -stripOffY_);
     cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
     cairo_set_source_rgba(cr, 0, 0, 0, 0);
     cairo_paint(cr);
@@ -322,6 +354,18 @@ GdkPixbuf* ControlBar::render(bool visible, bool playing, bool ended, bool error
         drawBar(cr);
     }
     cairo_destroy(cr);
+
+    // 【字节序修复 2026-08-14】cairo ARGB32 内存序为 BGRA，gdk-pixbuf 按 RGBA 读取
+    // → 原地交换 R/B，否则颜色红蓝互换（粉色图标变蓝、文字错色）
+    for (int y = 0; y < h_; y++) {
+        unsigned char* row = data_ + static_cast<size_t>(y) * stride_;
+        for (int x = 0; x < w_; x++) {
+            unsigned char* px = row + x * 4;
+            unsigned char t = px[0];
+            px[0] = px[2];
+            px[2] = t;
+        }
+    }
 
     return gdk_pixbuf_new_from_data(data_, GDK_COLORSPACE_RGB, TRUE, 8,
                                     w_, h_, stride_, nullptr, nullptr);

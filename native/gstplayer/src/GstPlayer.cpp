@@ -392,6 +392,23 @@ void GstPlayer::start(JQFunctionInfo& info)
         info.GetReturnValue().ThrowInternalError("start: preroll failed");
         return;
     }
+    // 【诊断 2026-08-14】预滚后打印视频链实际协商 caps（帧尺寸/格式），
+    // 用于核对画布/叠加几何是否与预期一致（266×960 或 960×266）
+    if (voverlay_) {
+        GstPad* opad = gst_element_get_static_pad(voverlay_, "src");
+        if (opad) {
+            GstCaps* c = gst_pad_get_current_caps(opad);
+            if (c) {
+                gchar* cs = gst_caps_to_string(c);
+                PLAYER_LOG("overlay src caps: %s", cs ? cs : "(null)");
+                if (cs) g_free(cs);
+                gst_caps_unref(c);
+            } else {
+                PLAYER_LOG("overlay src caps: (no caps yet)");
+            }
+            gst_object_unref(opad);
+        }
+    }
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
     // 【2026-08-11 嵌进播放器】不再在此强制置底！历史遗留（2bdb63e "视频置底 +
     // 挖洞"方案）曾 setPlaneZpos(76, 0)，会把刚由 JS setVideoZpos(3) 置顶的视频
@@ -633,7 +650,22 @@ void GstPlayer::refreshBar()
     if (!bar_ || !voverlay_) return;
     std::lock_guard<std::mutex> lk(barMutex_);
     // 隐藏且无错误/结束标记：无需重绘（进度轮询期间省 CPU/内存分配）
-    if (!barVisible_ && !barError_ && !barEnded_) return;
+    if (!barVisible_ && !barError_ && !barEnded_) {
+        // 隐藏：移除叠加（pixbuf=NULL，gdkpixbufoverlay 跳过合成，零开销）。
+        // 注意 g_object_set 传 NULL 会被当作参数终止符（对象属性不能用 NULL 值），
+        // 必须用 GValue + g_object_set_property。
+        if (barPixbuf_) {
+            GValue gv = G_VALUE_INIT;
+            g_value_init(&gv, G_TYPE_OBJECT);
+            g_value_set_object(&gv, nullptr);
+            g_object_set_property(G_OBJECT(voverlay_), "pixbuf", &gv);
+            g_value_unset(&gv);
+            g_object_unref(barPixbuf_);
+            barPixbuf_ = nullptr;
+            PLAYER_LOG("bar hidden (overlay removed)");
+        }
+        return;
+    }
     GdkPixbuf* pb = bar_->render(barVisible_, barPlaying_, barEnded_, barError_,
                                  barPosMs_, barDurMs_);
     if (!pb) return;
@@ -920,7 +952,16 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         if (!bar_->init(canvasW_, canvasH_, canvasH_ > canvasW_)) {
             PLAYER_LOG("ControlBar init failed (%dx%d)", canvasW_, canvasH_);
         } else {
-            PLAYER_LOG("ControlBar init ok (%dx%d, portrait=%d)", canvasW_, canvasH_, canvasH_ > canvasW_ ? 1 : 0);
+            PLAYER_LOG("ControlBar init ok (%dx%d, portrait=%d) strip=%dx%d @(%d,%d)",
+                canvasW_, canvasH_, canvasH_ > canvasW_ ? 1 : 0,
+                bar_->stripWidth(), bar_->stripHeight(),
+                bar_->stripOffsetX(), bar_->stripOffsetY());
+            // 条带定位（只合成控制栏区域，减小逐帧开销；overlay 默认按帧尺寸缩放，
+            // 显式指定 width/height 使条带 1:1 映射到画布对应区域）
+            g_object_set(voverlay_, "offset-x", bar_->stripOffsetX(),
+                         "offset-y", bar_->stripOffsetY(),
+                         "overlay-width", bar_->stripWidth(),
+                         "overlay-height", bar_->stripHeight(), nullptr);
         }
         // 初始叠加帧：透明（等待 JS setBarState 首绘）
         barVisible_ = true;
