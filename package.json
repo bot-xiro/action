@@ -1,8 +1,8 @@
 {
   "name": "bilibili",
   "appName": "Bilibili",
-  "appid": "8002000000000001",
-  "version": "0.0.1",
+  "appid": "8001812345678901",
+  "version": "0.0.2",
   "description": "Bilibili MiniApp for X6PRO",
   "icon": "app_icon.png",
   "quickjs": {
@@ -11,7 +11,7 @@
   },
   "single-js-bundle": false,
   "scripts": {
-    "build": "aiot-cli build -p"
+    "build": "aiot-cli build -q -p"
   },
   "keywords": [
     "iot",

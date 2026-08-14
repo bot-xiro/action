@@ -22,7 +22,7 @@ GitHub Actions（本仓库 push main / workflow_dispatch）自动构建：
 见 docs/VERIFY_FLOW.md（本地文档，不上传）。要点：
 
 1. push amr 到设备 `/userdisk/bilibili_test.amr`（自定义文件名，不覆盖原包）
-2. `miniapp_cli install` → **kill miniapp 进程**（加载新 .so）→ `miniapp_cli start 8002000000000001`
+2. `miniapp_cli install` → **kill miniapp 进程**（加载新 .so）→ `miniapp_cli start 8001812345678901`
 
 ## 目录
 

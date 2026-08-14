@@ -20,7 +20,10 @@
 - 设备当前未安装本 app（pkg/8002000000000001 已不在），需重新构建安装。
 
 ### 问题 / 待办
-- [ ] 本地/CI 构建 bilibili.amr 并装机验证（步骤 2）
+- [x] 首次装机验证（13:35）：`miniapp_cli install` ret:0 → 启动成功 → **首页热门列表加载 20 条**，封面图从 hdslb.com 正常拉取；加载的 .so 为本次 Action 产物（pkg libs/libjsapi_gstplayer_386948451.so）
+- [x] **发现 appid 冲突**：8002000000000001 实为系统媒体播放器 appid（/userdisk/8002000000000001.0_0_1.amr 为 7-26 系统文件，早于本项目 8-06 起步；商店检查返回 rollingBack:407 有回滚压力）→ **已更换为 8001812345678901**（v0.0.2）
+- [x] **发现构建缺陷**：build 未加 -q → amr 内是 .js 而非 .js.bin，设置页模块报 `settings.js.bin open failed`（框架按 .js.bin 查找）→ build 脚本改为 `aiot-cli build -q -p`
+- [ ] 重新构建装机后逐页回归：index/detail/player/search/settings
 - [ ] 播放页真机验证（步骤 3）：自研 gstplayer 在 X6PRO 上的实际表现
 - [ ] 步骤 4 功能逐项回归：首页热门 → 详情 → 播放 → 搜索 → 设置/历史
 - [ ] 前期 docs/（PROJECT_SUMMARY/VERIFY_FLOW/SCREEN_WAKE/DEV_LOG）随会话丢失，本次重建
