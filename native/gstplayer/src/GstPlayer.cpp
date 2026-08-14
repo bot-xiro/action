@@ -669,34 +669,39 @@ void GstPlayer::httpGet(JQFunctionInfo& info)
 // 控制栏以 cairo 渲染成 ARGB 位图 → GdkPixbuf → gdkpixbufoverlay 合入视频帧，
 // 因此视频 plane 置顶时控制栏仍悬浮在视频上方（JS 触摸命中由 player.vue 负责）。
 
+// 【自动隐藏修复 2026-08-14】移除 gdkpixbufoverlay 的 pixbuf（隐藏叠加层）。
+// 关键：pixbuf 属性类型是 GDK_TYPE_PIXBUF（GObject 子类），GValue 必须用
+// 【属性真实类型】初始化——用 G_TYPE_OBJECT（父类）时 g_object_set_property
+// 类型不兼容 → 静默失败，旧 pixbuf 保留（真机实证：日志打 "hidden (overlay
+// removed)" 但控制栏定格在画面）。g_object_set 传 NULL 会被当作变参终止符
+// （对象属性不能 NULL 值），同样不可用。此处从 param spec 取属性类型，稳妥。
+static void clearOverlayPixbuf(GstElement* overlay, GdkPixbuf** slot)
+{
+    if (!overlay || !slot || !*slot) return;
+    GParamSpec* pspec = g_object_class_find_property(G_OBJECT_GET_CLASS(overlay), "pixbuf");
+    if (pspec) {
+        GValue gv = G_VALUE_INIT;
+        g_value_init(&gv, G_PARAM_SPEC_VALUE_TYPE(pspec));
+        g_object_set_property(G_OBJECT(overlay), "pixbuf", &gv);
+        g_value_unset(&gv);
+    }
+    g_object_unref(*slot);
+    *slot = nullptr;
+}
+
 void GstPlayer::refreshBar()
 {
     if (!bar_ || !voverlay_) return;
     std::lock_guard<std::mutex> lk(barMutex_);
     // 隐藏且无错误/结束标记：无需重绘（进度轮询期间省 CPU/内存分配）
     if (!barVisible_ && !barError_ && !barEnded_) {
-        // 隐藏：移除叠加（pixbuf=NULL，gdkpixbufoverlay 跳过合成，零开销）。
-        // 注意 g_object_set 传 NULL 会被当作参数终止符（对象属性不能用 NULL 值），
-        // 必须用 GValue + g_object_set_property。
         if (barPixbuf_) {
-            GValue gv = G_VALUE_INIT;
-            g_value_init(&gv, G_TYPE_OBJECT);
-            g_value_set_object(&gv, nullptr);
-            g_object_set_property(G_OBJECT(voverlay_), "pixbuf", &gv);
-            g_value_unset(&gv);
-            g_object_unref(barPixbuf_);
-            barPixbuf_ = nullptr;
+            clearOverlayPixbuf(voverlay_, &barPixbuf_);
             PLAYER_LOG("bar hidden (overlay removed)");
         }
         // 标题条同样移除（与底部控制栏同显隐，2026-08-14）
         if (titlePixbuf_) {
-            GValue gv = G_VALUE_INIT;
-            g_value_init(&gv, G_TYPE_OBJECT);
-            g_value_set_object(&gv, nullptr);
-            g_object_set_property(G_OBJECT(vtitleoverlay_), "pixbuf", &gv);
-            g_value_unset(&gv);
-            g_object_unref(titlePixbuf_);
-            titlePixbuf_ = nullptr;
+            clearOverlayPixbuf(vtitleoverlay_, &titlePixbuf_);
             PLAYER_LOG("title hidden (overlay removed)");
         }
         return;
@@ -718,13 +723,7 @@ void GstPlayer::refreshBar()
             g_object_set(vtitleoverlay_, "pixbuf", tpb, nullptr);
         }
     } else if (titlePixbuf_) {
-        GValue gv = G_VALUE_INIT;
-        g_value_init(&gv, G_TYPE_OBJECT);
-        g_value_set_object(&gv, nullptr);
-        g_object_set_property(G_OBJECT(vtitleoverlay_), "pixbuf", &gv);
-        g_value_unset(&gv);
-        g_object_unref(titlePixbuf_);
-        titlePixbuf_ = nullptr;
+        clearOverlayPixbuf(vtitleoverlay_, &titlePixbuf_);
     }
     PLAYER_LOG("bar refreshed (visible=%d playing=%d ended=%d pos=%.0f dur=%.0f title='%.24s')",
         barVisible_ ? 1 : 0, barPlaying_ ? 1 : 0, barEnded_ ? 1 : 0, barPosMs_, barDurMs_,

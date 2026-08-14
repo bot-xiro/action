@@ -116,3 +116,30 @@
 - [ ] 回归：seek、竖屏 9:16、横屏比例、控制栏交互
 
 ---
+
+## 2026-08-14（自动隐藏真根因 + 控制栏放大）
+
+### 真机反馈：标题 ✅，但控制栏 6s 后"不动了"却没消失
+
+- **根因（日志+代码实证）**：`bar hidden (overlay removed)` 已打印，但画面定格——
+  gdkpixbufoverlay 的 pixbuf 属性类型是 **GDK_TYPE_PIXBUF**（GObject 子类），而移除代码
+  `g_value_init(&gv, G_TYPE_OBJECT)`（父类）→ `g_object_set_property` 类型不兼容
+  → **静默失败**（GLib critical 不进 local7 日志），旧 pixbuf 保留在叠加层。
+  即自动隐藏的 JS 状态机一直正常，是原生移除从未生效（C6"零合成"结论未在隐藏路径
+  真机验证过）。
+- **修复**：新增 `clearOverlayPixbuf()`——用 `g_object_class_find_property` 取 pixbuf
+  属性真实类型（G_PARAM_SPEC_VALUE_TYPE）初始化 GValue 再 set_property，三处
+  （bar 隐藏 / title 隐藏 / title 变空）统一走此函数。
+
+### 控制栏放大（用户需求"把按键和 seek 做大一点"）
+
+- 布局（用户空间 960×266，native bargeom 与 JS BAR 常量同步）：
+  - 进度轨道：y 202→196、高 14→22、圆角 7→10、圆点 8→11
+  - 按钮行：y 236→226、高 26→36；图标 7→10、播放圆底 13→17
+  - 时间/返回文字 16/14→18/16；命中区放宽（back 24-140、sbk 330-430、
+    play 448-512、sfw 530-630）
+
+### 结果
+- 待 Action 构建 + 真机验证：自动隐藏真正消失、控制栏加大后布局/命中正确。
+
+---

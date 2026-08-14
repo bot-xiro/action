@@ -85,15 +85,16 @@ const BAR_HIDE_MS = 6000         // 播放中控制栏无操作自动隐藏（6 
 const LOGIC_TOP = 107            // 页面左上角在逻辑屏中的 y（全视口 open pos_y=107）
 
 // 悬浮控制栏几何（与 native/ControlBar.cpp bargeom 一一对应，用户空间 960×266）
+// 【2026-08-14 放大】按键与 seek 轨道加大：轨道 22 高、按钮行 36 高、命中区放宽
 const BAR = {
     top: 190,                    // 控制栏顶
-    trackY: 202, trackH: 14,     // 进度轨道
+    trackY: 196, trackH: 22,     // 进度轨道
     trackL: 24, trackR: 936,
-    btnY: 236, btnH: 26,         // 按钮行
-    backL: 24, backR: 110,
-    sbkL: 350, sbkR: 410,
-    playL: 458, playR: 502,
-    sfwL: 550, sfwR: 610
+    btnY: 226, btnH: 36,         // 按钮行
+    backL: 24, backR: 140,
+    sbkL: 330, sbkR: 430,
+    playL: 448, playR: 512,
+    sfwL: 530, sfwR: 630
 }
 
 export default {

@@ -81,25 +81,27 @@ bool ensureOverlayLibsGlobal()
 }
 
 // 布局常量（用户空间 960×266；JS 侧 player.vue 保持同一组常量做命中测试）
+// 【2026-08-14 放大】按键与 seek 轨道加大（用户需求）：轨道 14→22 高、
+// 按钮行 26→36 高、图标 7→10、播放圆底 13→17；按钮水平命中区同步放宽。
 namespace bargeom {
 const double W = 960.0;   // 用户空间宽
 const double H = 266.0;   // 用户空间高
 const double BAR_TOP = 190.0;   // 控制栏顶（y 190~266）
 const double TITLE_H = 40.0;    // 顶部标题条高（y 0~40）
-const double TRACK_Y = 202.0;   // 进度轨道 y
-const double TRACK_H = 14.0;
+const double TRACK_Y = 196.0;   // 进度轨道 y（196~218）
+const double TRACK_H = 22.0;
 const double TRACK_L = 24.0;    // 轨道左缘
 const double TRACK_R = 936.0;   // 轨道右缘
-const double BTN_Y = 236.0;     // 按钮行 y
-const double BTN_H = 26.0;
+const double BTN_Y = 226.0;     // 按钮行 y（226~262）
+const double BTN_H = 36.0;
 const double BACK_L = 24.0;     // 返回按钮
-const double BACK_R = 110.0;
-const double SBK_L = 350.0;     // 快退 10s
-const double SBK_R = 410.0;
-const double PLAY_L = 458.0;    // 播放/暂停
-const double PLAY_R = 502.0;
-const double SFW_L = 550.0;     // 快进 10s
-const double SFW_R = 610.0;
+const double BACK_R = 140.0;
+const double SBK_L = 330.0;     // 快退 10s
+const double SBK_R = 430.0;
+const double PLAY_L = 448.0;    // 播放/暂停
+const double PLAY_R = 512.0;
+const double SFW_L = 530.0;     // 快进 10s
+const double SFW_R = 630.0;
 const double PINK_R = 0.984;
 const double PINK_G = 0.447;
 const double PINK_B = 0.6;
@@ -235,21 +237,21 @@ void ControlBar::uLine(cairo_t* cr, double y1, double x1, double y2, double x2) 
     cairo_line_to(cr, mapX(x2, y2), mapY(x2, y2));
 }
 
-// ---- 进度轨道 ----
+// ---- 进度轨道（2026-08-14 放大：轨道更高、圆点更大）----
 void ControlBar::drawTrack(cairo_t* cr, double pct)
 {
     cairo_set_source_rgba(cr, 1, 1, 1, 0.3);
     uRoundRect(cr, bargeom::TRACK_Y, bargeom::TRACK_L,
-               bargeom::TRACK_H, bargeom::TRACK_R - bargeom::TRACK_L, 7);
+               bargeom::TRACK_H, bargeom::TRACK_R - bargeom::TRACK_L, 10);
     cairo_fill(cr);
     if (pct <= 0) return;
     double fw = (bargeom::TRACK_R - bargeom::TRACK_L) * pct;
     if (fw < 2) fw = 2;
     cairo_set_source_rgb(cr, bargeom::PINK_R, bargeom::PINK_G, bargeom::PINK_B);
-    uRoundRect(cr, bargeom::TRACK_Y, bargeom::TRACK_L, bargeom::TRACK_H, fw, 7);
+    uRoundRect(cr, bargeom::TRACK_Y, bargeom::TRACK_L, bargeom::TRACK_H, fw, 10);
     cairo_fill(cr);
     // 圆点（白色，中心在填充右端）
-    uCircle(cr, bargeom::TRACK_Y + bargeom::TRACK_H / 2, bargeom::TRACK_L + fw, 8);
+    uCircle(cr, bargeom::TRACK_Y + bargeom::TRACK_H / 2, bargeom::TRACK_L + fw, 11);
     cairo_set_source_rgb(cr, 1, 1, 1);
     cairo_fill(cr);
 }
@@ -344,31 +346,31 @@ void ControlBar::drawBar(cairo_t* cr)
     size_t plen = strlen(tbuf);
     tbuf[plen] = ' '; tbuf[plen + 1] = '/'; tbuf[plen + 2] = ' ';
     fmt(tbuf + plen + 3, sizeof(tbuf) - plen - 3, durMs_);
-    double tw = strlen(tbuf) * 8.5;   // 粗估 8.5px/字符 @16px
-    uText(cr, bargeom::BTN_Y + 6, bargeom::TRACK_R - tw, tbuf, 16, 1, 1, 1);
+    double tw = strlen(tbuf) * 9.5;   // 粗估 9.5px/字符 @18px
+    uText(cr, bargeom::BTN_Y + 8, bargeom::TRACK_R - tw, tbuf, 18, 1, 1, 1);
 
     // 返回按钮（图标 + 文字）
     cairo_set_source_rgba(cr, 1, 1, 1, 0.9);
-    drawBackIcon(cr, bargeom::BTN_Y + bargeom::BTN_H / 2 - 2, bargeom::BACK_L + 12, 7);
-    uText(cr, bargeom::BTN_Y + 6, bargeom::BACK_L + 26, "返回", 14, 1, 1, 1);
+    drawBackIcon(cr, bargeom::BTN_Y + bargeom::BTN_H / 2 - 2, bargeom::BACK_L + 14, 10);
+    uText(cr, bargeom::BTN_Y + 8, bargeom::BACK_L + 32, "返回", 16, 1, 1, 1);
 
     // 快退/快进
     cairo_set_source_rgba(cr, 1, 1, 1, 0.9);
-    drawSeekIcon(cr, bargeom::BTN_Y + bargeom::BTN_H / 2, (bargeom::SBK_L + bargeom::SBK_R) / 2, 7, false);
-    drawSeekIcon(cr, bargeom::BTN_Y + bargeom::BTN_H / 2, (bargeom::SFW_L + bargeom::SFW_R) / 2, 7, true);
+    drawSeekIcon(cr, bargeom::BTN_Y + bargeom::BTN_H / 2, (bargeom::SBK_L + bargeom::SBK_R) / 2, 10, false);
+    drawSeekIcon(cr, bargeom::BTN_Y + bargeom::BTN_H / 2, (bargeom::SFW_L + bargeom::SFW_R) / 2, 10, true);
 
     // 播放/暂停（粉色圆底 + 图标）
     double pcy = bargeom::BTN_Y + bargeom::BTN_H / 2;
     double pcx = (bargeom::PLAY_L + bargeom::PLAY_R) / 2;
     cairo_set_source_rgb(cr, bargeom::PINK_R, bargeom::PINK_G, bargeom::PINK_B);
-    uCircle(cr, pcy, pcx, 13);
+    uCircle(cr, pcy, pcx, 17);
     cairo_fill(cr);
     cairo_set_source_rgb(cr, 1, 1, 1);
     if (playing_ && !ended_) {
-        drawPauseIcon(cr, pcy, pcx, 7);
+        drawPauseIcon(cr, pcy, pcx, 10);
         cairo_fill(cr);
     } else {
-        drawPlayIcon(cr, pcy, pcx, 7);
+        drawPlayIcon(cr, pcy, pcx, 10);
         cairo_fill(cr);
     }
 
@@ -376,7 +378,7 @@ void ControlBar::drawBar(cairo_t* cr)
         drawErrorIcon(cr, 140, bargeom::W / 2 - 40, 20);
         uText(cr, 116, bargeom::W / 2 - 10, "播放错误", 16, 1, 0.9, 0.9);
     } else if (ended_) {
-        uText(cr, bargeom::BTN_Y + 6, bargeom::TRACK_R - tw - 90, "已结束", 14, 1, 1, 1);
+        uText(cr, bargeom::BTN_Y + 8, bargeom::TRACK_R - tw - 90, "已结束", 16, 1, 1, 1);
     }
 }
 
