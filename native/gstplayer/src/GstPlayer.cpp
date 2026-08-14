@@ -1021,7 +1021,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         // 默认按 16:9 源预置内容尺寸；真实尺寸在 qtdemux pad-added 时校正
         applyCanvasContent(1280, 720);
         if (!bar_) bar_ = new ControlBar();
-        if (!bar_->init(canvasW_, canvasH_, canvasH_ > canvasW_)) {
+        if (!bar_->init(canvasW_, canvasH_, canvasH_ > canvasW_, "bar")) {
             PLAYER_LOG("ControlBar init failed (%dx%d)", canvasW_, canvasH_);
         } else {
             PLAYER_LOG("ControlBar init ok (%dx%d, portrait=%d) strip=%dx%d @(%d,%d)",
