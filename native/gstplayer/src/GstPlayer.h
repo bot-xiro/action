@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "jqutil_v2/jqutil.h"
 
@@ -130,7 +130,9 @@ private:
     bool barPlaying_ = false;
     bool barEnded_ = false;
     bool barError_ = false;
-    bool barHiddenSet_ = false;    // 隐藏时透明条带已设置（轮询防重复分配）
+    bool barHiddenSet_ = false;    // ��藏时透明条带已设置（轮��防重复分���）
+    bool seeking_ = false;         // FLUSH seek 进行中（防 getPosition 返回旧位置导致 UI "��回"）
+    double seekTargetMs_ = 0.0;    // seek 目标位置（ms，seeking_=true 时返回此值）    // 隐藏时透明条带已设置（轮询防重复分配）
     double barPosMs_ = 0.0;
     double barDurMs_ = 0.0;
     std::string barTitle_;               // 视频标题（顶部标题条）
@@ -141,3 +143,6 @@ private:
 };
 
 }  // namespace gstplayer
+
+
+

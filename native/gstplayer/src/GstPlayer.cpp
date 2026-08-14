@@ -1,4 +1,4 @@
-﻿#include "GstPlayer.h"
+#include "GstPlayer.h"
 #include "GstProxy.h"
 #include "ControlBar.h"
 
@@ -502,6 +502,11 @@ void GstPlayer::getPosition(JQFunctionInfo& info)
 {
     if (!pipeline_) {
         info.GetReturnValue().Set(0);
+        return;
+    }
+    // 【防��回 2026-08-14】seeking_ 期间返回目标位置，��免查�� pipeline 返回旧位置
+    if (seeking_) {
+        info.GetReturnValue().Set(seekTargetMs_);
         return;
     }
     gint64 pos = 0;
@@ -1377,6 +1382,8 @@ void GstPlayer::teardown()
     barTitle_.clear();
     canvasW_ = 0;
     canvasH_ = 0;
+    seeking_ = false;
+    seekTargetMs_ = 0.0;
     PLAYER_LOG("teardown done");
 }
 
@@ -1394,7 +1401,7 @@ void GstPlayer::busLoop()
     while (!stopping_) {
         GstMessage* msg = gst_bus_timed_pop_filtered(
             bus, 100 * GST_MSECOND,
-            static_cast<GstMessageType>(GST_MESSAGE_EOS | GST_MESSAGE_ERROR | GST_MESSAGE_STATE_CHANGED));
+            static_cast<GstMessageType>(GST_MESSAGE_EOS | GST_MESSAGE_ERROR | GST_MESSAGE_STATE_CHANGED | GST_MESSAGE_ASYNC_DONE));
         if (!msg) continue;
 
         switch (GST_MESSAGE_TYPE(msg)) {
@@ -1434,6 +1441,16 @@ void GstPlayer::busLoop()
                     refreshBar();
                     emitState("paused");
                 }
+            }
+            break;
+        }
+        case GST_MESSAGE_ASYNC_DONE: {
+            // 【防��回 2026-08-14】FLUSH seek 完成（管线已����并重启到新位置）。
+            // ��除 seeking_，后续 getPosition() ���复查�� pipeline 真实位置。
+            if (seeking_) {
+                PLAYER_LOG("bus ASYNC_DONE: seek done, clearing seeking_");
+                seeking_ = false;
+                seekTargetMs_ = 0.0;
             }
             break;
         }
@@ -1662,4 +1679,5 @@ void gstplayer_init(JQModuleEnv* env)
 }
 
 }  // namespace gstplayer
+
 
