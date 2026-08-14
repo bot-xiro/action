@@ -9,19 +9,21 @@
 #include <dlfcn.h>
 
 // 独立可执行文件：未解析符号需在调用前 dlopen 进全局作用域（.so 靠宿主进程
-// 已加载库懒解析；可执行文件必须自己预加载，否则首调 SIGILL/SIGSEGV）
+// 已加载库懒解析；可执行文件必须自己预加载，否则首调 SIGILL/SIGSEGV）。
+// 全量加载设备 /usr/lib 下所有 libgst*.so.0 + glib 系，避免 PLT 跳垃圾地址。
 static void preload_gst()
 {
     const char* libs[] = {
-        "libgstreamer-1.0.so.0",
-        "libgstbase-1.0.so.0",
-        "libgobject-2.0.so.0",
-        "libglib-2.0.so.0",
-        "libgmodule-2.0.so.0",
-        "libgstpbutils-1.0.so.0",
-        "libgstaudio-1.0.so.0",
-        "libgstvideo-1.0.so.0",
-        "libgsttag-1.0.so.0",
+        "libglib-2.0.so.0", "libgobject-2.0.so.0", "libgmodule-2.0.so.0",
+        "libgstreamer-1.0.so.0", "libgstbase-1.0.so.0",
+        "libgstapp-1.0.so.0", "libgstaudio-1.0.so.0", "libgstvideo-1.0.so.0",
+        "libgstpbutils-1.0.so.0", "libgsttag-1.0.so.0", "libgstnet-1.0.so.0",
+        "libgstriff-1.0.so.0", "libgstrtp-1.0.so.0", "libgstrtsp-1.0.so.0",
+        "libgstsdp-1.0.so.0", "libgstallocators-1.0.so.0",
+        "libgstadaptivedemux-1.0.so.0", "libgstcodecparsers-1.0.so.0",
+        "libgstcodecs-1.0.so.0", "libgstcontroller-1.0.so.0",
+        "libgstmpegts-1.0.so.0", "libgstisoff-1.0.so.0", "libgstfft-1.0.so.0",
+        "libgsturidownloader-1.0.so.0", "libgstinsertbin-1.0.so.0",
         NULL
     };
     for (int i = 0; libs[i]; i++) {
