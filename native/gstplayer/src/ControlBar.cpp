@@ -8,8 +8,34 @@
 
 #include <cairo.h>
 #include <gdk-pixbuf/gdk-pixbuf.h>
+#include <fontconfig/fontconfig.h>
 
 namespace gstplayer {
+
+// 【文字渲染修复 2026-08-14】设备 fontconfig 默认配置不含任何字体路径
+// （框架字体在 /etc/miniapp/resources/fonts/，仅框架自用）→ cairo toy 字体
+// "sans" 解析不到字形，文字不渲染。这里把设备自带字体显式注册进 FcConfig，
+// 使 cairo 可用系统字体绘制（时间/返回/错误文案）。
+static void ensureFonts()
+{
+    static bool done = false;
+    if (done) return;
+    done = true;
+    const char* fonts[] = {
+        "/etc/miniapp/resources/fonts/NotoSansSC-Regular.otf",
+        "/etc/miniapp/resources/fonts/HarmonyOS_Sans_SC_Regular.ttf",
+        "/etc/miniapp/resources/fonts/NotoSans-Regular.ttf",
+        nullptr
+    };
+    FcConfig* cfg = FcConfigGetCurrent();
+    for (int i = 0; fonts[i]; i++) {
+        if (FcConfigAppFontAddFile(cfg, (const FcChar8*)fonts[i]) == FcTrue) {
+            syslog(LOG_LOCAL7 | LOG_ERR, "[gstplayer] font registered: %s", fonts[i]);
+        } else {
+            syslog(LOG_LOCAL7 | LOG_ERR, "[gstplayer] font register failed: %s", fonts[i]);
+        }
+    }
+}
 
 // 【崩溃红线 2026-08-14】本 .so 交叉编译自 x86 宿主，直接链接的 cairo/gdk-pixbuf
 // 符号在设备上采用 lazy 解析：若 miniapp 进程未加载对应动态库，首次调用即
@@ -89,6 +115,7 @@ bool ControlBar::init(int canvasW, int canvasH, bool portrait)
 {
     if (canvasW <= 0 || canvasH <= 0) return false;
     if (!ensureOverlayLibs()) return false;   // 库不可用 → 降级（无悬浮栏）
+    ensureFonts();                            // 注册设备字体（时间/文字渲染）
     portrait_ = portrait;
 
     // 只渲染"控制栏条带"（用户空间底部 BAR_TOP~H 区域），减小逐帧合成面积：

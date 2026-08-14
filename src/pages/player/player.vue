@@ -206,6 +206,12 @@ export default {
                 var data = await api.getPlayUrl(this.bvid, this.cid, 64, 1)
                 if (data && data.durl && data.durl.length > 0) {
                     this.playUrl = data.durl[0].url
+                    // 【2026-08-14 时长修复】设备原生 getDuration 查询恒为 0（rk 分支
+                    // 查询链路问题），改用 B 站 API 返回的 timelength（毫秒）驱动进度条
+                    if (data.timelength && data.timelength > 0) {
+                        this.duration = Math.round(data.timelength)
+                        console.warn('[player] duration from API: ' + this.duration + 'ms')
+                    }
                     console.warn('[player] playUrl qn=' + (data.quality || '?') + ' codecid=' + (data.video_codecid || '?') + '(7=H264) len=' + this.playUrl.length + ' : ' + this.playUrl.substring(0, 80) + '...')
                     this.tryPlay(this.playUrl)
                 } else {
