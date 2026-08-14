@@ -988,7 +988,9 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         ? gst_element_factory_make("alsasink", "asink")
         : gst_element_factory_make("fakesink", "asink");
     if (audioSink_ && audio) {
-        g_object_set(audioSink_, "device", "speaker", "volume", 1.0, nullptr);
+        // 尝试多种 ALSA 设备名称
+        g_object_set(audioSink_, "device", "default", "volume", 1.0, "sync", TRUE, nullptr);
+        PLAYER_LOG("alsasink device=default volume=1.0 sync=true");
     }
     PLAYER_LOG("audio-sink created: %s", audio ? "alsasink" : "fakesink");
 
