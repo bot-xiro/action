@@ -1400,17 +1400,25 @@ static void runSeekSelfTest()
     GstElement* vscale = gst_element_factory_make("videoscale", "vs");
     GstElement* vcaps = gst_element_factory_make("capsfilter", "vcaps");
     GstElement* vbox = NULL;
+    GstElement* voverlay = NULL;
     GstElement* vconv2 = gst_element_factory_make("videoconvert", "vc2");
-    GstElement* vsink = gst_element_factory_make("fakesink", "vsink");
+    GstElement* vsink = NULL;
     GstElement* adec = gst_element_factory_make("decodebin", "adec");
     GstElement* aconv = gst_element_factory_make("audioconvert", "ac");
     GstElement* ares = gst_element_factory_make("audioresample", "ar");
     GstElement* asink = gst_element_factory_make("fakesink", "asink");
     bool useVbox = (strstr(variant, "vbox") != NULL);
     bool useContent = (strstr(variant, "content") != NULL);
+    bool useKms = (strstr(variant, "kmssink") != NULL);
+    bool useOverlay = (strstr(variant, "overlay") != NULL);
     if (useVbox) vbox = gst_element_factory_make("videobox", "vbox");
+    if (useOverlay) voverlay = gst_element_factory_make("gdkpixbufoverlay", "voverlay");
+    vsink = useKms
+        ? gst_element_factory_make("kmssink", "vsink")
+        : gst_element_factory_make("fakesink", "vsink");
     if (!pipe || !src || !demux || !vparse || !vdec || !vqueue || !vconv || !vscale ||
-        !vcaps || !vconv2 || !vsink || !adec || !aconv || !ares || !asink || (useVbox && !vbox)) {
+        !vcaps || !vconv2 || !vsink || !adec || !aconv || !ares || !asink ||
+        (useVbox && !vbox) || (useOverlay && !voverlay)) {
         PLAYER_LOG("selftest factory failed");
         return;
     }
@@ -1427,14 +1435,30 @@ static void runSeekSelfTest()
         gst_caps_unref(caps);
     }
     if (useVbox) g_object_set(vbox, "left", 0, "right", 0, "top", -243, "bottom", -244, NULL);
+    if (useKms) {
+        g_object_set(vsink, "plane-id", 76, "driver-name", "rockchip", NULL);
+        gst_util_set_object_arg(G_OBJECT(vsink), "render-rectangle", "<107, 0, 266, 960>");
+    }
+    if (useOverlay) {
+        g_object_set(voverlay, "location", "/tmp/bar.png",
+                     "offset-x", 190, "offset-y", 0,
+                     "overlay-width", 76, "overlay-height", 960, NULL);
+    }
 
     gst_bin_add_many(GST_BIN(pipe), src, demux, vparse, vdec, vqueue, vconv, vscale, vcaps,
         vconv2, vsink, adec, aconv, ares, asink, NULL);
     if (vbox) gst_bin_add(GST_BIN(pipe), vbox);
+    if (voverlay) gst_bin_add(GST_BIN(pipe), voverlay);
     gst_element_link_many(src, demux, NULL);
     gst_element_link_many(vparse, vdec, vqueue, vconv, vscale, vcaps, NULL);
-    if (vbox) gst_element_link_many(vcaps, vbox, vconv2, vsink, NULL);
-    else gst_element_link_many(vcaps, vconv2, vsink, NULL);
+    // 链尾：caps → (vbox) → (overlay) → vconv2 → sink
+    if (vbox) {
+        if (voverlay) gst_element_link_many(vcaps, vbox, voverlay, vconv2, vsink, NULL);
+        else gst_element_link_many(vcaps, vbox, vconv2, vsink, NULL);
+    } else {
+        if (voverlay) gst_element_link_many(vcaps, voverlay, vconv2, vsink, NULL);
+        else gst_element_link_many(vcaps, vconv2, vsink, NULL);
+    }
     gst_element_link_many(aconv, ares, asink, NULL);
 
     GstPad* vp = gst_element_get_static_pad(vparse, "sink");
