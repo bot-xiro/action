@@ -192,14 +192,15 @@ void ControlBar::uText(cairo_t* cr, double uy, double ux, const char* text,
 {
     cairo_save(cr);
     if (portrait_) {
-        // 【镜像/旋转校准 2026-08-14 真机】屏幕映射：画布 cx→屏幕 y（下增），
-        // 画布 cy→屏幕 x（右增）。文字要正常显示必须用【反射】(x,y)→(y,x)
-        // （与图标 mapX/mapY 同款），不能用 rotate(π/2)（那是旋转→文字倒置）。
-        // cairo_matrix_init(xx, yx, xy, yy, x0, y0)：device_x = xx*x + xy*y + x0
-        // device_y = yx*x + yy*y + y0 → xx=0 yx=1 xy=1 yy=0 x0=uy y0=ux
-        cairo_matrix_t m;
-        cairo_matrix_init(&m, 0, 1, 1, 0, uy, ux);
-        cairo_set_matrix(cr, &m);
+        // 【文字渲染修复 2026-08-14】屏幕映射：画布 cx→屏幕 y、cy→屏幕 x。
+        // 文字需用【反射】(x,y)→(y,x)（与图标 mapX/mapY 同款）才能正常显示。
+        // 注意：不能用 cairo_set_matrix（会整体替换 CTM、丢掉条带 translate(-190,0)，
+        // 导致文字画到条带缓冲区外被裁剪——真机"无时间显示"根因），
+        // 必须 cairo_translate 定位 + cairo_transform 后乘纯交换矩阵。
+        cairo_translate(cr, uy, ux);
+        cairo_matrix_t swap;
+        cairo_matrix_init(&swap, 0, 1, 1, 0, 0, 0);
+        cairo_transform(cr, &swap);
     } else {
         cairo_translate(cr, ux, uy);
     }
