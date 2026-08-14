@@ -6,6 +6,30 @@
 #include <cstdlib>
 #include <cstring>
 #include <unistd.h>
+#include <dlfcn.h>
+
+// 独立可执行文件：未解析符号需在调用前 dlopen 进全局作用域（.so 靠宿主进程
+// 已加载库懒解析；可执行文件必须自己预加载，否则首调 SIGILL/SIGSEGV）
+static void preload_gst()
+{
+    const char* libs[] = {
+        "libgstreamer-1.0.so.0",
+        "libgstbase-1.0.so.0",
+        "libgobject-2.0.so.0",
+        "libglib-2.0.so.0",
+        "libgmodule-2.0.so.0",
+        "libgstpbutils-1.0.so.0",
+        "libgstaudio-1.0.so.0",
+        "libgstvideo-1.0.so.0",
+        "libgsttag-1.0.so.0",
+        NULL
+    };
+    for (int i = 0; libs[i]; i++) {
+        void* h = dlopen(libs[i], RTLD_NOW | RTLD_GLOBAL);
+        if (h) printf("dlopen %s ok\n", libs[i]);
+        else printf("dlopen %s FAILED: %s\n", libs[i], dlerror());
+    }
+}
 
 static const char* kUA =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -147,6 +171,7 @@ static void run_variant(const char* url, bool contentCaps, bool withVbox, const 
 
 int main(int argc, char** argv)
 {
+    preload_gst();
     gst_init(&argc, &argv);
     const char* url = getenv("TEST_URL");
     if (!url || !*url) {
