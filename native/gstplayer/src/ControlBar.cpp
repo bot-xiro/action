@@ -391,6 +391,19 @@ GdkPixbuf* ControlBar::render(bool visible, bool playing, bool ended, bool error
     }
     cairo_destroy(cr);
 
+    // 【行序翻转 2026-08-14 真机实证】gdkpixbufoverlay 合成时 pixbuf 行序反转
+    // （半红半蓝按长度分半的测试条"左蓝右红"证实：row 0 显示在屏幕右端）。
+    // 渲染后把缓冲行序倒置，抵消该镜像；视频帧不受影响（无 overlay 参与）。
+    for (int y = 0; y < h_ / 2; y++) {
+        unsigned char* rowA = data_ + static_cast<size_t>(y) * stride_;
+        unsigned char* rowB = data_ + static_cast<size_t>(h_ - 1 - y) * stride_;
+        for (int x = 0; x < stride_; x++) {
+            unsigned char t = rowA[x];
+            rowA[x] = rowB[x];
+            rowB[x] = t;
+        }
+    }
+
     // 【字节序修复 2026-08-14】cairo ARGB32 内存序为 BGRA，gdk-pixbuf 按 RGBA 读取
     // → 原地交换 R/B，否则颜色红蓝互换（粉色图标变蓝、文字错色）
     for (int y = 0; y < h_; y++) {
