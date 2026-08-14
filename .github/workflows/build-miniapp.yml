@@ -57,8 +57,8 @@ jobs:
 
       - name: Build testseek (aarch64, 设备端 seek 实验)
         run: |
-          aarch64-linux-gnu-g++ -o testseek native/testseek/testseek.cpp \
-            $(pkg-config --cflags gstreamer-1.0) \
+          CFLAGS=$(pkg-config --cflags gstreamer-1.0 | sed 's#-I/usr/include/x86_64-linux-gnu##g')
+          aarch64-linux-gnu-g++ -o testseek native/testseek/testseek.cpp $CFLAGS \
             -Wl,-unresolved-symbols=ignore-all -ldl -lpthread
           file testseek
 
