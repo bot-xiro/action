@@ -165,8 +165,14 @@ void ControlBar::uText(cairo_t* cr, double uy, double ux, const char* text,
 {
     cairo_save(cr);
     if (portrait_) {
-        cairo_translate(cr, uy, ux);
-        cairo_rotate(cr, M_PI / 2);
+        // 【镜像/旋转校准 2026-08-14 真机】屏幕映射：画布 cx→屏幕 y（下增），
+        // 画布 cy→屏幕 x（右增）。文字要正常显示必须用【反射】(x,y)→(y,x)
+        // （与图标 mapX/mapY 同款），不能用 rotate(π/2)（那是旋转→文字倒置）。
+        // cairo_matrix_init(xx, yx, xy, yy, x0, y0)：device_x = xx*x + xy*y + x0
+        // device_y = yx*x + yy*y + y0 → xx=0 yx=1 xy=1 yy=0 x0=uy y0=ux
+        cairo_matrix_t m;
+        cairo_matrix_init(&m, 0, 1, 1, 0, uy, ux);
+        cairo_set_matrix(cr, &m);
     } else {
         cairo_translate(cr, ux, uy);
     }
@@ -230,15 +236,17 @@ void ControlBar::drawPauseIcon(cairo_t* cr, double cy, double cx, double s)
     uRect(cr, cy - s, cx + s * 0.9 - w, 2 * s, w);
 }
 
-// ---- 快进/快退（双三角）----
+// ---- 快进/快退（双三角；2026-08-14 修正方向：apex 朝前）----
 void ControlBar::drawSeekIcon(cairo_t* cr, double cy, double cx, double s, bool forward)
 {
     for (int i = 0; i < 2; i++) {
         double off = (i - 0.5) * s * 1.1;   // 用户 x 偏移
         if (forward) {
-            uTriangle(cr, cy - s, cx + off + s * 0.5, cy, cx + off - s * 0.5, cy + s, cx + off + s * 0.5);
+            // ⏩ apex 在右 (+0.5s)，底边在左
+            uTriangle(cr, cy, cx + off + s * 0.5, cy - s, cx + off - s * 0.5, cy + s, cx + off - s * 0.5);
         } else {
-            uTriangle(cr, cy - s, cx + off - s * 0.5, cy, cx + off + s * 0.5, cy + s, cx + off - s * 0.5);
+            // ⏪ apex 在左 (-0.5s)，底边在右
+            uTriangle(cr, cy, cx + off - s * 0.5, cy - s, cx + off + s * 0.5, cy + s, cx + off + s * 0.5);
         }
     }
 }

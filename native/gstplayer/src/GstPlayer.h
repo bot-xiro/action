@@ -74,6 +74,7 @@ public:
 private:
     bool buildPipeline(const std::string& uri, bool audio, const std::string& rect,
                        const std::string& fill, int canvasW, int canvasH);
+    void applyCanvasContent(int srcW, int srcH);   // 按源尺寸计算等比内容尺寸+黑边，设置 vcaps/vbox
     void teardown();
     void busLoop();
     void emitState(const std::string& state);
@@ -90,8 +91,9 @@ private:
     GstElement* vdec_ = nullptr;         // mppvideodec（RK MPP 硬解，rotation 硬件旋转，DMA-BUF 输出）
     GstElement* vqueue_ = nullptr;       // 视频缓冲 queue（静态后端入口；动态 pad（h264/fallback）统一接此）
     GstElement* vconvert_ = nullptr;     // videoconvert（格式协商缓冲：解码 DMA-BUF → sink 可接受格式）
-    GstElement* vscale_ = nullptr;       // videoscale（等比缩放 + 黑边，铺满画布不拉伸）
-    GstElement* vcaps_ = nullptr;        // capsfilter（画布尺寸 video/x-raw,width=W,height=H）
+    GstElement* vscale_ = nullptr;       // videoscale（等比缩放：源 → 内容尺寸，见 applyCanvasContent）
+    GstElement* vcaps_ = nullptr;        // capsfilter（内容尺寸 video/x-raw,width=W,height=H —— 等比后尺寸）
+    GstElement* vbox_ = nullptr;         // videobox（黑边补齐到画布尺寸 = sink render-rectangle）
     GstElement* voverlay_ = nullptr;     // gdkpixbufoverlay（悬浮控制栏合入视频帧）
     GstElement* vconvert2_ = nullptr;    // 第二 videoconvert（overlay 输出格式协商缓冲）
     GstElement* decodebin_ = nullptr;    // 音频解码器（AAC → raw，输出接 audioconvert → alsasink）

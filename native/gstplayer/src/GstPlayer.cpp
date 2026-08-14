@@ -732,22 +732,23 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     g_object_set(vqueue_, "max-size-bytes", 4 * 1024 * 1024, nullptr);
     g_object_set(vqueue_, "max-size-time", 0, nullptr);
     vconvert_ = gst_element_factory_make("videoconvert", "vconv"); // 格式协商缓冲（格式不匹配时兜底转换）
-    // 【2026-08-14 悬浮控制栏】视频链追加：videoscale(等比+黑边铺满画布) →
-    // capsfilter(画布尺寸) → gdkpixbufoverlay(控制栏合入视频帧) → videoconvert
+    // 【2026-08-14 悬浮控制栏 + 比例修复】视频链：videoscale(→内容尺寸) →
+    // capsfilter(内容尺寸) → videobox(黑边补到画布) → gdkpixbufoverlay(控制栏) → videoconvert
     vscale_ = gst_element_factory_make("videoscale", "vscale");
     vcaps_ = gst_element_factory_make("capsfilter", "vcaps");
+    vbox_ = gst_element_factory_make("videobox", "vbox");
     voverlay_ = gst_element_factory_make("gdkpixbufoverlay", "voverlay");
     vconvert2_ = gst_element_factory_make("videoconvert", "vconv2");
     decodebin_ = gst_element_factory_make("decodebin", "adec");  // 音频解码链（AAC/MP3 → raw）
     aconvert_ = gst_element_factory_make("audioconvert", "aconv"); // 音频格式协商（raw caps 与 alsasink 解耦）
     aresample_ = gst_element_factory_make("audioresample", "ares"); // 采样率协商（44.1k/48k 自适应）
     if (!src || !queue || !demux_ || !vparse_ || !vdec_ || !vqueue_ || !vconvert_ ||
-        !vscale_ || !vcaps_ || !voverlay_ || !vconvert2_ ||
+        !vscale_ || !vcaps_ || !vbox_ || !voverlay_ || !vconvert2_ ||
         !decodebin_ || !aconvert_ || !aresample_) {
-        PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparsed=%d vdec=%d vqueue=%d vconv=%d vscale=%d vcaps=%d voverlay=%d vconv2=%d adec=%d aconv=%d ares=%d",
+        PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparsed=%d vdec=%d vqueue=%d vconv=%d vscale=%d vcaps=%d vbox=%d voverlay=%d vconv2=%d adec=%d aconv=%d ares=%d",
             src ? 1 : 0, queue ? 1 : 0, demux_ ? 1 : 0,
             vparse_ ? 1 : 0, vdec_ ? 1 : 0, vqueue_ ? 1 : 0, vconvert_ ? 1 : 0,
-            vscale_ ? 1 : 0, vcaps_ ? 1 : 0, voverlay_ ? 1 : 0, vconvert2_ ? 1 : 0,
+            vscale_ ? 1 : 0, vcaps_ ? 1 : 0, vbox_ ? 1 : 0, voverlay_ ? 1 : 0, vconvert2_ ? 1 : 0,
             decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0);
         if (src) gst_object_unref(src);
         if (queue) gst_object_unref(queue);
@@ -758,6 +759,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         if (vconvert_) gst_object_unref(vconvert_);
         if (vscale_) gst_object_unref(vscale_);
         if (vcaps_) gst_object_unref(vcaps_);
+        if (vbox_) gst_object_unref(vbox_);
         if (voverlay_) gst_object_unref(voverlay_);
         if (vconvert2_) gst_object_unref(vconvert2_);
         if (decodebin_) gst_object_unref(decodebin_);
@@ -772,6 +774,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         vconvert_ = nullptr;
         vscale_ = nullptr;
         vcaps_ = nullptr;
+        vbox_ = nullptr;
         voverlay_ = nullptr;
         vconvert2_ = nullptr;
         decodebin_ = nullptr;
@@ -918,7 +921,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 连接，绝不在 PLAYING/PAUSED 切换途中做元素级 gst_element_link——
     // 那会与状态迁移抢锁（3fc0948 lazy-link 实测死锁，回退该方案）。
     gst_bin_add_many(GST_BIN(pipeline_), src, queue, demux_, vparse_, vdec_,
-        vqueue_, vconvert_, vscale_, vcaps_, voverlay_, vconvert2_,
+        vqueue_, vconvert_, vscale_, vcaps_, vbox_, voverlay_, vconvert2_,
         decodebin_, aconvert_, aresample_, videoSink_, audioSink_, nullptr);
     if (!gst_element_link_many(src, queue, demux_, nullptr)) {
         PLAYER_LOG("link src->qtdemux failed");
@@ -926,28 +929,27 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         return false;
     }
     // 视频后端链静态预链接（sink pad 空闲等动态 pad 接入）：
-    // vparse → vdec → vqueue → videoconvert → videoscale(等比+黑边) → capsfilter(画布)
-    // → gdkpixbufoverlay(悬浮控制栏) → videoconvert → sink；qtdemux h264 pad 出现时只连 vparse sink。
-    if (!gst_element_link_many(vparse_, vdec_, vqueue_, vconvert_, vscale_, vcaps_, voverlay_,
-                               vconvert2_, videoSink_, nullptr)) {
-        PLAYER_LOG("link vparse->vdec->vqueue->vconv->vscale->vcaps->overlay->vconv2->sink failed");
+    // vparse → vdec → vqueue → videoconvert → videoscale(等比→内容尺寸) → capsfilter(内容尺寸)
+    // → videobox(黑边补到画布) → gdkpixbufoverlay(悬浮控制栏) → videoconvert → sink；
+    // qtdemux h264 pad 出现时只连 vparse sink。
+    if (!gst_element_link_many(vparse_, vdec_, vqueue_, vconvert_, vscale_, vcaps_, vbox_,
+                               voverlay_, vconvert2_, videoSink_, nullptr)) {
+        PLAYER_LOG("link vparse->vdec->vqueue->vconv->vscale->vcaps->vbox->overlay->vconv2->sink failed");
         teardown();
         return false;
     }
-    // 【2026-08-14 悬浮控制栏】videoscale 等比缩放 + 黑边铺满画布（不拉伸变形）；
-    // capsfilter 固定画布尺寸（= sink render-rectangle 尺寸，1:1 映射）
-    g_object_set(vscale_, "force-aspect-ratio", TRUE, nullptr);
-    g_object_set(vscale_, "add-borders", TRUE, nullptr);
+    // 【2026-08-14 悬浮控制栏 + 比例修复】rk 版 videoscale 无 force-aspect-ratio
+    // 属性（真机 gst-inspect 实证），且 add-borders 在显式 caps 尺寸下不补边 →
+    // 改为：videoscale 拉伸到【等比内容尺寸】（applyCanvasContent 计算，AR 正确），
+    // videobox 补黑边到画布尺寸（= sink render-rectangle，1:1 映射）。
+    g_object_set(vscale_, "add-borders", FALSE, nullptr);
     if (canvasW > 0 && canvasH > 0) {
-        GstCaps* caps = gst_caps_new_simple("video/x-raw",
-            "width", G_TYPE_INT, canvasW,
-            "height", G_TYPE_INT, canvasH, nullptr);
-        g_object_set(vcaps_, "caps", caps, nullptr);
-        gst_caps_unref(caps);
         // 控制栏渲染器（画布竖条 = KMS 物理方向时启用旋转映射）
         canvasW_ = canvasW;
         canvasH_ = canvasH;
-        PLAYER_LOG("overlay chain: vscale+vcaps(%dx%d)+gdkpixbufoverlay inserted", canvasW, canvasH);
+        PLAYER_LOG("overlay chain: vscale+vcaps(content)+vbox(%dx%d)+gdkpixbufoverlay inserted", canvasW, canvasH);
+        // 默认按 16:9 源预置内容尺寸；真实尺寸在 qtdemux pad-added 时校正
+        applyCanvasContent(1280, 720);
         if (!bar_) bar_ = new ControlBar();
         if (!bar_->init(canvasW_, canvasH_, canvasH_ > canvasW_)) {
             PLAYER_LOG("ControlBar init failed (%dx%d)", canvasW_, canvasH_);
@@ -1022,6 +1024,47 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     }
 
     return true;
+}
+
+// ---- 画布内容几何（2026-08-14 比例修复）----
+// 视频链：videoscale 拉伸源 → 【等比内容尺寸】（AR 正确，因尺寸按源比例计算）
+// → videobox 补黑边 → 画布尺寸（= sink render-rectangle，1:1）。
+// 设备 rk 版 videoscale 无 force-aspect-ratio 属性且 add-borders 不可靠（真机
+// gst-inspect 实证），故比例由本函数用真实源尺寸保证，不依赖 videoscale。
+void GstPlayer::applyCanvasContent(int srcW, int srcH)
+{
+    if (!vcaps_ || !vbox_ || canvasW_ <= 0 || canvasH_ <= 0) return;
+    if (srcW <= 0 || srcH <= 0) return;
+    // 旋转处理：KMSSINK 构建 mppvideodec rotation=270 → 显示尺寸交换（竖屏）
+    int dispW = srcW, dispH = srcH;
+#ifdef KMSSINK_TEST
+    dispW = srcH;
+    dispH = srcW;
+#endif
+    double scaleX = static_cast<double>(canvasW_) / dispW;
+    double scaleY = static_cast<double>(canvasH_) / dispH;
+    double scale = scaleX < scaleY ? scaleX : scaleY;
+    int contentW = static_cast<int>(dispW * scale + 0.5);
+    int contentH = static_cast<int>(dispH * scale + 0.5);
+    if (contentW < 2) contentW = 2;
+    if (contentH < 2) contentH = 2;
+    int borderL = (canvasW_ - contentW) / 2;
+    int borderR = canvasW_ - contentW - borderL;
+    int borderT = (canvasH_ - contentH) / 2;
+    int borderB = canvasH_ - contentH - borderT;
+    if (borderL < 0) borderL = 0;
+    if (borderR < 0) borderR = 0;
+    if (borderT < 0) borderT = 0;
+    if (borderB < 0) borderB = 0;
+    GstCaps* caps = gst_caps_new_simple("video/x-raw",
+        "width", G_TYPE_INT, contentW,
+        "height", G_TYPE_INT, contentH, nullptr);
+    g_object_set(vcaps_, "caps", caps, nullptr);
+    gst_caps_unref(caps);
+    // 注意：videobox 的 left/right/top/bottom 为【负数】时加边框（正数裁剪）
+    g_object_set(vbox_, "left", -borderL, "right", -borderR, "top", -borderT, "bottom", -borderB, nullptr);
+    PLAYER_LOG("canvas content: src=%dx%d disp=%dx%d -> content=%dx%d borders L%d R%d T%d B%d",
+        srcW, srcH, dispW, dispH, contentW, contentH, borderL, borderR, borderT, borderB);
 }
 
 // qtdemux pad-added 静态回调 → 转成员函数（userdata=this）
@@ -1121,6 +1164,8 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
         gint w = 0, h = 0;
         gst_structure_get_int(s, "width", &w);
         gst_structure_get_int(s, "height", &h);
+        // 【比例修复 2026-08-14】用真实源尺寸校正画布内容几何（等比内容 + 黑边）
+        if (w > 0 && h > 0) applyCanvasContent(w, h);
         sink = vqueue_;
         PLAYER_LOG("video %dx%d fallback -> vqueue (static backend)", w, h);
     } else if (media && g_str_has_prefix(media, "audio/")) {
@@ -1164,6 +1209,7 @@ void GstPlayer::teardown()
     vconvert_ = nullptr;
     vscale_ = nullptr;
     vcaps_ = nullptr;
+    vbox_ = nullptr;
     voverlay_ = nullptr;
     vconvert2_ = nullptr;
     decodebin_ = nullptr;
