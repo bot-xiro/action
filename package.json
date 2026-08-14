@@ -2,7 +2,7 @@
   "name": "bilibili",
   "appName": "Bilibili",
   "appid": "8001812345678901",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Bilibili MiniApp for X6PRO",
   "icon": "app_icon.png",
   "quickjs": {
