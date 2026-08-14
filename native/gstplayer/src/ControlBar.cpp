@@ -1,4 +1,4 @@
-#include "ControlBar.h"
+﻿#include "ControlBar.h"
 
 #include <cmath>
 #include <cstring>
@@ -444,6 +444,7 @@ GdkPixbuf* ControlBar::render(bool visible, bool playing, bool ended, bool error
 }
 
 }  // namespace gstplayer
+
 
 
 

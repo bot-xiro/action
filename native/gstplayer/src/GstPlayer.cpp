@@ -1,4 +1,4 @@
-﻿#include "GstPlayer.h"
+#include "GstPlayer.h"
 #include "GstProxy.h"
 #include "ControlBar.h"
 
@@ -339,7 +339,7 @@ void GstPlayer::preheat(JQFunctionInfo& info)
     // 本方法幂等（app.js onLaunch 调用一次）。
     static std::atomic<bool> done{false};
     if (!done.exchange(true)) {
-        if (!setPlaneZpos(54, 1)) {
+        if (!setPlaneZpos(54, 3)) {
             PLAYER_LOG("preheat WARN: UI plane 54 zpos set failed (UI default zpos=0, video may cover UI)");
         }
     }
