@@ -1373,6 +1373,113 @@ void GstPlayer::emitState(const std::string& state)
 
 // ---- 模块导出 ----
 
+// 【seek 自测 2026-08-14】模块加载时若存在 /tmp/autoseek.flag 则自动运行：
+// 用真实链（含 videobox/内容 caps/kmssink）播放 /tmp/video.mp4 并执行 FLUSH seek，
+// 日志输出 seek 前后位置 —— 在 miniapp 进程内复现 app 的 seek 行为（无需用户/独立进程）。
+static void runSeekSelfTest()
+{
+    FILE* f = fopen("/tmp/autoseek.flag", "r");
+    if (!f) return;
+    char variant[64] = "vbox-contentcaps";
+    if (fgets(variant, sizeof(variant), f)) {
+        size_t n = strlen(variant);
+        while (n > 0 && (variant[n - 1] == '\n' || variant[n - 1] == '\r')) variant[--n] = 0;
+    }
+    fclose(f);
+    remove("/tmp/autoseek.flag");
+    PLAYER_LOG("=== seek self-test variant=%s ===", variant);
+
+    const char* path = "/tmp/video.mp4";
+    GstElement* pipe = gst_pipeline_new("selftest");
+    GstElement* src = gst_element_factory_make("filesrc", "src");
+    GstElement* demux = gst_element_factory_make("qtdemux", "demux");
+    GstElement* vparse = gst_element_factory_make("h264parse", "vp");
+    GstElement* vdec = gst_element_factory_make("mppvideodec", "vd");
+    GstElement* vqueue = gst_element_factory_make("queue", "vq");
+    GstElement* vconv = gst_element_factory_make("videoconvert", "vc");
+    GstElement* vscale = gst_element_factory_make("videoscale", "vs");
+    GstElement* vcaps = gst_element_factory_make("capsfilter", "vcaps");
+    GstElement* vbox = NULL;
+    GstElement* vconv2 = gst_element_factory_make("videoconvert", "vc2");
+    GstElement* vsink = gst_element_factory_make("fakesink", "vsink");
+    GstElement* adec = gst_element_factory_make("decodebin", "adec");
+    GstElement* aconv = gst_element_factory_make("audioconvert", "ac");
+    GstElement* ares = gst_element_factory_make("audioresample", "ar");
+    GstElement* asink = gst_element_factory_make("fakesink", "asink");
+    bool useVbox = (strstr(variant, "vbox") != NULL);
+    bool useContent = (strstr(variant, "content") != NULL);
+    if (useVbox) vbox = gst_element_factory_make("videobox", "vbox");
+    if (!pipe || !src || !demux || !vparse || !vdec || !vqueue || !vconv || !vscale ||
+        !vcaps || !vconv2 || !vsink || !adec || !aconv || !ares || !asink || (useVbox && !vbox)) {
+        PLAYER_LOG("selftest factory failed");
+        return;
+    }
+    g_object_set(src, "location", path, NULL);
+    g_object_set(vqueue, "max-size-buffers", 8, "max-size-bytes", 4 * 1024 * 1024, "max-size-time", 0, NULL);
+    g_object_set(vscale, "add-borders", FALSE, NULL);
+    if (useContent) {
+        GstCaps* caps = gst_caps_new_simple("video/x-raw", "width", G_TYPE_INT, 266, "height", G_TYPE_INT, 473, NULL);
+        g_object_set(vcaps, "caps", caps, NULL);
+        gst_caps_unref(caps);
+    } else {
+        GstCaps* caps = gst_caps_new_simple("video/x-raw", "width", G_TYPE_INT, 266, "height", G_TYPE_INT, 960, NULL);
+        g_object_set(vcaps, "caps", caps, NULL);
+        gst_caps_unref(caps);
+    }
+    if (useVbox) g_object_set(vbox, "left", 0, "right", 0, "top", -243, "bottom", -244, NULL);
+
+    gst_bin_add_many(GST_BIN(pipe), src, demux, vparse, vdec, vqueue, vconv, vscale, vcaps,
+        vconv2, vsink, adec, aconv, ares, asink, NULL);
+    if (vbox) gst_bin_add(GST_BIN(pipe), vbox);
+    gst_element_link_many(src, demux, NULL);
+    gst_element_link_many(vparse, vdec, vqueue, vconv, vscale, vcaps, NULL);
+    if (vbox) gst_element_link_many(vcaps, vbox, vconv2, vsink, NULL);
+    else gst_element_link_many(vcaps, vconv2, vsink, NULL);
+    gst_element_link_many(aconv, ares, asink, NULL);
+
+    GstPad* vp = gst_element_get_static_pad(vparse, "sink");
+    GstPad* ap = gst_element_get_static_pad(adec, "sink");
+    GstPad* ac = gst_element_get_static_pad(aconv, "sink");
+    g_signal_connect(demux, "pad-added", G_CALLBACK(+[](GstElement*, GstPad* pad, gpointer ud) {
+        GstCaps* caps = gst_pad_get_current_caps(pad);
+        const GstStructure* s = caps ? gst_caps_get_structure(caps, 0) : NULL;
+        const gchar* media = s ? gst_structure_get_name(s) : NULL;
+        GstPad* t = NULL;
+        if (media && g_str_has_prefix(media, "video/")) t = (GstPad*)g_object_get_data(G_OBJECT(ud), "vp");
+        else if (media && g_str_has_prefix(media, "audio/")) t = (GstPad*)g_object_get_data(G_OBJECT(ud), "ap");
+        if (t) gst_pad_link(pad, t);
+        if (caps) gst_caps_unref(caps);
+    }), pipe);
+    g_signal_connect(adec, "pad-added", G_CALLBACK(+[](GstElement*, GstPad* pad, gpointer ud) {
+        GstPad* t = (GstPad*)g_object_get_data(G_OBJECT(ud), "ac");
+        gst_pad_link(pad, t);
+    }), pipe);
+    g_object_set_data(G_OBJECT(pipe), "vp", vp);
+    g_object_set_data(G_OBJECT(pipe), "ap", ap);
+    g_object_set_data(G_OBJECT(pipe), "ac", ac);
+    gst_object_unref(vp);
+    gst_object_unref(ap);
+    gst_object_unref(ac);
+
+    gst_element_set_state(pipe, GST_STATE_PLAYING);
+    GstState st;
+    gst_element_get_state(pipe, &st, NULL, 12 * GST_SECOND);
+    PLAYER_LOG("selftest state=%s", gst_element_state_get_name(st));
+    g_usleep(4 * 1000000);
+    gint64 pos = 0;
+    gst_element_query_position(pipe, GST_FORMAT_TIME, &pos);
+    PLAYER_LOG("selftest pos before seek: %lld ms", (long long)(pos / 1000000));
+    bool ok = gst_element_seek_simple(pipe, GST_FORMAT_TIME,
+        (GstSeekFlags)(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_KEY_UNIT), 60LL * GST_SECOND);
+    PLAYER_LOG("selftest seek(60s) ret=%d", ok ? 1 : 0);
+    g_usleep(3 * 1000000);
+    gst_element_query_position(pipe, GST_FORMAT_TIME, &pos);
+    PLAYER_LOG("selftest pos after seek: %lld ms (期望~63000)", (long long)(pos / 1000000));
+    gst_element_set_state(pipe, GST_STATE_NULL);
+    gst_object_unref(pipe);
+    PLAYER_LOG("=== seek self-test done ===");
+}
+
 static JSValue createGstPlayer(JQModuleEnv* env)
 {
     // 预热 GStreamer：模块加载（app 启动 import gstplayer）即完成 gst_init，
@@ -1381,6 +1488,8 @@ static JSValue createGstPlayer(JQModuleEnv* env)
     // 预热悬浮控制栏依赖库（cairo/gdk-pixbuf/fontconfig，RTLD_GLOBAL），
     // 避免首次使用时的懒解析崩溃（2026-08-14 闪退修复，见 ControlBar.cpp）
     ensureOverlayLibsGlobal();
+    // 【调试】/tmp/autoseek.flag 存在时运行 seek 自测（adb 可控，日志走 local7）
+    runSeekSelfTest();
 
     JQFunctionTemplateRef tpl = JQFunctionTemplate::New(env, "gstPlayer");
     tpl->InstanceTemplate()->setObjectCreator([]() {

@@ -51,3 +51,40 @@
 - [ ] 首页为"热门"而非个性化推荐（登录态 rcmd 依赖 cookie，暂不引入；决策记录于 PROJECT_SUMMARY）
 - [ ] 登录（QR）为预留实现：cookie 已可存取，但 httpGet 尚未带 cookie，真正登录后历史/收藏需 native 支持 cookie
 - [ ] 首次装机时系统曾自动清理 pkg（会话开始 13:03 观测到）——新 appid 是否被系统定期清理需长期观察
+
+---
+
+## 2026-08-14（播放器重构：全屏 + 悬浮控制栏 + 多轮真机修复）
+
+### 功能：用户需求"视频全屏铺满(不变比例) + 控制栏悬浮在视频上方"
+
+- **架构**：视频链 videoscale→capsfilter(等比内容尺寸)→videobox(黑边补画布)→gdkpixbufoverlay
+  (悬浮控制栏)→videoconvert→kmssink；控制栏由原生 cairo 渲染 ARGB 条带(76×960)合入视频帧，
+  JS 只做触摸命中（触摸输入与 plane 无关）。
+- **用户已确认**：横屏视频比例正常、控制栏方向/文字/时间/颜色正确、拖动方向正常。
+
+### 多轮修复（真机实证定位，详见 docs/PORTING_NOTES.md C5-C7）
+- C5 闪退：cairo/gdk-pixbuf 符号懒解析 → dlopen+RTLD_GLOBAL 预热（libdrm→cairo→gdk-pixbuf 三连）。
+- C6 掉帧：全画布合成→条带化 + 隐藏时 pixbuf=NULL（GValue）→ 零合成。
+- C7 多项：rk videoscale 无 force-aspect-ratio（gst-inspect 实证）→ videobox 补边；
+  ARGB32(BGRA)↔gdk-pixbuf(RGBA) → R/B 交换；文字 rotate→反射矩阵；快进/快退三角方向；
+  gdkpixbufoverlay 行序反转（红蓝测试条"左蓝右红"实证）→ 缓冲行倒置。
+- 时长：原生 getDuration 恒 0 → B 站 API timelength；字体：注册设备字体到 FcConfig。
+
+### 结果
+- 播放器视觉与交互（比例/控制栏/时长/文字/拖动）已达标；**seek 与竖屏 9:16 仍在修复中**。
+
+### 问题 / 待办（当前）
+- [ ] **seek 失效（位置回退）**：FLUSH ret=1 但回退；非冲刷 ret=0。已排除 FLUSH 标志/动态
+  caps/Accept-Ranges 头；疑 videobox/内容 caps 链影响 seek 事件传播。→ `native/testseek`
+  设备端 4 变体实验定位中（当前卡启动 SIGILL：独立进程 gst_init 崩溃，全量 dlopen 预加载
+  后仍 SIGILL，LD_BIND_NOW 无符号报错——排查中）
+- [ ] **竖屏 9:16 视频**：重建机制已实现（pad-added 尺寸核对 → start() 预滚后重建；修复了
+  teardown 清零画布尺寸的 bug）待真机验证（应显示 266×150 内容 + 上下大黑边，不拉伸）
+- [ ] 视频左右镜像疑虑：pixbuf 路径镜像已实证并补偿；视频本体待带字幕视频复核
+- [ ] testseek SIGILL → 完成后 4 变体 seek 结论 → 修复 seek → 全量回归
+
+### 交付物
+- 源码（native/ + src/ + .github/）、bilibili.amr（CI 产物）、testseek（CI 产物）、
+  docs/（X6PRO_ENV、STUDY_NOTES、PROJECT_SUMMARY、PROGRESS_SUMMARY、VERIFY_FLOW、
+  SCREEN_WAKE、PORTING_NOTES、DEV_LOG、X6PRO_TEST_LOG/）、deving.md
