@@ -262,12 +262,12 @@ void GstPlayer::open(JQFunctionInfo& info)
     std::string fill = jsGetString(ctx, opt, "fill");  // "fit"/"crop"/"stretch"，空=fit
 
 #ifdef KMSSINK_TEST
-    // KMSSINK 双平面模式：前端传逻辑全屏矩形（960×480），换算为物理坐标。
-    // 前端 hole（960×480 全屏挖洞）与 render-rectangle 必须一致，UI 可视区域
-    // 由 WebView 层 hole 决定：hole 区域透明，KMS 视频平面透出，其余被 UI 覆盖。
-    // 历史教训（勿回退）：曾用 logicToCrtc 把 266 高竖条换算成物理竖条
-    // （x=0 上半屏、x=214 下半屏，两轮真机均反馈位置错误）——根因是前端
-    // 视区高度写死 266（只占逻辑屏上半）。现前端统一 960×480 全屏传参。
+    // KMSSINK 双平面模式（视频在上，UI在下）：
+    // - 视频平面 76 (overlay, zpos=3) 位于 UI 主平面 54 (primary, zpos=0) 之上
+    // - 前端 clip-path: evenodd 在纯黑 #000 底上镂空 960×266 视频区域（物理孔洞）
+    // - 控制栏由原生 gdkpixbufoverlay 合成进视频帧，随视频平面一起显示
+    // - render-rectangle 物理坐标与前端视频区域保持一致（全视口 960×266）
+    // - 触摸事件在 WebView 层处理，与 DRM 平面层级无关
     if (posW > 0 && posH > 0) {
         KmsRect p = logicToCrtc(posX, posY, posW, posH);
         PLAYER_LOG("kmss rect LOGIC(%d,%d,%d,%d) -> PHYS(%d,%d,%d,%d)",
@@ -329,20 +329,18 @@ void GstPlayer::open(JQFunctionInfo& info)
 
 void GstPlayer::preheat(JQFunctionInfo& info)
 {
-    // 【2026-08-15 用户指令】使用默认平面层级：视频平面 76 保持默认 zpos=2。
-    // UI 平面 54 提升至 zpos=3 确保在视频平面之上以接收触摸事件。
-    // 控制栏由 gdkpixbuvoverlay 合成进视频帧，可见于视频画面。
-    // UI 平面负责触摸事件，确保控制栏可操作。
-    // 此配置实现"挖洞"效果：UI 不透明区域显示控制栏，透明区域让视频可见。
+    // 【2026-08-15 修正】视频在上，UI在下：overlay plane 76 提升至 zpos=3，primary plane 54 保持 zpos=0。
+    // 原因：primary 平面不支持 alpha/透明（黑底遮挡视频），overlay 支持 alpha 且控制栏已合成进视频帧。
+    // 前端使用 clip-path: evenodd 在黑底上镂空视频区域，视频平面在 UI 平面之上透出。
+    // 触摸事件在 WebView 层处理（与 DRM 平面层级无关，前端已验证）。
     // 本方法幂等（app.js onLaunch 调用一次）。
     static std::atomic<bool> done{false};
     if (!done.exchange(true)) {
-        // UI 平面提升至 zpos=3，确保在视频平面(zpos=2)之上负责触摸
-        if (!setPlaneZpos(54, 3)) {
-            PLAYER_LOG("preheat WARN: UI plane 54 zpos=3 set failed");
+        // 视频平面 76 (overlay) 提升至 zpos=3，覆盖在 UI 主平面 54(zpos=0) 之上
+        if (!setPlaneZpos(76, 3)) {
+            PLAYER_LOG("preheat WARN: video plane 76 zpos=3 set failed");
         }
-        // 视频平面 76 保持默认 zpos=2（overlay 默认高于 primary）
-        // 不需要额外设置，使用 DRM 默认值
+        // UI 平面 54 (primary) 保持默认 zpos=0，无需设置
     }
     info.GetReturnValue().Set(true);
 }
