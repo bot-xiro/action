@@ -329,18 +329,21 @@ void GstPlayer::open(JQFunctionInfo& info)
 
 void GstPlayer::preheat(JQFunctionInfo& info)
 {
-    // 【2026-08-15 用户指令修正】视频默认层级高于 UI：UI 主平面 54 zpos=1，视频平面 76 保持默认 zpos=2。
-    // 控制栏由 gdkpixbufoverlay 合成进视频帧，视频在上层可见，UI 平面在下层负责触摸透传。
-    // 历史教训：UI 抬 zpos=3 会导致不透明主平面盖住视频 → 黑屏（JQuick 不支持 hole）。
+    // 【2026-08-15 用户指令】视频置底：视频平面 76 zpos=0，UI 主平面 54 zpos=1。
+    // 控制栏由 gdkpixbufoverlay 合成进视频帧，视频可见区域透出，
+    // UI 平面负责触摸事件，确保控制栏可操作。
+    // 此策略避免视频盖住 UI，解决亮屏时视频遮挡 UI 导致的操作失效问题。
     // 本方法幂等（app.js onLaunch 调用一次）。
     static std::atomic<bool> done{false};
     if (!done.exchange(true)) {
-        // UI 平面微抬 zpos=1（高于默认 0，低于视频 overlay 默认 2），避免与其它系统层竞争
+        // UI 平面提升至 zpos=1，确保在视频平面之上负责触摸
         if (!setPlaneZpos(54, 1)) {
             PLAYER_LOG("preheat WARN: UI plane 54 zpos=1 set failed");
         }
-        // 视频平面 76 保持默认 zpos=2（overlay 默认高于 primary），确保视频可见
-        // 不再强制设置，避免与 DRM 默认值冲突
+        // 视频平面设置为 zpos=0，确保始终在 UI 之下
+        if (!setPlaneZpos(76, 0)) {
+            PLAYER_LOG("preheat WARN: video plane 76 zpos=0 set failed");
+        }
     }
     info.GetReturnValue().Set(true);
 }
