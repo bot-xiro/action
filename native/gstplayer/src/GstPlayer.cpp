@@ -329,19 +329,14 @@ void GstPlayer::open(JQFunctionInfo& info)
 
 void GstPlayer::preheat(JQFunctionInfo& info)
 {
-    // 【2026-08-15 用户指令】UI 平面提升至 zpos=3 确保在视频平面之上。
+    // 【2026-08-15 用户指令】使用默认平面层级：UI 平面 54 zpos=0，视频平面 76 zpos=2。
     // 视频平面 76 保持默认 zpos=2（overlay 默认高于 primary）。
     // 控制栏由 gdkpixbufoverlay 合成进视频帧，可见于视频画面。
     // UI 平面负责触摸事件，确保控制栏可操作。
     // 本方法幂等（app.js onLaunch 调用一次）。
-    static std::atomic<bool> done{false};
-    if (!done.exchange(true)) {
-        // UI 平面提升至 zpos=3，确保在视频平面(zpos=2)之上负责触摸
-        if (!setPlaneZpos(54, 3)) {
-            PLAYER_LOG("preheat WARN: UI plane 54 zpos=3 set failed");
-        }
-        // 视频平面 76 保持默认 zpos=2，无需额外设置
-    }
+    // 故意不设置 zpos，使用 DRM 默认值：
+    //   UI 平面 54: zpos=0 (primary 默认)
+    //   视频平面 76: zpos=2 (overlay 默认高于 primary)
     info.GetReturnValue().Set(true);
 }
 
