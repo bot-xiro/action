@@ -112,11 +112,12 @@ private:
     GstElement* voverlay_ = nullptr;     // gdkpixbufoverlay（悬浮控制栏合入视频帧）
     GstElement* vtitleoverlay_ = nullptr;// gdkpixbufoverlay（顶部标题条合入视频帧，2026-08-14）
     GstElement* vconvert2_ = nullptr;    // 第二 videoconvert（overlay 输出格式协商缓冲）
-    GstElement* decodebin_ = nullptr;    // 音频解码器（AAC → raw，输出接 aconvert → aresample → acaps → avolume → alsasink）
-    GstElement* aconvert_ = nullptr;     // audioconvert（音频格式协商，防 raw caps 与 alsasink 不匹配卡 preroll）
-    GstElement* aresample_ = nullptr;    // audioresample（采样率协商，防 44.1k/48k 不匹配卡 preroll）
-    GstElement* acaps_ = nullptr;        // capsfilter（强制 S16LE/44.1k/2ch，2026-08-15 修复声音沙沙）
-    GstElement* avolume_ = nullptr;      // volume（音量控制，2026-08-15 重写）
+    GstElement* aacparse_ = nullptr;     // aacparse（AAC ADTS→Raw，2026-08-15 音频重写）
+    GstElement* adec_ = nullptr;         // avdec_aac/faad（显式 AAC 解码器，替代 decodebin）
+    GstElement* aconvert_ = nullptr;     // audioconvert（音频格式协商，兜底）
+    GstElement* aresample_ = nullptr;    // audioresample（采样率协商，兜底）
+    GstElement* acaps_early_ = nullptr;  // capsfilter（紧跟解码器后强制 S16LE/44100/2ch）
+    GstElement* avolume_ = nullptr;      // volume（音量控制）
     GstElement* videoSink_ = nullptr;    // kmssink / waylandsink
     GstElement* audioSink_ = nullptr;    // alsasink
     GstElement* videoFlip_ = nullptr;    // 遗留：videoflip 已淘汰（mppvideodec rotation 替代），保留指针置空兼容 teardown
