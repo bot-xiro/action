@@ -966,11 +966,11 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     GParamSpec* skipPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "skip-vsync");
     if (skipPspec) g_object_set(videoSink_, "skip-vsync", skip, nullptr);
 
-    // 【抗���� 2026-08-14】kmssink 配置加强：
-    // 1) 关闭 QoS（防止晚��被��导致时间跳变、����）
+    // 【抗闪烁 2026-08-14】kmssink 配置加强：
+    // 1) 开启 QoS（bright-screen mute fix：降低渲染压力，防止抢占 ALSA buffer）
     // 2) 设置 max-lateness=-1（无限制晚到，由 VSYNC 决定显现时机）
-    // 3) sync=true（默认，显式确保基于时���同步显现）
-    gboolean qos = false;
+    // 3) sync=true（默认，显式确保基于时钟同步显现）
+    gboolean qos = true;
     GParamSpec* qosPspec = g_object_class_find_property(G_OBJECT_GET_CLASS(videoSink_), "qos");
     if (qosPspec) g_object_set(videoSink_, "qos", qos, nullptr);
     gint64 maxLateness = -1;
@@ -985,7 +985,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 注意：16:9 视频放进 266×960 竖条矩形时会等比缩至 472 高、上下留黑边，
     // 这是预期行为（用户方案：只修正坐标对位，不改变画面比例）。
     // 此属性保持默认 true，无需显式设置——绝不设 false（避免强制拉伸变形）。
-    PLAYER_LOG("kmssink created (plane-id=76 driver=rockchip, keep-aspect-ratio, qos=off, max-lateness=-1, sync=on)");
+    PLAYER_LOG("kmssink created (plane-id=76 driver=rockchip, keep-aspect-ratio, qos=on, max-lateness=-1, sync=on)");
     if (!rect.empty()) {
         // 致命红线：render-rectangle 是 GstValueArray of gint（Write only），
         // g_object_set 传 C 字符串 → GLib 类型不匹配 abort 崩溃！
@@ -1032,10 +1032,11 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         ? gst_element_factory_make("alsasink", "asink")
         : gst_element_factory_make("fakesink", "asink");
     if (audioSink_ && audio) {
-        // 2026-08-15 重写：不显式设 device/sync，由 ALSA 默认走 default sink；
-        // 音量由 avolume_ 元素控制（更可靠），alsasink volume 保留默认。
-        g_object_set(audioSink_, "buffer-time", (gint64)40000, "latency-time", (gint64)20000, nullptr);
-        PLAYER_LOG("alsasink buffer-time=40000 latency-time=20000");
+        // 2026-08-15 亮屏无声音修复：kmssink 持续渲染抢夺 ALSA buffer，导致 xrun
+        // 增加 alsasink buffer 缓冲：200ms（可容纳 10ms buffer @ 60fps）
+        // latency-time=100ms 给 ALSA 实时调度足够余量
+        g_object_set(audioSink_, "buffer-time", (gint64)200000, "latency-time", (gint64)100000, nullptr);
+        PLAYER_LOG("alsasink buffer-time=200000 latency-time=100000 (fix bright-screen mute)");
     }
     PLAYER_LOG("audio-sink created: %s", audio ? "alsasink" : "fakesink");
 
