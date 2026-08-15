@@ -115,7 +115,8 @@ private:
     GstElement* decodebin_ = nullptr;    // decodebin（音频解码，自动选择最优解码器，2026-08-15 回退稳定版）
     GstElement* aconvert_ = nullptr;     // audioconvert（音频格式协商，兜底）
     GstElement* aresample_ = nullptr;    // audioresample（采样率协商，兜底）
-    GstElement* acaps_early_ = nullptr;  // capsfilter（紧跟解码器后强制 S16LE/44100/2ch）
+    GstElement* acaps_early_ = nullptr;  // capsfilter（紧跟解码器后强制 S16LE/2ch/interleaved）
+    GstElement* aqueue_ = nullptr;       // 音频缓冲 queue（防止 decodebin->alsasink 无缓冲导致 1 秒后反压停流）
     GstElement* avolume_ = nullptr;      // volume（音量控制）
     GstElement* videoSink_ = nullptr;    // kmssink / waylandsink
     GstElement* audioSink_ = nullptr;    // alsasink
