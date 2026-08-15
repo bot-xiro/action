@@ -19,10 +19,11 @@
 </template>
 
 <style scoped>
-/* 外层容器：铺满 960×266 视口。黑底（视频 plane 激活前/黑边区域） */
+/* 外层容器：铺满 960×266 视口。透明底（视频 plane 在 UI plane 下方 zpos=2<3，
+   UI plane 必须透明才能让视频透出；仅加载/错误时 overlay 提供半透明遮罩） */
 .page {
     flex: 1;
-    background-color: #000000;
+    background-color: transparent;
     flex-direction: column;
 }
 
