@@ -329,18 +329,18 @@ void GstPlayer::open(JQFunctionInfo& info)
 
 void GstPlayer::preheat(JQFunctionInfo& info)
 {
-    // 【2026-08-15 用户指令】使用默认平面层级：UI 平面 54 zpos=0，视频平面 76 zpos=2。
-    // 视频平面 76 保持默认 zpos=2（overlay 默认高于 primary）。
-    // 控制栏由 gdkpixbufoverlay 合成进视频帧，可见于视频画面。
+    // 【2026-08-15 用户指令】使用默认平面层级：UI 平面 54 zpos=0，视频平面 75 zpos=2。
+    // 视频平面 75 保持默认 zpos=2（overlay 默认高于 primary）。
+    // 控制栏由 gdkpixbuvoverlay 合成进视频帧，可见于视频画面。
     // UI 平面负责触摸事件，确保控制栏可操作。
     // 本方法幂等（app.js onLaunch 调用一次）。
     // 故意不设置 zpos，使用 DRM 默认值：
     //   UI 平面 54: zpos=0 (primary 默认)
-    //   视频平面 76: zpos=2 (overlay 默认高于 primary)
+    //   视频平面 75: zpos=2 (overlay 默认高于 primary)
     info.GetReturnValue().Set(true);
 }
 
-// 【2026-08-15 废弃】动态层级切换已移除：视频平面 76 固定 zpos=0，UI 平面 54 固定 zpos=3。
+// 【2026-08-15 启用】动态层级切换：可通过 JS 调整视频平面 75 zpos。
 // 控制栏由 gdkpixbufoverlay 合成进视频帧，无需通过 DRM zpos 切换实现显隐。
 // 保留接口仅为兼容旧调用（前端已移除 setVideoTopmost），忽略参数直接返回。
 void GstPlayer::setVideoZpos(JQFunctionInfo& info)
@@ -355,10 +355,10 @@ void GstPlayer::setVideoZpos(JQFunctionInfo& info)
     }
     if (zpos < 0) zpos = 0;
     if (zpos > 10) zpos = 10;
-    if (!setPlaneZpos(76, (uint32_t)zpos)) {
-        PLAYER_LOG("setVideoZpos: plane 76 zpos=%d set failed", zpos);
+    if (!setPlaneZpos(75, (uint32_t)zpos)) {
+        PLAYER_LOG("setVideoZpos: plane 75 zpos=%d set failed", zpos);
     } else {
-        PLAYER_LOG("setVideoZpos: plane 76 zpos=%d set ok", zpos);
+        PLAYER_LOG("setVideoZpos: plane 75 zpos=%d set ok", zpos);
     }
 #else
     PLAYER_LOG("setVideoZpos: ignored (non-KMSSINK build)");
@@ -937,12 +937,12 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     // 76(Esmart1, overlay, z=2) / 90(Esmart2, overlay, z=3) / 104(Esmart3, overlay, z=4)
     // —— 不存在 plane 75！之前用 75 导致 kmssink 报 "Could not find a plane
     // for crtc" 打开失败。76 与历史实验中实测可用的 overlay 平面一致，选用之。
-g_object_set(videoSink_, "plane-id", 76, nullptr);
+g_object_set(videoSink_, "plane-id", 75, nullptr);
     // 层级控制说明：kmssink【没有 zpos 属性】（设备实证 "kmssink has no zpos
     // property"），g_object_set 永不生效。UI 主平面 54(Esmart0) 的 zpos 提升
     // 已【移出播放路径】——由 app.js onLaunch 调用 gstPlayer.preheat() 启动时
     // 全局执行一次（闪烁修复 2026-08-09：播放中动 zpos 会与合成器竞争闪屏）。
-    // 视频 plane 76(Esmart1, z=2) < UI 主平面 54(z=3)：UI 永远盖在视频之上。
+    // 视频 plane 75(Esmart0?, z=?) < UI 主平面 54(z=3)：UI 永远盖在视频之上。
     // 恢复 VSYNC 约束（闪烁修复 2026-08-09 用户诊断）：skip-vsync=true 会让
     // 视频帧绕过垂直同步直接提交，与 weston 主平面叠加时高频撕裂闪烁。
     // 管线死锁已由静态后端+preroll 等待修复（1cb2b3b），此处改回 false。
@@ -970,7 +970,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 注意：16:9 视频放进 266×960 竖条矩形时会等比缩至 472 高、上下留黑边，
     // 这是预期行为（用户方案：只修正坐标对位，不改变画面比例）。
     // 此属性保持默认 true，无需显式设置——绝不设 false（避免强制拉伸变形）。
-    PLAYER_LOG("kmssink created (plane-id=76 driver=rockchip, keep-aspect-ratio, qos=on, max-lateness=-1, sync=on)");
+    PLAYER_LOG("kmssink created (plane-id=75 driver=rockchip, keep-aspect-ratio, qos=on, max-lateness=-1, sync=on)");
     if (!rect.empty()) {
         // 致命红线：render-rectangle 是 GstValueArray of gint（Write only），
         // g_object_set 传 C 字符串 → GLib 类型不匹配 abort 崩溃！
@@ -1648,7 +1648,7 @@ static void runSeekSelfTest()
     }
     if (useVbox) g_object_set(vbox, "left", 0, "right", 0, "top", -243, "bottom", -244, NULL);
     if (useKms) {
-        g_object_set(vsink, "plane-id", 76, "driver-name", "rockchip", NULL);
+        g_object_set(vsink, "plane-id", 75, "driver-name", "rockchip", NULL);
         gst_util_set_object_arg(G_OBJECT(vsink), "render-rectangle", "<107, 0, 266, 960>");
     }
     if (useOverlay) {
