@@ -166,8 +166,14 @@ export default {
                 this.paused = false
                 this.ended = false
                 this.error = ''
+                // 此时重建已完成（若有），安全显示 stage
+                if (!this.ready) {
+                    this.ready = true
+                    console.warn('[player] ready=true on playing state')
+                }
                 this.startProgressPolling()
                 this.scheduleBarHide()
+                this.pushBarState()
             } else if (state === 'paused') {
                 this.paused = true
                 this.stopProgressPolling()
@@ -271,12 +277,10 @@ export default {
                     loop: 0
                 })
                 console.warn('[player] open ret: ' + ok)
-                // 视频平面固定 zpos=0（UI 平面 zpos=3），控制栏已合成进视频帧
                 this.mPlayer.start()
-                this.ready = true
+                // ready 在 stateCb('playing') 时设为 true，避免重建前的首帧闪烁
                 this.loading = false
-                this.pushBarState()
-                console.warn('[player] play OK')
+                console.warn('[player] start OK, waiting for playing state')
             } catch (e) {
                 var msg = (e && e.message) ? e.message : JSON.stringify(e)
                 this.error = '播放失败: ' + msg

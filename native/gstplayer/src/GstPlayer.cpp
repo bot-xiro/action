@@ -303,14 +303,12 @@ void GstPlayer::open(JQFunctionInfo& info)
     // 控制栏 cairo 画布与之一致 → 1:1 映射，无二次缩放。
     int canvasW = (posW > 0 && posH > 0) ? posW : 0;
     int canvasH = (posW > 0 && posH > 0) ? posH : 0;
-    // 【竖屏支持 2026-08-14】记录重建参数（非常规比例源在 start() 前重建）
-    // 为避免闪烁，暂时禁用重建。直接使用打开时的 rect（全视口 960×266），
-    // kmssink 的 force-aspect-ratio 已能保持比例，无需重建。
+    // 【竖屏支持 2026-08-14】记录重建参数（非常规比例源在 start() 前重建）。
+    // 闪烁问题由前端 ready=false→ready=true 解决（仅在 playing 状态时置 true）。
     rebuildUri_ = uri;
     rebuildAudio_ = audio;
     rebuildRect_ = rect.str();
     rebuildFill_ = fill;
-    // 重建已禁用
     rebuildNeeded_ = false;
     bool ok = buildPipeline(uri, audio, rect.str(), fill, canvasW, canvasH);
     PLAYER_LOG("open buildPipeline ret=%d", ok ? 1 : 0);
@@ -396,21 +394,20 @@ void GstPlayer::start(JQFunctionInfo& info)
         return;
     }
     // 【竖屏支持 2026-08-14】pad-added 在预滚期间触发（重建请求在预滚后才出现），
-    // 已禁用重建，此处不再检查 rebuildNeeded_。
-    // 如果以后需要重新启用，可恢复以下代码块。
-    // if (rebuildNeeded_) {
-    //     rebuildForSource();
-    //     if (!pipeline_) {
-    //         info.GetReturnValue().ThrowInternalError("start: rebuild failed");
-    //         return;
-    //     }
-    //     preroll = gst_element_get_state(pipeline_, nullptr, nullptr, 10LL * GST_SECOND);
-    //     PLAYER_LOG("start wait preroll (after rebuild) ret=%d", (int)preroll);
-    //     if (preroll == GST_STATE_CHANGE_FAILURE) {
-    //         info.GetReturnValue().ThrowInternalError("start: rebuild preroll failed");
-    //         return;
-    //     }
-    // }
+    // 故重建检查必须放在预滚等待【之后】；重建后对新管线再走一次预滚
+    if (rebuildNeeded_) {
+        rebuildForSource();
+        if (!pipeline_) {
+            info.GetReturnValue().ThrowInternalError("start: rebuild failed");
+            return;
+        }
+        preroll = gst_element_get_state(pipeline_, nullptr, nullptr, 10LL * GST_SECOND);
+        PLAYER_LOG("start wait preroll (after rebuild) ret=%d", (int)preroll);
+        if (preroll == GST_STATE_CHANGE_FAILURE) {
+            info.GetReturnValue().ThrowInternalError("start: rebuild preroll failed");
+            return;
+        }
+    }
     // 【诊断 2026-08-14】预滚后打印视频链实际协商 caps（帧尺寸/格式），
     // 用于核对画布/叠加几何是否与预期一致（266×960 或 960×266）
     if (voverlay_) {
