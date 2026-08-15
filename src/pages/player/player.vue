@@ -68,7 +68,7 @@
     left: 0;
     width: 960px;
     height: 266px;
-    background-color: #000000;
+    background-color: transparent;
     overflow: hidden;
 }
 </style>
