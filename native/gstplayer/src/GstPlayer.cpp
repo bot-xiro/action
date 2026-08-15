@@ -778,11 +778,16 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     GstElement* src = gst_element_factory_make("souphttpsrc", "src");
     GstElement* queue = gst_element_factory_make("queue", "qsrc");
     demux_ = gst_element_factory_make("qtdemux", "demux");       // mp4/m4s 解复用（B 站 CDN 均为 mp4 容器）
+    // 【首帧加速】qtdemux 优化：快速索引、不等完整 moov 即产生 pad
+    g_object_set(demux_, "faststart", true, nullptr);       // moov 在尾部时从头开始解析
+    g_object_set(demux_, "push-first", true, nullptr);      // 有数据即推送，不等索引完成
+    // 避免过度预读：只解析必要的索引
+    g_object_set(demux_, "max-offset", (guint64)1024 * 1024, nullptr); // 1MB 偏移限制
     vparse_ = gst_element_factory_make("h264parse", "vparse");   // avcC → byte-stream，补齐帧边界
     vdec_ = gst_element_factory_make("mppvideodec", "vdec");     // RK MPP 硬解，DMA-BUF 输出，硬件旋转
-    vqueue_ = gst_element_factory_make("queue", "vqueue");        // 视频后端入口缓冲（防 decode 动态接入反压网络源）
-    g_object_set(vqueue_, "max-size-buffers", 8, nullptr);
-    g_object_set(vqueue_, "max-size-bytes", 4 * 1024 * 1024, nullptr);
+    vqueue_ = gst_element_factory_make("queue", "vqueue");        // 视频后端入口缓冲：小缓冲减少首帧延迟
+    g_object_set(vqueue_, "max-size-buffers", 4, nullptr);
+    g_object_set(vqueue_, "max-size-bytes", 2 * 1024 * 1024, nullptr);
     g_object_set(vqueue_, "max-size-time", 0, nullptr);
     vconvert_ = gst_element_factory_make("videoconvert", "vconv"); // 格式协商缓冲（格式不匹配时兜底转换）
     // 【2026-08-14 悬浮控制栏 + 比例修复】视频链：videoscale(→内容尺寸) →
@@ -818,8 +823,8 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         g_object_set(avolume_, "volume", 1.0, "mute", false, nullptr);
     }
     if (aqueue_) {
-        g_object_set(aqueue_, "max-size-buffers", 200, nullptr);
-        g_object_set(aqueue_, "max-size-bytes", (guint64)4 * 1024 * 1024, nullptr);
+        g_object_set(aqueue_, "max-size-buffers", 50, nullptr);   // 减少音频缓冲
+        g_object_set(aqueue_, "max-size-bytes", 2 * 1024 * 1024, nullptr); // 2MB
         g_object_set(aqueue_, "max-size-time", (guint64)0, nullptr);
     }
     if (!src || !queue || !demux_ || !vparse_ || !vdec_ || !vqueue_ || !vconvert_ ||
@@ -870,11 +875,10 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         return false;
     }
 
-    // 网络队列缓冲上限（RK3562 内存带宽有限，防缓冲无限膨胀）。
-    // 注意 max-size-time 必须显式设为 0：默认 2s 会在加载慢时提前打满，
-    // 解码器反压到网络源导致首帧卡顿（历史踩坑，勿改）。
-    g_object_set(queue, "max-size-buffers", 200, nullptr);
-    g_object_set(queue, "max-size-bytes", 16 * 1024 * 1024, nullptr);
+    // 网络队列：首帧优先，小缓冲快速启动；后续可动态增大。
+    // 关键：max-size-time=0 保持，防止加载慢时首帧卡顿。
+    g_object_set(queue, "max-size-buffers", 50, nullptr);     // 减少缓冲区数
+    g_object_set(queue, "max-size-bytes", 2 * 1024 * 1024, nullptr); // 2MB 起步，首帧更快
     g_object_set(queue, "max-size-time", 0, nullptr);
 
     g_object_set(src, "location", uri.c_str(), nullptr);
