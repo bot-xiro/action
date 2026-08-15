@@ -112,8 +112,7 @@ private:
     GstElement* voverlay_ = nullptr;     // gdkpixbufoverlay（悬浮控制栏合入视频帧）
     GstElement* vtitleoverlay_ = nullptr;// gdkpixbufoverlay（顶部标题条合入视频帧，2026-08-14）
     GstElement* vconvert2_ = nullptr;    // 第二 videoconvert（overlay 输出格式协商缓冲）
-    GstElement* aacparse_ = nullptr;     // aacparse（AAC ADTS→Raw，2026-08-15 音频重写）
-    GstElement* adec_ = nullptr;         // avdec_aac/faad（显式 AAC 解码器，替代 decodebin）
+    GstElement* decodebin_ = nullptr;    // decodebin（音频解码，自动选择最优解码器，2026-08-15 回退稳定版）
     GstElement* aconvert_ = nullptr;     // audioconvert（音频格式协商，兜底）
     GstElement* aresample_ = nullptr;    // audioresample（采样率协商，兜底）
     GstElement* acaps_early_ = nullptr;  // capsfilter（紧跟解码器后强制 S16LE/44100/2ch）

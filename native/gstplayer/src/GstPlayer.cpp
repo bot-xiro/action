@@ -807,17 +807,15 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     voverlay_ = gst_element_factory_make("gdkpixbufoverlay", "voverlay");
     vtitleoverlay_ = gst_element_factory_make("gdkpixbufoverlay", "vtitleoverlay");
     vconvert2_ = gst_element_factory_make("videoconvert", "vconv2");
-    // 【2026-08-15 音频重写】用显式 AAC 解码器替代 decodebin，提升 RK3562 稳定性
-    // 管线：qtdemux(audio/mpeg) → aacparse → avdec_aac/faad → acaps_early(S16LE/44100/2ch)
+    // 【2026-08-15 音频稳定版】回退 decodebin + 早期 capsfilter，用已知可用元素
+    // 管线：qtdemux(audio/mpeg) → decodebin → acaps_early(S16LE/44100/2ch)
     //       → audioconvert(兜底) → audioresample(兜底) → volume → alsasink
-    aacparse_ = gst_element_factory_make("aacparse", "aacparse"); // AAC 帧解析/ADTS→Raw
-    adec_ = gst_element_factory_make("avdec_aac", "adec");       // FFmpeg AAC 解码（优先）
-    if (!adec_) { adec_ = gst_element_factory_make("faad", "adec"); } // 兜底：faad
+    decodebin_ = gst_element_factory_make("decodebin", "adec");  // 系统自动选最优解码器
     aconvert_ = gst_element_factory_make("audioconvert", "aconv"); // 音频格式协商（兜底）
     aresample_ = gst_element_factory_make("audioresample", "ares"); // 采样率协商（兜底）
     acaps_early_ = gst_element_factory_make("capsfilter", "acaps_early"); // 强制 caps（紧跟解码器后）
     avolume_ = gst_element_factory_make("volume", "avol");       // 音量控制
-    // 早期 caps：解码器输出即强制 S16LE/44100/2ch，消除后续协商不确定性
+    // 早期 caps：decodebin 输出即强制 S16LE/44100/2ch，消除后续协商不确定性
     if (acaps_early_) {
         GstCaps* forcedCaps = gst_caps_from_string("audio/x-raw,format=S16LE,rate=44100,channels=2,layout=interleaved");
         g_object_set(acaps_early_, "caps", forcedCaps, nullptr);
@@ -828,12 +826,12 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     }
     if (!src || !queue || !demux_ || !vparse_ || !vdec_ || !vqueue_ || !vconvert_ ||
         !vscale_ || !vcaps_ || !vbox_ || !voverlay_ || !vtitleoverlay_ || !vconvert2_ ||
-        !aacparse_ || !adec_ || !aconvert_ || !aresample_ || !acaps_early_ || !avolume_) {
+        !decodebin_ || !aconvert_ || !aresample_ || !acaps_early_ || !avolume_) {
         PLAYER_LOG("factory failed src=%d queue=%d demux=%d vparsed=%d vdec=%d vqueue=%d vconv=%d vscale=%d vcaps=%d vbox=%d voverlay=%d vtitleoverlay=%d vconv2=%d adec=%d aconv=%d ares=%d acaps=%d avol=%d",
             src ? 1 : 0, queue ? 1 : 0, demux_ ? 1 : 0,
             vparse_ ? 1 : 0, vdec_ ? 1 : 0, vqueue_ ? 1 : 0, vconvert_ ? 1 : 0,
             vscale_ ? 1 : 0, vcaps_ ? 1 : 0, vbox_ ? 1 : 0, voverlay_ ? 1 : 0, vtitleoverlay_ ? 1 : 0, vconvert2_ ? 1 : 0,
-            decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0, acaps_ ? 1 : 0, avolume_ ? 1 : 0);
+            decodebin_ ? 1 : 0, aconvert_ ? 1 : 0, aresample_ ? 1 : 0, acaps_early_ ? 1 : 0, avolume_ ? 1 : 0);
         if (src) gst_object_unref(src);
         if (queue) gst_object_unref(queue);
         if (demux_) gst_object_unref(demux_);
@@ -1024,7 +1022,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     // acaps_early 紧跟解码器，早期锁定格式，消除沙沙声根因。
     gst_bin_add_many(GST_BIN(pipeline_), src, queue, demux_, vparse_, vdec_,
         vqueue_, vconvert_, vscale_, vcaps_, vbox_, voverlay_, vtitleoverlay_, vconvert2_,
-        aacparse_, adec_, aconvert_, aresample_, acaps_early_, avolume_, videoSink_, audioSink_, nullptr);
+        decodebin_, aconvert_, aresample_, acaps_early_, avolume_, videoSink_, audioSink_, nullptr);
     if (!gst_element_link_many(src, queue, demux_, nullptr)) {
         PLAYER_LOG("link src->qtdemux failed");
         teardown();
@@ -1097,33 +1095,24 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         canvasH_ = 0;
         PLAYER_LOG("no canvas rect, overlay disabled");
     }
-    // 音频后端链静态预链接：aacparse → adec → acaps_early → aconvert → aresample → avolume → alsasink
-    // 【2026-08-15 音频重写】显式 AAC 解码路径，acaps_early 紧跟解码器锁定格式
-    if (!gst_element_link_many(aacparse_, adec_, acaps_early_, aconvert_, aresample_, avolume_, audioSink_, nullptr)) {
-        PLAYER_LOG("link aacparse->adec->acaps_early->aconv->ares->avol->asink failed");
+    // 音频后端链静态预链接：decodebin 音频 pad 出现时连 acaps_early sink。
+    // 【2026-08-15 音频稳定版】decodebin → acaps_early(S16LE/44100/2ch) → aconvert → aresample → avolume → alsasink
+    if (!gst_element_link_many(acaps_early_, aconvert_, aresample_, avolume_, audioSink_, nullptr)) {
+        PLAYER_LOG("link acaps_early->aconv->ares->avol->asink failed");
         teardown();
         return false;
     }
     // 【2026-08-15 详细 caps 协商日志】排查沙沙声根因
     {
-        GstPad* adecSrcPad = gst_element_get_static_pad(adec_, "src");
-        GstPad* acapsEarlySinkPad = gst_element_get_static_pad(acaps_early_, "sink");
+        GstPad* acapsEarlySrcPad = gst_element_get_static_pad(acaps_early_, "src");
         GstPad* aconvSinkPad = gst_element_get_static_pad(aconvert_, "sink");
-        if (adecSrcPad) {
-            GstCaps* caps = gst_pad_get_current_caps(adecSrcPad);
+        if (acapsEarlySrcPad) {
+            GstCaps* caps = gst_pad_get_current_caps(acapsEarlySrcPad);
             if (caps) {
-                PLAYER_LOG("audio caps after adec: %s", gst_caps_to_string(caps));
+                PLAYER_LOG("audio caps after acaps_early: %s", gst_caps_to_string(caps));
                 gst_caps_unref(caps);
             }
-            gst_object_unref(adecSrcPad);
-        }
-        if (acapsEarlySinkPad) {
-            GstCaps* caps = gst_pad_get_current_caps(acapsEarlySinkPad);
-            if (caps) {
-                PLAYER_LOG("audio caps at acaps_early sink: %s", gst_caps_to_string(caps));
-                gst_caps_unref(caps);
-            }
-            gst_object_unref(acapsEarlySinkPad);
+            gst_object_unref(acapsEarlySrcPad);
         }
         if (aconvSinkPad) {
             GstCaps* caps = gst_pad_get_current_caps(aconvSinkPad);
@@ -1314,9 +1303,9 @@ void GstPlayer::onQtdemuxPadAdded(GstPad* pad)
             PLAYER_LOG("video %s -> decodebin fallback", media);
         }
     } else if (media && g_str_has_prefix(media, "audio/")) {
-        // 【2026-08-15 音频重写】音频接入显式 AAC 解码链：aacparse → avdec_aac/faad
-        sink = aacparse_;
-        PLAYER_LOG("audio %s -> aacparse (explicit AAC chain)", media);
+        // 【2026-08-15 音频稳定版】音频接入 decodebin（系统自动选最优解码器）
+        sink = decodebin_;
+        PLAYER_LOG("audio %s -> decodebin (stable fallback)", media);
     }
     if (sink) {
         GstPad* sinkPad = gst_element_get_static_pad(sink, "sink");
@@ -1410,8 +1399,7 @@ void GstPlayer::teardown()
     voverlay_ = nullptr;
     vtitleoverlay_ = nullptr;
     vconvert2_ = nullptr;
-    aacparse_ = nullptr;
-    adec_ = nullptr;
+    decodebin_ = nullptr;
     aconvert_ = nullptr;
     aresample_ = nullptr;
     acaps_early_ = nullptr;
