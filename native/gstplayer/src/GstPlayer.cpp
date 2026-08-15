@@ -833,14 +833,21 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     // 早期 caps：decodebin 输出强制格式+声道+交错（不锁 rate，避免 preroll 协商失败）；
     // 实测 40791444453 这条流 decodebin 实际输出 S16LE/48000/2ch，
     // 若 capsfilter 强锁 44100 会导致 preroll Internal data stream error。
-    // 强制 interleaved 可避免 audioresample/alsasink 对 planar layout 不匹配导致 preroll 后无声。
+    // 强制 interleaved 可避免 audioresample/alsasink 对 planar layout 不匹配导致 preroll 后无声；
+    // 不锁 format/S16LE：decodebin 实际格式可能因 AAC profile 切换（如 SBR 启用）而变，
+    // 强锁 S16LE 会导致 1 秒后 caps renegotiation 失败、静音。
     if (acaps_early_) {
-        GstCaps* forcedCaps = gst_caps_from_string("audio/x-raw,format=S16LE,channels=2,layout=interleaved");
+        GstCaps* forcedCaps = gst_caps_from_string("audio/x-raw,channels=2,layout=interleaved");
         g_object_set(acaps_early_, "caps", forcedCaps, nullptr);
         gst_caps_unref(forcedCaps);
     }
     if (avolume_) {
-        g_object_set(avolume_, "volume", 1.0, nullptr);
+        g_object_set(avolume_, "volume", 1.0, "mute", false, nullptr);
+    }
+    if (aqueue_) {
+        g_object_set(aqueue_, "max-size-buffers", 200, nullptr);
+        g_object_set(aqueue_, "max-size-bytes", (guint64)4 * 1024 * 1024, nullptr);
+        g_object_set(aqueue_, "max-size-time", (guint64)0, nullptr);
     }
     if (!src || !queue || !demux_ || !vparse_ || !vdec_ || !vqueue_ || !vconvert_ ||
         !vscale_ || !vcaps_ || !vbox_ || !voverlay_ || !vtitleoverlay_ || !vconvert2_ ||
@@ -1385,9 +1392,27 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
             GstPadLinkReturn r = gst_pad_link(pad, sinkPad);
             PLAYER_LOG("pad link ret=%d", r);
             if (r != GST_PAD_LINK_OK) {
-                if (!pendingAudioPad_) {
-                    pendingAudioPad_ = pad;
-                    gst_object_ref(pendingAudioPad_);
+                // 链接失败：保存该 pad 供稍后重试（先释放旧 pending，避免泄漏）
+                if (pendingAudioPad_) {
+                    gst_object_unref(pendingAudioPad_);
+                }
+                pendingAudioPad_ = pad;
+                gst_object_ref(pendingAudioPad_);
+                // 【2026-08-15 断流排查】链接失败多因下游已处于 PLAYING 而元素还
+                // 在 NULL/READY（decodebin 动态造 pad 的竞态）。把目标 sink 先置
+                // READY 再重试一次，多数可解。
+                gst_element_set_state(sink, GST_STATE_READY);
+                GstPadLinkReturn r2 = gst_pad_link(pad, sinkPad);
+                PLAYER_LOG("pad link retry=%d", r2);
+                if (r2 == GST_PAD_LINK_OK) {
+                    gst_object_unref(pendingAudioPad_);
+                    pendingAudioPad_ = nullptr;
+                }
+            } else {
+                // 链接成功：清除历史 pending
+                if (pendingAudioPad_) {
+                    gst_object_unref(pendingAudioPad_);
+                    pendingAudioPad_ = nullptr;
                 }
             }
             gst_object_unref(sinkPad);
@@ -1474,7 +1499,7 @@ void GstPlayer::busLoop()
     while (!stopping_) {
         GstMessage* msg = gst_bus_timed_pop_filtered(
             bus, 100 * GST_MSECOND,
-            static_cast<GstMessageType>(GST_MESSAGE_EOS | GST_MESSAGE_ERROR | GST_MESSAGE_STATE_CHANGED | GST_MESSAGE_ASYNC_DONE));
+            static_cast<GstMessageType>(GST_MESSAGE_EOS | GST_MESSAGE_ERROR | GST_MESSAGE_STATE_CHANGED | GST_MESSAGE_ASYNC_DONE | GST_MESSAGE_STREAM_STATUS | GST_MESSAGE_TAG));
         if (!msg) continue;
 
         switch (GST_MESSAGE_TYPE(msg)) {
