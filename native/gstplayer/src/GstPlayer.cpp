@@ -829,11 +829,12 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     aresample_ = gst_element_factory_make("audioresample", "ares"); // 采样率协商（兜底）
     acaps_early_ = gst_element_factory_make("capsfilter", "acaps_early"); // 强制 caps（紧跟解码器后）
     avolume_ = gst_element_factory_make("volume", "avol");       // 音量控制
-    // 早期 caps：decodebin 输出仅强制格式+声道（不锁 rate，避免 preroll 协商失败）；
+    // 早期 caps：decodebin 输出强制格式+声道+交错（不锁 rate，避免 preroll 协商失败）；
     // 实测 40791444453 这条流 decodebin 实际输出 S16LE/48000/2ch，
     // 若 capsfilter 强锁 44100 会导致 preroll Internal data stream error。
+    // 强制 interleaved 可避免 audioresample/alsasink 对 planar layout 不匹配导致 preroll 后无声。
     if (acaps_early_) {
-        GstCaps* forcedCaps = gst_caps_from_string("audio/x-raw,format=S16LE,channels=2");
+        GstCaps* forcedCaps = gst_caps_from_string("audio/x-raw,format=S16LE,channels=2,layout=interleaved");
         g_object_set(acaps_early_, "caps", forcedCaps, nullptr);
         gst_caps_unref(forcedCaps);
     }
@@ -1111,7 +1112,7 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
         PLAYER_LOG("no canvas rect, overlay disabled");
     }
     // 音频后端链静态预链接：decodebin 音频 pad 出现时连 acaps_early sink。
-    // 【2026-08-15 音频稳定版】decodebin → acaps_early(S16LE/44100/2ch) → aconvert → aresample → avolume → alsasink
+    // 【2026-08-15 音频稳定版】decodebin → acaps_early(S16LE/2ch/i) → aconvert → aresample → avolume → alsasink
     if (!gst_element_link_many(acaps_early_, aconvert_, aresample_, avolume_, audioSink_, nullptr)) {
         PLAYER_LOG("link acaps_early->aconv->ares->avol->asink failed");
         teardown();
@@ -1159,9 +1160,9 @@ g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 非 KMSSINK：旋转默认 0，由 onQtdemuxPadAdded 按 h>w 竖屏动态设 270
 #endif
     g_signal_connect(demux_, "pad-added", G_CALLBACK(GstPlayer::qtdemuxPadAddedCb), this);
-    // 音频解码链：decodebin（AAC/MP3 → raw）→ audioconvert → audioresample → alsasink
+    // 音频解码链：decodebin（AAC/MP3 → raw）→ acaps_early(S16LE/2ch/i) → audioconvert → audioresample → volume → alsasink
     g_signal_connect(decodebin_, "pad-added", G_CALLBACK(GstPlayer::decodebinPadAddedCb), this);
-    PLAYER_LOG("pipeline linked (qtdemux>vparse>mppvideodec>vqueue>videoconvert:kmssink | audio>decodebin>audioconvert>audioresample>alsasink)");
+    PLAYER_LOG("pipeline linked (qtdemux>vparse>mppvideodec>vqueue>videoconvert:kmssink | audio>decodebin>acaps_early(S16LE/2ch/i)>audioconvert>audioresample>volume>alsasink)");
 
     // bus 轮询线程（不用 GLib 主循环，规避设备 GLib 差异）
     stopping_ = false;
