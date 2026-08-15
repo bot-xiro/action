@@ -246,8 +246,7 @@ export default {
                     loop: 0
                 })
                 console.warn('[player] open ret: ' + ok)
-                // 视频 plane 置顶覆盖全视口（UI 页在下方，仅负责触摸命中）
-                this.setVideoTopmost(true)
+                // 视频平面固定 zpos=0（UI 平面 zpos=3），控制栏已合成进视频帧
                 this.mPlayer.start()
                 this.ready = true
                 this.loading = false
@@ -258,15 +257,6 @@ export default {
                 this.error = '播放失败: ' + msg
                 this.loading = false
                 console.warn('[player] play error: ' + msg)
-            }
-        },
-        setVideoTopmost(top) {
-            if (!this.mPlayer) return
-            try {
-                this.mPlayer.setVideoZpos(top ? 3 : 0)
-                console.warn('[player] video zpos=' + (top ? 3 : 0) + (top ? ' (topmost)' : ' (under UI)'))
-            } catch (e) {
-                console.warn('[player] setVideoZpos error: ' + (e && e.message))
             }
         },
         // ---- 悬浮控制栏状态（原生 gdkpixbufoverlay 重绘）----

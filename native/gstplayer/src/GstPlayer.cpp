@@ -329,48 +329,31 @@ void GstPlayer::open(JQFunctionInfo& info)
 
 void GstPlayer::preheat(JQFunctionInfo& info)
 {
-    // 【2026-08-11 用户指令】视频置底策略：UI 主平面抬 zpos=1（0→1）。
-    // 视频 plane 76 zpos=0（见 open()）与 UI 同层竞争不确定，故 UI 抬到 1
-    // 保证控制栏（UI 平面内）确定盖住视频；后续 WebView 挖洞成功后，
-    // 洞区域透明 → 视频从洞中透出，控制栏仍悬浮在视频上方。
-    // 历史教训：曾抬 zpos=3（2026-08-09）依赖 hole 透出但 JQuick 不支持
-    // hole → 视频永远被盖 → 黑屏事故；本次是用户明确要求的"视频置底 +
-    // 挖洞"方案的基线，语义不同（先验证控制栏可见，再做挖洞）。
+    // 【2026-08-15 用户指令】视频与 UI 同层：UI 主平面 54 抬 zpos=3，视频平面 76 固定 zpos=0。
+    // 控制栏已由 gdkpixbufoverlay 合成进视频帧，无需通过层级切换实现显隐。
+    // UI 平面 (54, primary) 恒高于视频平面 (76, overlay)，保证触摸命中与悬浮 UI 不被遮挡。
     // 本方法幂等（app.js onLaunch 调用一次）。
     static std::atomic<bool> done{false};
     if (!done.exchange(true)) {
         if (!setPlaneZpos(54, 3)) {
-            PLAYER_LOG("preheat WARN: UI plane 54 zpos set failed (UI default zpos=0, video may cover UI)");
+            PLAYER_LOG("preheat WARN: UI plane 54 zpos=3 set failed (UI may be covered by video)");
+        }
+        // 视频平面 76 默认 zpos=0（DRM 默认），确保始终在 UI 之下
+        if (!setPlaneZpos(76, 0)) {
+            PLAYER_LOG("preheat WARN: video plane 76 zpos=0 set failed");
         }
     }
     info.GetReturnValue().Set(true);
 }
 
-// 【2026-08-11 动态层级】运行时切换视频 plane 76 的 zpos：
-// 前端控制栏显隐联动（见 player.vue showControls/hideControls/playing 分支）：
-//   - 播放中：setVideoZpos(3) 视频置顶 → 全屏可见（盖过 UI，zpos 3 > UI 1）
-//   - 控制栏唤出：setVideoZpos(0) 视频置底 → UI 控制栏可操作（zpos 1 > 0）
-// 背景：UI 层恒 XR24 不透明且 JQuick 不支持 hole，双平面下"视频可见"与
-// "控制栏可操作"互斥，只能动态切换层级（调用即时生效，DRM 属性内核态持久）。
-// 入参: setVideoZpos(3) 数字；或 setVideoZpos({zpos:3}) 对象。
-// 非 KMSSINK 构建（waylandsink 单平面）下无需层级切换，直接忽略。
+// 【2026-08-15 废弃】动态层级切换已移除：视频平面 76 固定 zpos=0，UI 平面 54 固定 zpos=3。
+// 控制栏由 gdkpixbufoverlay 合成进视频帧，无需通过 DRM zpos 切换实现显隐。
+// 保留接口仅为兼容旧调用（前端已移除 setVideoTopmost），忽略参数直接返回。
 void GstPlayer::setVideoZpos(JQFunctionInfo& info)
 {
 #ifdef KMSSINK_TEST
-    int zpos = 0;
-    if (info.Length() > 0) {
-        if (JS_ToInt32(info.GetContext(), &zpos, info[0]) != 0) {
-            // 对象形态 {zpos: N} 兜底
-            zpos = jsGetInt(info.GetContext(), info[0], "zpos", 0);
-        }
-    }
-    if (zpos < 0) zpos = 0;
-    if (zpos > 10) zpos = 10;
-    if (!setPlaneZpos(76, (uint32_t)zpos)) {
-        PLAYER_LOG("setVideoZpos: plane 76 zpos=%d set failed", zpos);
-    } else {
-        PLAYER_LOG("setVideoZpos: plane 76 zpos=%d OK", zpos);
-    }
+    // 保持接口兼容，不再修改视频平面 zpos
+    PLAYER_LOG("setVideoZpos: ignored (video plane fixed zpos=0, UI plane zpos=3)");
 #else
     PLAYER_LOG("setVideoZpos: ignored (non-KMSSINK build)");
 #endif
@@ -445,12 +428,8 @@ void GstPlayer::start(JQFunctionInfo& info)
         }
     }
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
-    // 【2026-08-11 嵌进播放器】不再在此强制置底！历史遗留（2bdb63e "视频置底 +
-    // 挖洞"方案）曾 setPlaneZpos(76, 0)，会把刚由 JS setVideoZpos(3) 置顶的视频
-    // 又拉回底层 → 被 UI 不透明平面盖住 → 画面消失（真机实证 21:26：stateChanged
-    // playing 但用户看不到视频）。
-    // 现在视频 zpos 完全由 JS 控制（open 后 setVideoTopmost(true) = zpos=3 置顶，
-    // 视频只覆盖中间条，控制栏上下条在视频 plane 外不受影响）。
+    // 【2026-08-15 用户指令】视频与 UI 同层：视频平面 76 固定 zpos=0（preheat 已设置），
+    // UI 主平面 54 zpos=3。控制栏由 gdkpixbufoverlay 合成进视频帧，无需动态切换层级。
     PLAYER_LOG("start set PLAYING");
     info.GetReturnValue().Set(true);
 }

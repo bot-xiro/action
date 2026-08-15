@@ -59,8 +59,8 @@ public:
     //  v_voucher 空结果；curl 带 UA/Referer 实测可正常返回）
     void httpGet(JQUTIL_NS::JQFunctionInfo& info);
 
-    // 【2026-08-11 动态层级】运行时切换视频 plane 76 zpos：
-    // 播放中置顶(3)全屏可见 / 控制栏唤出时置底(0)让 UI 可操作（见 player.vue）
+    // 【2026-08-15 废弃】动态层级切换已移除：视频平面 76 固定 zpos=0，UI 平面 54 固定 zpos=3。
+    // 控制栏由 gdkpixbufoverlay 合成进视频帧。保留接口仅为兼容，忽略参数。
     void setVideoZpos(JQUTIL_NS::JQFunctionInfo& info);
 
     // 【2026-08-14 悬浮控制栏】更新叠加在视频帧上的控制栏状态并重绘
