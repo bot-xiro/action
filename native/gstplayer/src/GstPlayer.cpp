@@ -329,7 +329,7 @@ void GstPlayer::open(JQFunctionInfo& info)
 
 void GstPlayer::preheat(JQFunctionInfo& info)
 {
-    // 【2026-08-15 用户指令】使用默认平面层级：视频平面 75 保持默认 zpos=2。
+    // 【2026-08-15 用户指令】使用默认平面层级：视频平面 76 保持默认 zpos=2。
     // UI 平面 54 提升至 zpos=3 确保在视频平面之上以接收触摸事件。
     // 控制栏由 gdkpixbuvoverlay 合成进视频帧，可见于视频画面。
     // UI 平面负责触摸事件，确保控制栏可操作。
@@ -341,13 +341,13 @@ void GstPlayer::preheat(JQFunctionInfo& info)
         if (!setPlaneZpos(54, 3)) {
             PLAYER_LOG("preheat WARN: UI plane 54 zpos=3 set failed");
         }
-        // 视频平面 75 保持默认 zpos=2（overlay 默认高于 primary）
+        // 视频平面 76 保持默认 zpos=2（overlay 默认高于 primary）
         // 不需要额外设置，使用 DRM 默认值
     }
     info.GetReturnValue().Set(true);
 }
 
-// 【2026-08-15 启用】动态层级切换：可通过 JS 调整视频平面 75 zpos。
+// 【2026-08-15 启用】动态层级切换：可通过 JS 调整视频平面 76 zpos。
 // 控制栏由 gdkpixbufoverlay 合成进视频帧，无需通过 DRM zpos 切换实现显隐。
 // 保留接口仅为兼容旧调用（前端已移除 setVideoTopmost），忽略参数直接返回。
 void GstPlayer::setVideoZpos(JQFunctionInfo& info)
@@ -362,10 +362,10 @@ void GstPlayer::setVideoZpos(JQFunctionInfo& info)
     }
     if (zpos < 0) zpos = 0;
     if (zpos > 10) zpos = 10;
-    if (!setPlaneZpos(75, (uint32_t)zpos)) {
-        PLAYER_LOG("setVideoZpos: plane 75 zpos=%d set failed", zpos);
+    if (!setPlaneZpos(76, (uint32_t)zpos)) {
+        PLAYER_LOG("setVideoZpos: plane 76 zpos=%d set failed", zpos);
     } else {
-        PLAYER_LOG("setVideoZpos: plane 75 zpos=%d set ok", zpos);
+        PLAYER_LOG("setVideoZpos: plane 76 zpos=%d set ok", zpos);
     }
 #else
     PLAYER_LOG("setVideoZpos: ignored (non-KMSSINK build)");
@@ -941,15 +941,15 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     g_object_set(videoSink_, "driver-name", "rockchip", nullptr);
     // 双平面架构指定视频 Overlay 平面。
     // 真机 modetest 平面普查（2026-08-09）：54(Esmart0, primary, z=0) /
-    // 75(Esmart1, overlay, z=2) / 90(Esmart2, overlay, z=3) / 104(Esmart3, overlay, z=4)
-    // 选择 plane 75 作为视频平面，基于 Lilo 逆向分析确认的正确配置。
-    // 平面 75 存在且可用，与历史实验中测试的 overlay 平面一致。
-g_object_set(videoSink_, "plane-id", 75, nullptr);
+    // 76(Esmart1, overlay, z=2) / 90(Esmart2, overlay, z=3) / 104(Esmart3, overlay, z=4)
+    // 选择 plane 76 作为视频平面，基于历史实验和 Lilo 参考（注：Lilo 可能使用不同平台）。
+    // 平面 76 存在且可用，与历史实验中测试的 overlay 平面一致。
+g_object_set(videoSink_, "plane-id", 76, nullptr);
     // 层级控制说明：kmssink【没有 zpos 属性】（设备实证 "kmssink has no zpos
     // property"），g_object_set 永不生效。UI 主平面 54(Esmart0) 的 zpos 提升
     // 已【移出播放路径】——由 app.js onLaunch 调用 gstPlayer.preheat() 启动时
     // 全局执行一次（闪烁修复 2026-08-09：播放中动 zpos 会与合成器竞争闪屏）。
-    // 视频 plane 75(Esmart1, z=2) < UI 主平面 54(z=3)：UI 永远盖在视频之上。
+    // 视频 plane 76(Esmart1, z=2) < UI 主平面 54(z=3)：UI 永远盖在视频之上。
     // 恢复 VSYNC 约束（闪烁修复 2026-08-09 用户诊断）：skip-vsync=true 会让
     // 视频帧绕过垂直同步直接提交，与 weston 主平面叠加时高频撕裂闪烁。
     // 管线死锁已由静态后端+preroll 等待修复（1cb2b3b），此处改回 false。
