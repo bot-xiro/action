@@ -845,8 +845,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         if (voverlay_) gst_object_unref(voverlay_);
         if (vtitleoverlay_) gst_object_unref(vtitleoverlay_);
         if (vconvert2_) gst_object_unref(vconvert2_);
-        if (aacparse_) gst_object_unref(aacparse_);
-        if (adec_) gst_object_unref(adec_);
+        if (decodebin_) gst_object_unref(decodebin_);
         if (aconvert_) gst_object_unref(aconvert_);
         if (aresample_) gst_object_unref(aresample_);
         if (acaps_early_) gst_object_unref(acaps_early_);
@@ -867,7 +866,7 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
         decodebin_ = nullptr;
         aconvert_ = nullptr;
         aresample_ = nullptr;
-        acaps_ = nullptr;
+        acaps_early_ = nullptr;
         avolume_ = nullptr;
         return false;
     }
