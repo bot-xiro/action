@@ -822,16 +822,18 @@ bool GstPlayer::buildPipeline(const std::string& uri, bool audio, const std::str
     vtitleoverlay_ = gst_element_factory_make("gdkpixbufoverlay", "vtitleoverlay");
     vconvert2_ = gst_element_factory_make("videoconvert", "vconv2");
     // 【2026-08-15 音频稳定版】回退 decodebin + 早期 capsfilter，用已知可用元素
-    // 管线：qtdemux(audio/mpeg) → decodebin → acaps_early(S16LE/44100/2ch)
+    // 管线：qtdemux(audio/mpeg) → decodebin → acaps_early(S16LE/2ch, rate 由 decodebin 保留)
     //       → audioconvert(兜底) → audioresample(兜底) → volume → alsasink
     decodebin_ = gst_element_factory_make("decodebin", "adec");  // 系统自动选最优解码器
     aconvert_ = gst_element_factory_make("audioconvert", "aconv"); // 音频格式协商（兜底）
     aresample_ = gst_element_factory_make("audioresample", "ares"); // 采样率协商（兜底）
     acaps_early_ = gst_element_factory_make("capsfilter", "acaps_early"); // 强制 caps（紧跟解码器后）
     avolume_ = gst_element_factory_make("volume", "avol");       // 音量控制
-    // 早期 caps：decodebin 输出即强制 S16LE/44100/2ch，消除后续协商不确定性
+    // 早期 caps：decodebin 输出仅强制格式+声道（不锁 rate，避免 preroll 协商失败）；
+    // 实测 40791444453 这条流 decodebin 实际输出 S16LE/48000/2ch，
+    // 若 capsfilter 强锁 44100 会导致 preroll Internal data stream error。
     if (acaps_early_) {
-        GstCaps* forcedCaps = gst_caps_from_string("audio/x-raw,format=S16LE,rate=44100,channels=2,layout=interleaved");
+        GstCaps* forcedCaps = gst_caps_from_string("audio/x-raw,format=S16LE,channels=2");
         g_object_set(acaps_early_, "caps", forcedCaps, nullptr);
         gst_caps_unref(forcedCaps);
     }
