@@ -120,6 +120,7 @@ private:
     GstElement* videoSink_ = nullptr;    // kmssink / waylandsink
     GstElement* audioSink_ = nullptr;    // alsasink
     GstElement* videoFlip_ = nullptr;    // 遗留：videoflip 已淘汰（mppvideodec rotation 替代），保留指针置空兼容 teardown
+    GstPad* pendingAudioPad_ = nullptr;  // decodebin pad-added 失败留待预滚后重链的 audio/src pad
 
     // 悬浮控制栏
     ControlBar* bar_ = nullptr;          // cairo 控制栏渲染器（底部控制栏）

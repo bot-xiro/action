@@ -430,6 +430,20 @@ void GstPlayer::start(JQFunctionInfo& info)
             gst_object_unref(opad);
         }
     }
+    // 预滚后重试挂起的音频 pad：pad-added 在 ASYNC 阶段可能因又被占用/被阻止而失败，
+    // 预滚完成后再试一次，提高绑定成功率。
+    if (pendingAudioPad_ && acaps_early_) {
+        GstPad* acapsSink = gst_element_get_static_pad(acaps_early_, "sink");
+        if (acapsSink) {
+            GstPadLinkReturn ar = gst_pad_link(pendingAudioPad_, acapsSink);
+            PLAYER_LOG("start: audio-pending pad link retry ret=%d", (int)ar);
+            if (ar == GST_PAD_LINK_OK && pendingAudioPad_) {
+                gst_object_unref(pendingAudioPad_);
+                pendingAudioPad_ = nullptr;
+            }
+            gst_object_unref(acapsSink);
+        }
+    }
     gst_element_set_state(pipeline_, GST_STATE_PLAYING);
     // 【2026-08-11 嵌进播放器】不再在此强制置底！历史遗留（2bdb63e "视频置底 +
     // 挖洞"方案）曾 setPlaneZpos(76, 0)，会把刚由 JS setVideoZpos(3) 置顶的视频
@@ -1354,17 +1368,23 @@ void GstPlayer::onDecodebinPadAdded(GstPad* pad)
         sink = vqueue_;
         PLAYER_LOG("video %dx%d fallback -> vqueue (static backend)", w, h);
     } else if (media && g_str_has_prefix(media, "audio/")) {
-        // 音频解码输出 → 静态音频后端入口 aconvert_（aconvert→audioresample→
-        // alsasink 已在 buildPipeline 静态链接；audioresample 保证 44.1k/48k
-        // 采样率不匹配时也能协商成功，杜绝 alsasink preroll 卡死）。
-        sink = aconvert_;
-        PLAYER_LOG("audio raw -> aconvert (static backend)");
+        // 【2026-08-15 音频稳定版】音频解码输出 → 静态音频后端入口 acaps_early(S16LE/44100/2ch)。
+        // 后端已在 buildPipeline 以 gst_element_link_many(acaps_early, aconvert, ...) 静态预链接，
+        // 因此 acaps_early_.src 已被 aconvert_.sink 占用，不得再次 seeking 到 aconvert_。
+        sink = acaps_early_;
+        PLAYER_LOG("audio raw -> acaps_early (static backend)");
     }
     if (sink) {
         GstPad* sinkPad = gst_element_get_static_pad(sink, "sink");
         if (sinkPad) {
             GstPadLinkReturn r = gst_pad_link(pad, sinkPad);
             PLAYER_LOG("pad link ret=%d", r);
+            if (r != GST_PAD_LINK_OK) {
+                if (!pendingAudioPad_) {
+                    pendingAudioPad_ = pad;
+                    gst_object_ref(pendingAudioPad_);
+                }
+            }
             gst_object_unref(sinkPad);
         } else {
             PLAYER_LOG("sink pad not found for %s", media ? media : "?");
@@ -1406,6 +1426,10 @@ void GstPlayer::teardown()
     videoSink_ = nullptr;
     audioSink_ = nullptr;
     videoFlip_ = nullptr;
+    if (pendingAudioPad_) {
+        gst_object_unref(pendingAudioPad_);
+        pendingAudioPad_ = nullptr;
+    }
     if (barPixbuf_) {
         g_object_unref(barPixbuf_);
         barPixbuf_ = nullptr;
