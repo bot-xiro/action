@@ -329,21 +329,18 @@ void GstPlayer::open(JQFunctionInfo& info)
 
 void GstPlayer::preheat(JQFunctionInfo& info)
 {
-    // 【2026-08-15 用户指令】视频置底：视频平面 76 zpos=0，UI 主平面 54 zpos=1。
-    // 控制栏由 gdkpixbufoverlay 合成进视频帧，视频可见区域透出，
+    // 【2026-08-15 用户指令】UI 平面提升至 zpos=3 确保在视频平面之上。
+    // 视频平面 76 保持默认 zpos=2（overlay 默认高于 primary）。
+    // 控制栏由 gdkpixbufoverlay 合成进视频帧，可见于视频画面。
     // UI 平面负责触摸事件，确保控制栏可操作。
-    // 此策略避免视频盖住 UI，解决亮屏时视频遮挡 UI 导致的操作失效问题。
     // 本方法幂等（app.js onLaunch 调用一次）。
     static std::atomic<bool> done{false};
     if (!done.exchange(true)) {
-        // UI 平面提升至 zpos=1，确保在视频平面之上负责触摸
-        if (!setPlaneZpos(54, 1)) {
-            PLAYER_LOG("preheat WARN: UI plane 54 zpos=1 set failed");
+        // UI 平面提升至 zpos=3，确保在视频平面(zpos=2)之上负责触摸
+        if (!setPlaneZpos(54, 3)) {
+            PLAYER_LOG("preheat WARN: UI plane 54 zpos=3 set failed");
         }
-        // 视频平面设置为 zpos=0，确保始终在 UI 之下
-        if (!setPlaneZpos(76, 0)) {
-            PLAYER_LOG("preheat WARN: video plane 76 zpos=0 set failed");
-        }
+        // 视频平面 76 保持默认 zpos=2，无需额外设置
     }
     info.GetReturnValue().Set(true);
 }
@@ -354,8 +351,20 @@ void GstPlayer::preheat(JQFunctionInfo& info)
 void GstPlayer::setVideoZpos(JQFunctionInfo& info)
 {
 #ifdef KMSSINK_TEST
-    // 保持接口兼容，不再修改视频平面 zpos
-    PLAYER_LOG("setVideoZpos: ignored (video plane fixed zpos=0, UI plane zpos=3)");
+    int zpos = 0;
+    if (info.Length() > 0) {
+        if (JS_ToInt32(info.GetContext(), &zpos, info[0]) != 0) {
+            // 对象形态 {zpos: N} 兜底
+            zpos = jsGetInt(info.GetContext(), info[0], "zpos", 0);
+        }
+    }
+    if (zpos < 0) zpos = 0;
+    if (zpos > 10) zpos = 10;
+    if (!setPlaneZpos(76, (uint32_t)zpos)) {
+        PLAYER_LOG("setVideoZpos: plane 76 zpos=%d set failed", zpos);
+    } else {
+        PLAYER_LOG("setVideoZpos: plane 76 zpos=%d set ok", zpos);
+    }
 #else
     PLAYER_LOG("setVideoZpos: ignored (non-KMSSINK build)");
 #endif
