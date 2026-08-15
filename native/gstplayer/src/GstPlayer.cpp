@@ -303,13 +303,8 @@ void GstPlayer::open(JQFunctionInfo& info)
     // 控制栏 cairo 画布与之一致 → 1:1 映射，无二次缩放。
     int canvasW = (posW > 0 && posH > 0) ? posW : 0;
     int canvasH = (posW > 0 && posH > 0) ? posH : 0;
-    // 【竖屏支持 2026-08-14】记录重建参数（非常规比例源在 start() 前重建）。
-    // 闪烁问题由前端 ready=false→ready=true 解决（仅在 playing 状态时置 true）。
-    rebuildUri_ = uri;
-    rebuildAudio_ = audio;
-    rebuildRect_ = rect.str();
-    rebuildFill_ = fill;
-    rebuildNeeded_ = false;
+    // 【竖屏支持】早期在 pad-added 中直接调用 applyCanvasContent，
+    // 无需 start() 中完整重建，避免“先横后竖”闪烁。
     bool ok = buildPipeline(uri, audio, rect.str(), fill, canvasW, canvasH);
     PLAYER_LOG("open buildPipeline ret=%d", ok ? 1 : 0);
     if (!ok) {
@@ -393,21 +388,8 @@ void GstPlayer::start(JQFunctionInfo& info)
         info.GetReturnValue().ThrowInternalError("start: preroll failed");
         return;
     }
-    // 【竖屏支持 2026-08-14】pad-added 在预滚期间触发（重建请求在预滚后才出现），
-    // 故重建检查必须放在预滚等待【之后】；重建后对新管线再走一次预滚
-    if (rebuildNeeded_) {
-        rebuildForSource();
-        if (!pipeline_) {
-            info.GetReturnValue().ThrowInternalError("start: rebuild failed");
-            return;
-        }
-        preroll = gst_element_get_state(pipeline_, nullptr, nullptr, 10LL * GST_SECOND);
-        PLAYER_LOG("start wait preroll (after rebuild) ret=%d", (int)preroll);
-        if (preroll == GST_STATE_CHANGE_FAILURE) {
-            info.GetReturnValue().ThrowInternalError("start: rebuild preroll failed");
-            return;
-        }
-    }
+    // 【竖屏支持】早期已在 pad-added 调用 applyCanvasContent，此处无需重建。
+    // 如检测到仍需重建（极端情况），可在此处添加兜底。
     // 【诊断 2026-08-14】预滚后打印视频链实际协商 caps（帧尺寸/格式），
     // 用于核对画布/叠加几何是否与预期一致（266×960 或 960×266）
     if (voverlay_) {
@@ -1224,36 +1206,6 @@ void GstPlayer::applyCanvasContent(int srcW, int srcH)
         srcW, srcH, dispW, dispH, contentW, contentH, borderL, borderR, borderT, borderB);
 }
 
-// 【竖屏支持 2026-08-14】按真实源尺寸重建管线（16:9 源不触发）。
-// 背景：动态改 capsfilter caps 会破坏 FLUSH seek（真机实证位置跳转后回退），
-// 因此非 16:9 源（如 9:16 竖屏）在 open 时先用 16:9 预置构建 → pad-added
-// 检测到尺寸不一致并记录真实尺寸 → start() 前在此 teardown + 用真实尺寸
-// 重建（applyCanvasContent 构建期直接设置，之后不再变化）。
-void GstPlayer::rebuildForSource()
-{
-    int sw = rebuildSrcW_, sh = rebuildSrcH_;
-    PLAYER_LOG("rebuildForSource enter (real src %dx%d)", sw, sh);
-    if (sw <= 0 || sh <= 0) {
-        PLAYER_LOG("rebuildForSource: no real src dims, skip");
-        rebuildNeeded_ = false;
-        return;
-    }
-    // 【修复 2026-08-14】teardown() 会清零 canvasW_/canvasH_（含控制栏清理），
-    // 必须先保存，否则重建后画布丢失 → overlay disabled、无控制栏/黑边
-    int cw = canvasW_, ch = canvasH_;
-    rebuilding_ = true;
-    teardown();
-    bool ok = buildPipeline(rebuildUri_, rebuildAudio_, rebuildRect_, rebuildFill_,
-                            cw, ch);
-    if (ok) {
-        // 用真实源尺寸直接覆盖内容几何（构建期固定，后续不再变化）
-        applyCanvasContent(sw, sh);
-    }
-    rebuilding_ = false;
-    rebuildNeeded_ = false;
-    PLAYER_LOG("rebuildForSource done ret=%d", ok ? 1 : 0);
-}
-
 // qtdemux pad-added 静态回调 → 转成员函数（userdata=this）
 void GstPlayer::qtdemuxPadAddedCb(GstElement* element, GstPad* pad, gpointer userdata)
 {
@@ -1278,15 +1230,16 @@ void GstPlayer::onQtdemuxPadAdded(GstPad* pad)
     GstElement* sink = nullptr;
     if (media && g_str_has_prefix(media, "video/")) {
         // 【竖屏支持 2026-08-14】所有视频路径统一做源尺寸核对（h264 主路径此前遗漏，
-        // 导致 9:16 视频不触发重建、被按 16:9 拉伸）
+        // 导致 9:16 视频不触发重建、被按 16:9 拉伸）。
+        // 【关键：提前应用】在 pad-added 即刻用真实源尺寸调用 applyCanvasContent，
+        // 避免 start() 中 rebuildForSource() 导致的“先横后竖”闪烁。
         gint vw = 0, vh = 0;
         gst_structure_get_int(s, "width", &vw);
         gst_structure_get_int(s, "height", &vh);
-        if (vw > 0 && vh > 0 && (vw != appliedSrcW_ || vh != appliedSrcH_) && !rebuilding_) {
-            rebuildNeeded_ = true;
-            rebuildSrcW_ = vw;
-            rebuildSrcH_ = vh;
-            PLAYER_LOG("video src %dx%d != applied %dx%d, rebuild scheduled",
+        if (vw > 0 && vh > 0 && (vw != appliedSrcW_ || vh != appliedSrcH_)) {
+            // 直接应用真实尺寸，无需完整重建管线
+            applyCanvasContent(vw, vh);
+            PLAYER_LOG("early applyCanvasContent %dx%d (was %dx%d)",
                 vw, vh, appliedSrcW_, appliedSrcH_);
         }
         // H.264 → 显式硬解链（mppvideodec rotation 硬件旋转，KMSSINK 下已在 build 时设 90）
