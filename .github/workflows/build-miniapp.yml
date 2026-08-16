@@ -84,6 +84,14 @@ jobs:
           ls -la libs/libjsapi_biliauth.so
           file libs/libjsapi_biliauth.so
 
+      - name: Verify libs directory
+        run: |
+          ls -la libs/
+          echo "=== libjsapi_gstplayer.so ==="
+          file libs/libjsapi_gstplayer.so
+          echo "=== libjsapi_biliauth.so ==="
+          file libs/libjsapi_biliauth.so
+
       - name: Build testseek (aarch64, 设备端 seek 实验)
         run: |
           CFLAGS=$(pkg-config --cflags gstreamer-1.0 | sed 's#-I/usr/include/x86_64-linux-gnu##g')
