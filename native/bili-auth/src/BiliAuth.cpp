@@ -379,7 +379,7 @@ void BiliAuth::logout(JQUTIL_NS::JQFunctionInfo& info) {
     info.GetReturnValue().Set(ok1 && ok2);
 }
 
-JQUTIL_NS::JQFunctionTemplateRef createBiliAuth(JQUTIL_NS::JQModuleEnv* env)
+JSValue createBiliAuth(JQUTIL_NS::JQModuleEnv* env)
 {
     JQUTIL_NS::JQFunctionTemplateRef tpl = JQUTIL_NS::JQFunctionTemplate::New(env, "BiliAuth");
     tpl->InstanceTemplate()->setObjectCreator([]() {
