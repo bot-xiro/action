@@ -1,37 +1,36 @@
 <template>
     <div class="page">
         <!-- 加载/错误覆盖层：铺满视口；仅在视频 plane 激活前可见（打开失败/加载中） -->
-        <div v-if="!ready" class="overlay">
+        <div v-if="!ready && !systemModeActive" class="overlay">
             <text class="hint">{{ error || '加载播放地址...' }}</text>
             <text v-if="loading" class="spinner">●</text>
         </div>
 
-        <!-- 全屏视频工作区（2026-08-14 重构）：
-             视频 plane 覆盖整个 960×266 视口（open pos = 全视口，KMSSINK 硬件
-             等比缩放 + 黑边，不拉伸）；悬浮控制栏由原生 gdkpixbufoverlay 合入
-             视频帧（native/ControlBar.cpp，布局常量与本页 BAR 常量一一对应）。
-             本页负责触摸命中测试（触摸输入与视频 plane 无关，视频置顶仍可收到触摸）：
-             轨道 → 点击/拖动 seek；按钮区 → 返回/快退/播放/快进；视频区 → 切换控制栏显隐。 -->
-        <div v-else class="stage" @touchstart="onStageTouchStart($event)"
-            @touchmove="onStageTouchMove($event)" @touchend="onStageTouchEnd($event)">
+        <!-- 全屏视频工作区（2026-08-14 重构）：视频 plane 覆盖整个 960×266 视口 -->
+        <div v-if="!systemModeActive" v-show="ready" class="stage"
+            @touchstart="onStageTouchStart($event)"
+            @touchmove="onStageTouchMove($event)"
+            @touchend="onStageTouchEnd($event)">
         </div>
 
-        <!-- 物理挖洞层：纯黑底 + mask-image 形成真实 alpha=0 孔洞（视频区 960×266）。
-             SVG mask 白色=不透明，黑色=透明。外层黑、内层白(孔洞)，由 evenodd 填充规则形成。
-             此层 z-index 最高，确保 UI 平面输出的 DRM buffer 在视频区域 alpha=0。 -->
-        <div v-else class="hole-punch"></div>
+        <!-- 物理挖洞层：纯黑底 + mask-image 形成真实 alpha=0 孔洞（视频区 960×266） -->
+        <div v-if="!systemModeActive" v-show="ready" class="hole-punch"></div>
+
+        <!-- 系统播放器模式：纯提示层（视频由系统 App 独立渲染） -->
+        <div v-if="systemModeActive" class="overlay">
+            <text class="hint">已调起系统播放器（{{ systemAppId }}）</text>
+            <text class="hint-sub">播放完成后按返回键回到本应用</text>
+        </div>
     </div>
 </template>
 
 <style scoped>
-/* 外层容器：铺满 960×266 视口。纯黑底 #000。 */
 .page {
     flex: 1;
     background-color: #000000;
     flex-direction: column;
 }
 
-/* 加载/错误覆盖层 */
 .overlay {
     position: absolute;
     top: 0;
@@ -51,6 +50,14 @@
     width: 80%;
 }
 
+.hint-sub {
+    margin-top: 12px;
+    font-size: 18px;
+    color: #aaaaaa;
+    text-align: center;
+    width: 80%;
+}
+
 .spinner {
     margin-top: 12px;
     font-size: 28px;
@@ -66,7 +73,6 @@
     to { transform: rotate(360deg); }
 }
 
-/* 全屏工作区：覆盖整个 960×266 视口，透明背景，负责触摸命中。 */
 .stage {
     position: absolute;
     top: 0;
@@ -75,12 +81,9 @@
     height: 266px;
     background-color: transparent;
     overflow: hidden;
-    z-index: 5; /* 触摸层在挖洞层之上 */
+    z-index: 5;
 }
 
-/* 物理挖洞层：纯黑背景 + SVG mask 形成真实 alpha=0 孔洞（视频全屏区 960×266）。
-   mask-image 使用内联 SVG：外矩形黑(不透明)，内矩形白(透明孔洞)，fill-rule:evenodd。
-   此层 z-index=20 最高，确保合成器输出到 DRM plane 54 的 buffer 在视频区 alpha=0。 */
 .hole-punch {
     position: absolute;
     top: 0;
@@ -89,9 +92,8 @@
     height: 266px;
     background-color: #000000;
     z-index: 20;
-    pointer-events: none; /* 不拦截触摸，穿透给 .stage */
-    /* SVG mask: 外框 black(不透明)，内框 white(透明孔洞)，evenodd 规则形成镂空 */
-    mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='960' height='266'><defs><mask id='m' maskUnits='userSpaceOnUse' fill-rule='evenodd'><rect width='960' height='266' fill='black'/> <!-- outer: opaque --><rect x='0' y='0' width='960' height='266' fill='white'/> <!-- inner: transparent hole --></mask></defs><rect width='100%' height='100%' fill='black' mask='url(%23m)'/></svg>");
+    pointer-events: none;
+    mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='960' height='266'><defs><mask id='m' maskUnits='userSpaceOnUse' fill-rule='evenodd'><rect width='960' height='266' fill='black'/> <rect x='0' y='0' width='960' height='266' fill='white'/></mask></defs><rect width='100%' height='100%' fill='black' mask='url(%23m)'/></svg>");
     -webkit-mask-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='960' height='266'><defs><mask id='m' maskUnits='userSpaceOnUse' fill-rule='evenodd'><rect width='960' height='266' fill='black'/><rect x='0' y='0' width='960' height='266' fill='white'/></mask></defs><rect width='100%' height='100%' fill='black' mask='url(%23m)'/></svg>");
     mask-mode: alpha;
     -webkit-mask-mode: alpha;
@@ -101,26 +103,24 @@
 <script>
 import api from '../../utils/api.js'
 import settings from '../../utils/settings.js'
-import { gstPlayer } from 'gstplayer'
 
-const PROGRESS_POLL_MS = 1000   // 进度轮询间隔（毫秒）：JS→C++ 跨调用 + 原生重绘，1s 已足够
-const SEEK_STEP_MS = 10000       // 快进/回退单步时长（10 秒，毫秒）
-const TRACK_MOVE_THROTTLE_MS = 60 // 拖动 seek 节流
-const BAR_HIDE_MS = 6000         // 播放中控制栏无操作自动隐藏（6 秒）
-const LOGIC_TOP = 107            // 页面左上角在逻辑屏中的 y（全视口 open pos_y=107）
+// 系统播放器 appid（设备自带视频播放应用，自带 GStreamer + 控制栏悬浮）
+const SYSTEM_PLAYER_APP_ID = '8001661999525016'
 
-// 悬浮控制栏几何（与 native/ControlBar.cpp bargeom 一一对应，用户空间 960×266）
-// 【2026-08-14 放大】按键与 seek 轨道加大：轨道 22 高、按钮行 36 高、命中区放宽
+const PROGRESS_POLL_MS = 1000
+const SEEK_STEP_MS = 10000
+const TRACK_MOVE_THROTTLE_MS = 60
+const BAR_HIDE_MS = 6000
+const LOGIC_TOP = 107
+
 const BAR = {
-    top: 190,                    // 控制栏顶
-    trackY: 196, trackH: 22,     // 进度轨道
+    top: 190,
+    trackY: 196, trackH: 22,
     trackL: 24, trackR: 936,
-    btnY: 226, btnH: 36,         // 按钮行
-    // 【2026-08-14 删除左下角返回】backL/backR 已废弃
+    btnY: 226, btnH: 36,
     sbkL: 330, sbkR: 430,
     playL: 448, playR: 512,
     sfwL: 530, sfwR: 630,
-    // 【2026-08-14 返回左上角】标题区返回按钮命中区
     titleBackY: 0, titleBackH: 40,
     titleBackL: 8, titleBackR: 48
 }
@@ -138,18 +138,20 @@ export default {
             paused: false,
             ended: false,
             error: '',
-            barVisible: true,        // 悬浮控制栏显隐（原生叠加层）
-            duration: 0,             // 总时长（毫秒）
-            currentPosition: 0,      // 当前播放位置（毫秒）
+            barVisible: true,
+            duration: 0,
+            currentPosition: 0,
             progressTimer: null,
             hideTimer: null,
             mPlayer: null,
             stateCb: null,
             playerMode: settings.DEFAULT_MODE,
-            trackDrag: null,         // 轨道拖动快照 {startX, startPct}
+            trackDrag: null,
             _lastTrackStartT: null,
             _lastTrackMoveX: null,
-            _barGuardT: null         // 按钮触摸防派生 click 时间戳
+            _barGuardT: null,
+            systemModeActive: false,
+            systemAppId: SYSTEM_PLAYER_APP_ID
         }
     },
     mounted() {
@@ -158,52 +160,6 @@ export default {
         this.cid = opt.cid || ''
         this.title = opt.title || '视频播放'
         console.warn('[player] mounted bvid=' + this.bvid + ' cid=' + this.cid)
-
-        // 播放器状态事件（原生 bus 线程 → JS 线程）
-        this.stateCb = (state) => {
-            console.warn('[player] stateChanged: ' + state)
-            if (state === 'playing') {
-                this.paused = false
-                this.ended = false
-                this.error = ''
-                // 此时重建已完成（若有），安全显示 stage
-                if (!this.ready) {
-                    this.ready = true
-                    console.warn('[player] ready=true on playing state')
-                }
-                this.startProgressPolling()
-                this.scheduleBarHide()
-                this.pushBarState()
-            } else if (state === 'paused') {
-                this.paused = true
-                this.stopProgressPolling()
-                this.cancelBarHide()
-                this.barVisible = true
-                this.pushBarState()
-            } else if (state === 'ended') {
-                this.ended = true
-                this.paused = true
-                this.stopProgressPolling()
-                this.cancelBarHide()
-                this.barVisible = true
-                this.pushBarState()
-                console.warn('[player] ended, tap play to replay')
-            } else if (state && state.indexOf('error:') === 0) {
-                this.error = '播放错误: ' + state.substring(6)
-                this.paused = true
-                this.stopProgressPolling()
-                this.cancelBarHide()
-                this.barVisible = true
-                // 保持 stage 挂载（原生控制栏显示错误标记，返回按钮可退出）
-                this.pushBarState()
-                console.warn('[player] runtime error: ' + this.error)
-            }
-        }
-        try {
-            gstPlayer.stateChanged.on(this.stateCb)
-        } catch (e) {
-            console.warn('[player] stateChanged.on error: ' + e.message)
-        }
 
         var self = this
         settings.getMode().then(function (m) {
@@ -216,12 +172,15 @@ export default {
         console.warn('[player] beforeDestroy')
         this.stopProgressPolling()
         this.cancelBarHide()
-        if (this.stateCb) {
-            try { gstPlayer.stateChanged.off(this.stateCb) } catch (e) { }
-        }
-        if (this.mPlayer) {
-            try { this.mPlayer.close() } catch (e) { }
-            this.mPlayer = null
+        // 仅 gst 模式需要清理原生播放器
+        if (this.playerMode === settings.MODE_GST) {
+            if (this.stateCb) {
+                try { gstPlayer.stateChanged.off(this.stateCb) } catch (e) { }
+            }
+            if (this.mPlayer) {
+                try { this.mPlayer.close() } catch (e) { }
+                this.mPlayer = null
+            }
         }
     },
     methods: {
@@ -229,7 +188,8 @@ export default {
             // 直连模式：bvid 参数直接放完整播放 URL（cid 留空）
             if (this.bvid && !this.cid) {
                 console.warn('[player] direct url=' + this.bvid)
-                this.tryPlay(this.bvid)
+                this.playUrl = this.bvid
+                this.tryPlay(this.playUrl)
                 return
             }
             if (!this.bvid || !this.cid) {
@@ -241,13 +201,11 @@ export default {
                 var data = await api.getPlayUrl(this.bvid, this.cid, 64, 1)
                 if (data && data.durl && data.durl.length > 0) {
                     this.playUrl = data.durl[0].url
-                    // 【2026-08-14 时长修复】设备原生 getDuration 查询恒为 0（rk 分支
-                    // 查询链路问题），改用 B 站 API 返回的 timelength（毫秒）驱动进度条
                     if (data.timelength && data.timelength > 0) {
                         this.duration = Math.round(data.timelength)
                         console.warn('[player] duration from API: ' + this.duration + 'ms')
                     }
-                    console.warn('[player] playUrl qn=' + (data.quality || '?') + ' codecid=' + (data.video_codecid || '?') + '(7=H264) len=' + this.playUrl.length + ' : ' + this.playUrl.substring(0, 80) + '...')
+                    console.warn('[player] playUrl qn=' + (data.quality || '?') + ' codecid=' + (data.video_codecid || '?') + ' len=' + this.playUrl.length)
                     this.tryPlay(this.playUrl)
                 } else {
                     this.error = '未获取到播放地址'
@@ -262,37 +220,74 @@ export default {
             }
         },
         tryPlay(url) {
-            // 【2026-08-14 全屏+悬浮栏】open 传全视口矩形（页面 0,0,960,266 →
-            // 逻辑 0,107,960,266），KMSSINK 硬件等比缩放铺满（黑边留白不拉伸）；
-            // 悬浮控制栏由原生合入视频帧。system 模式仍关闭（见 git 历史）。
-            this.mPlayer = gstPlayer
+            if (this.playerMode === settings.MODE_SYSTEM) {
+                // 系统播放器模式：通过 falcon 跳转到系统 App（8001661999525016）
+                this.playWithSystemPlayer(url)
+                return
+            }
+
+            // 默认：自研 gstplayer 路径
+            this.systemModeActive = false
+            import('gstplayer').then(mod => {
+                var gstPlayer = mod.gstPlayer || mod.default
+                this.mPlayer = gstPlayer
+                try {
+                    var ok = this.mPlayer.open({
+                        uri: url,
+                        audio: true,
+                        pos_x: 0,
+                        pos_y: LOGIC_TOP,
+                        pos_w: 960,
+                        pos_h: 266,
+                        loop: 0
+                    })
+                    console.warn('[player] open ret: ' + ok)
+                    this.mPlayer.start()
+                    this.loading = false
+                    console.warn('[player] start OK, waiting for playing state')
+                } catch (e) {
+                    var msg = (e && e.message) ? e.message : JSON.stringify(e)
+                    this.error = '播放失败: ' + msg
+                    this.loading = false
+                    console.warn('[player] play error: ' + msg)
+                }
+            }).catch(e => {
+                console.warn('[player] import gstplayer failed: ' + (e && e.message))
+                this.error = '加载播放器模块失败'
+                this.loading = false
+            })
+        },
+        playWithSystemPlayer(url) {
+            console.warn('[player] system player mode, navTo app=' + SYSTEM_PLAYER_APP_ID)
+            this.systemModeActive = true
+            this.loading = false
+            this.ready = true  // 跳过自研播放器 stage，显示"已调起"提示
             try {
-                var ok = this.mPlayer.open({
-                    uri: url,
-                    audio: true,
-                    pos_x: 0,
-                    pos_y: LOGIC_TOP,
-                    pos_w: 960,
-                    pos_h: 266,
-                    loop: 0
+                var encodedUrl = encodeURIComponent(url)
+                var target = 'falcon://' + SYSTEM_PLAYER_APP_ID + '/player?url=' + encodedUrl +
+                    '&bvid=' + encodeURIComponent(this.bvid || '') +
+                    '&cid=' + encodeURIComponent(this.cid || '') +
+                    '&title=' + encodeURIComponent(this.title || '')
+                console.warn('[player] navTo target=' + target)
+                $falcon.navTo(target, {
+                    duration: this.duration || 0,
+                    bvid: this.bvid,
+                    cid: this.cid
                 })
-                console.warn('[player] open ret: ' + ok)
-                this.mPlayer.start()
-                // ready 在 stateCb('playing') 时设为 true，避免重建前的首帧闪烁
-                this.loading = false
-                console.warn('[player] start OK, waiting for playing state')
             } catch (e) {
-                var msg = (e && e.message) ? e.message : JSON.stringify(e)
-                this.error = '播放失败: ' + msg
-                this.loading = false
-                console.warn('[player] play error: ' + msg)
+                console.warn('[player] navTo system player failed: ' + (e && e.message))
+                this.error = '调起系统播放器失败'
+                this.systemModeActive = false
+                this.ready = false
             }
         },
-        // ---- 悬浮控制栏状态（原生 gdkpixbufoverlay 重绘）----
         pushBarState() {
+            // 系统播放器模式：无原生控制栏可推送
+            if (this.playerMode === settings.MODE_SYSTEM) return
             if (!this.mPlayer) return
             try {
-                this.mPlayer.setBarState({
+                var gstPlayer = this.mPlayer
+                gstPlayer.setBarState({
                     visible: this.barVisible,
                     playing: !this.paused && !this.ended,
                     ended: !!this.ended,
@@ -315,6 +310,7 @@ export default {
             var self = this
             this.cancelBarHide()
             if (this.paused || this.ended || !this.ready) return
+            if (this.playerMode === settings.MODE_SYSTEM) return
             this.hideTimer = setTimeout(function () {
                 self.hideTimer = null
                 if (!self.paused && !self.ended && self.barVisible) {
@@ -330,7 +326,6 @@ export default {
                 this.hideTimer = null
             }
         },
-        // ---- 触摸命中（触摸输入与视频 plane 无关：视频置顶仍可收到）----
         touchPoint(e) {
             var ct = e && e.changedTouches && e.changedTouches[0]
             if (ct && typeof ct.pageX === 'number' && typeof ct.pageY === 'number') {
@@ -344,20 +339,19 @@ export default {
         },
         onStageTouchStart(e) {
             if (!this.ready || !this.mPlayer) return
+            if (this.playerMode === settings.MODE_SYSTEM) return
             var p = this.touchPoint(e)
             if (!p) {
                 console.warn('[player] stage touch: no coords keys=' + Object.keys(e || {}).join(','))
                 return
             }
             var x = p.x, y = p.y
-            // 【2026-08-14 返回左上角】标题区返回按钮（左上角 y 0-40）
             if (y >= BAR.titleBackY && y <= BAR.titleBackY + BAR.titleBackH &&
                 x >= BAR.titleBackL && x <= BAR.titleBackR) {
                 console.warn('[player] title back tap -> close')
                 this.closePlayer()
                 return
             }
-            // 进度轨道：点击立即 seek + 记录拖动锚点（重派发 120ms 内只更新锚点）
             if (y >= BAR.trackY - 4 && y <= BAR.trackY + BAR.trackH + 6) {
                 var now = Date.now()
                 var reDispatch = (typeof this._lastTrackStartT === 'number') && (now - this._lastTrackStartT < 120)
@@ -366,37 +360,30 @@ export default {
                 if (!reDispatch) {
                     this.seekFromTouchX(x, BAR.trackL, BAR.trackR - BAR.trackL, 'tap')
                 }
-                // 【自动隐藏修复 2026-08-14】轨道交互重置自动隐藏计时
                 this.scheduleBarHide()
                 return
             }
-            // 控制栏按钮区
             if (y >= BAR.top) {
                 if (!this.barVisible) {
-                    // 控制栏隐藏时点击该区域：先唤出控制栏，不触发按钮
                     console.warn('[player] bar region tap while hidden -> show bar')
                     this.toggleBar()
                     return
                 }
                 this._barGuardT = Date.now()
                 if (y >= BAR.btnY && y <= BAR.btnY + BAR.btnH) {
-                    // 【2026-08-14 删除左下角返回】返回按钮已移到左上角标题区
                     if (x >= BAR.sbkL && x <= BAR.sbkR) { this.onSeekBack(); return }
                     if (x >= BAR.playL && x <= BAR.playR) { this.onTogglePlay(); return }
                     if (x >= BAR.sfwL && x <= BAR.sfwR) { this.onSeekForward(); return }
                 }
-                // 控制栏区域内空白：不切换显隐，但重置自动隐藏计时
-                // 【自动隐藏修复 2026-08-14】此前 bar 区交互一律 cancelBarHide()
-                // 且空白点击不恢复 scheduleBarHide() → 控制栏永不自动隐藏
                 this.scheduleBarHide()
                 return
             }
-            // 视频区域：切换控制栏显隐
             console.warn('[player] video tap x=' + x + ' y=' + y + ' barVisible=' + this.barVisible)
             this.toggleBar()
         },
         onStageTouchMove(e) {
             if (!this.trackDrag || !this.mPlayer || !this.duration) return
+            if (this.playerMode === settings.MODE_SYSTEM) return
             var p = this.touchPoint(e)
             if (!p) return
             var x = p.x
@@ -412,7 +399,6 @@ export default {
             var target = Math.round(this.duration * pct)
             console.warn('[player] track drag x=' + x + ' pct=' + Math.round(pct * 100) + '% target=' + target + 'ms')
             this.seekTo(target, 'drag')
-            // 【自动隐藏修复 2026-08-14】拖动过程持续重置自动隐藏计时
             this.scheduleBarHide()
         },
         onStageTouchEnd(e) {
@@ -421,16 +407,13 @@ export default {
                 this._lastTrackMoveX = null
                 console.warn('[player] track end')
             }
-            // 轨道交互后可能派生 click（无 click 处理器，无需 guard；保留日志）
         },
-        // ---- 播放控制 ----
         onTogglePlay() {
             this.togglePlay()
         },
         togglePlay() {
             if (!this.mPlayer) return
             if (this.ended) {
-                // 播放结束 → 重播：seek 0 + resume
                 console.warn('[player] replay from ended')
                 this.ended = false
                 this.paused = false
@@ -456,9 +439,9 @@ export default {
             this.pushBarState()
             console.warn('[player] ' + (this.paused ? 'paused' : 'resumed'))
         },
-        // ---- 进度：轮询 / 点击 / 拖动 / 步进 ----
         startProgressPolling() {
             if (this.progressTimer || !this.mPlayer) return
+            if (this.playerMode === settings.MODE_SYSTEM) return
             var self = this
             var tick = function () {
                 self.pollProgress()
@@ -487,9 +470,7 @@ export default {
                     changed = true
                 }
                 if (changed) this.pushBarState()
-            } catch (e) {
-                // 查询失败静默：pipeline 未就绪等场景，下轮再试
-            }
+            } catch (e) { }
         },
         fmtTime(ms) {
             ms = Math.max(0, Math.floor(ms || 0))
@@ -565,6 +546,3 @@ export default {
     }
 }
 </script>
-
-
-
