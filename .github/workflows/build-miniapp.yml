@@ -20,7 +20,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install cross toolchain + GStreamer dev headers + sqlite3
+      - name: Install cross toolchain + GStreamer dev headers + sqlite3 (arm64)
         run: |
           sudo add-apt-repository -y universe
           sudo apt-get update
@@ -37,7 +37,7 @@ jobs:
             libcairo2-dev \
             libgdk-pixbuf-2.0-dev \
             libfontconfig1-dev \
-            libsqlite3-dev \
+            libsqlite3-dev:arm64 \
             && sudo rm -rf /var/lib/apt/lists/*
 
       - name: Build libjsapi_gstplayer.so (aarch64)
