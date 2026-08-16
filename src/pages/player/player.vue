@@ -307,14 +307,21 @@ export default {
                 // 非 player。通过 $falcon.navTo 跳转并传播放参数。
                 var target = 'falcon://' + SYSTEM_PLAYER_APP_ID + '/index'
                 console.warn('[player] navTo target=' + target + ' url=' + url.substring(0, 80))
-                $falcon.navTo(target, {
+                // 系统播放器 index 页读取 loadOptions 中的 video_url 字段（字符串取证结论）。
+                // 同时冗余传 url 和 durl 做兜底，确保字段名命中。
+                var opts = {
+                    video_url: url,
                     url: url,
                     durl: url,
                     bvid: this.bvid || '',
                     cid: this.cid || '',
                     title: this.title || '',
-                    duration: this.duration || 0
-                })
+                    duration: this.duration || 0,
+                    qn: 64,
+                    codecid: 7
+                }
+                console.warn('[player] navTo opts=' + JSON.stringify(opts).substring(0, 200))
+                $falcon.navTo(target, opts)
             } catch (e) {
                 console.warn('[player] navTo system player failed: ' + (e && e.message))
                 this.error = '调起系统播放器失败'

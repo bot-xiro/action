@@ -27,21 +27,21 @@
 // 架构：单一监听线程 accept（127.0.0.1:18600），每连接一个 detached 线程处理。
 // 核心流程：
 //   1. 读请求头 → 解析 Range → 查磁盘分块缓存，若命中则直接由本地磁盘返回；
-//   2. 未命中时，spawn curl（带 Referer/UA）→ 管道裸流转发给 souphttpsrc；
-//   3. 转发过程中，将 0..1MB、1..2MB、… 固定块写入 /userdisk/cache/gstproxy/<hash>/<N>.dat；
+//   2. 未命中时，spawn curl（带 Referer/UA）→ 从流前排解析响应头 → 裸流转发 + 落盘；
+//   3. 转发过程中，将 0..2MB、2..4MB、… 固定块写入 /userdisk/cache/gstproxy/<hash>/<N>.dat；
 //   4. 每块 .dat 的 mtime 即 last_access，用于 LRU 淘汰。
-//   5. 当总块数 > 20 或总大小 > 20MB 时，自动淘汰最老块。
+//   5. 当总块数 > 20 或总大小 > 40MB 时，自动淘汰最老块。
 //
-// 【2026-08-16 修正】souphttpsrc 会发 Range bytes=0-（开头开区间），
-//   所以 rangeEnd=-1 时也要检查缓存。完整缓存命中直接 disk serve；
-//   只要第一个 1MB 落盘，后续播放即可命中，进入瞬时观看。
+// 【长视频优化】souphttpsrc 发 Range bytes=0-（开区间），已改成用已缓存段推断有效终点，
+//   杜绝首次打开时的独立 HEAD 请求，省一次 RTT。
+//   首块放大到 2MB，降低长视频首段 MISS 概率。
 
 // ===== 常量 =====
 namespace {
 const char* kCacheRoot   = "/userdisk/cache/gstproxy";
-const size_t kSegSize    = 1 * 1024 * 1024;          // 每块 1MB
+const size_t kSegSize    = 2 * 1024 * 1024;          // 每块 2MB
 const size_t kMaxSegs    = 20;                        // 最多 20 块
-const size_t kMaxBytes   = kMaxSegs * kSegSize;       // 20MB
+const size_t kMaxBytes   = kMaxSegs * kSegSize;       // 40MB
 
 const int kListenPort = 18600;
 const char* kReferer = "https://www.bilibili.com/";
@@ -49,7 +49,6 @@ const char* kUserAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 // 代理白名单（lilo 官方 tools_video 同款）
-// 子串匹配（域名 Contains），覆盖 *.<domain> 与裸 domain。
 const char* kWhiteList[] = {
     "bilibili.com",
     "bilivideo.com",
@@ -61,15 +60,14 @@ const char* kWhiteList[] = {
 namespace gstplayer {
 namespace proxy {
 
-// 与 GstPlayer.cpp 一致，走 local7 设施（→ /data/applog/YD_PEN_APP.log）
 #define PROXY_LOG(fmt, ...) syslog(LOG_LOCAL7 | LOG_ERR, "[gstproxy] " fmt, ##__VA_ARGS__)
 
 // ===== 全局状态 =====
 std::atomic<bool> g_started{false};
 std::mutex g_startMutex;
-std::mutex g_cacheMutex;           // 保护全部缓存结构
+std::mutex g_cacheMutex;
 int g_listenFd = -1;
-static time_t g_lastEvict = 0;     // 上次淘汰时间，避免热路径频繁扫描
+static time_t g_lastEvict = 0;
 
 // ===== 工具 =====
 static std::string urlEncode(const std::string& s) {
@@ -117,14 +115,12 @@ static bool writeAll(int fd, const char* data, size_t len) {
     return true;
 }
 
-// 简易 djb2 哈希（仅用于目录名）
 static uint32_t djb2(const std::string& s) {
     uint32_t h = 5381;
     for (unsigned char c : s) h = ((h << 5) + h) + (uint32_t)c;
     return h;
 }
 
-// 递归 mkdir -p
 static bool mkdirp(const std::string& path) {
     struct stat st;
     if (stat(path.c_str(), &st) == 0) return S_ISDIR(st.st_mode);
@@ -177,7 +173,7 @@ static bool rangeInCache(const std::string& url, long long s, long long e, long 
     return true;
 }
 
-// 从缓存直接服务，返回实际发送字节
+// 从缓存直接服务
 static long long serveFromCache(int fd, const std::string& url, long long s, long long e) {
     std::string dir = ensurePageDir(url);
     uint32_t s0 = (uint32_t)((unsigned long long)s / kSegSize);
@@ -201,16 +197,15 @@ static long long serveFromCache(int fd, const std::string& url, long long s, lon
             sent += (long long)rd; rem -= (long long)rd;
         }
         fclose(fp);
-        // 刷新 last_access
         utimensat(AT_FDCWD, dp.c_str(), nullptr, 0);
     }
     return sent;
 }
 
-// LRU 淘汰：块数 >20 或总大小 >20MB 时淘汰最老块
+// LRU 淘汰
 static void evictCache() {
     time_t now = time(nullptr);
-    if (now - g_lastEvict < 5) return;  // 最多 5 秒扫一次
+    if (now - g_lastEvict < 5) return;
     g_lastEvict = now;
 
     std::vector<std::string> files;
@@ -243,7 +238,6 @@ static void evictCache() {
     }
     if ((size_t)files.size() <= kMaxSegs && totalBytes <= (long long)kMaxBytes) return;
 
-    // 按 mtime 升序，最老先删
     std::sort(files.begin(), files.end(), [](const std::string& a, const std::string& b) {
         struct stat sa, sb;
         if (stat(a.c_str(), &sa) != 0) return false;
@@ -260,10 +254,6 @@ static void evictCache() {
         ::unlink(dp.c_str());
         ::unlink(mp.c_str());
         evicted++;
-        struct stat st;
-        if (stat(dp.c_str(), &st) == 0) {
-            evictedBytes += (long long)st.st_size;
-        }
     }
     if (evicted > 0) {
         PROXY_LOG("cache EVICT: removed %zu segments", evicted);
@@ -279,14 +269,12 @@ static void cacheAppend(const std::string& url, uint32_t segIdx, const void* dat
     ssize_t wr = write(fd, data, len);
     (void)wr;
     close(fd);
-    // 更新 last_access
     utimensat(AT_FDCWD, dp.c_str(), nullptr, 0);
-    // 触发淘汰（内部已限频）
     evictCache();
 }
 
 // fork + exec curl；返回子进程 pid，失败返回 -1。stdout 管道写端返回在 outFd。
-pid_t spawnCurl(const std::string& cmd, int* outFd) {
+static pid_t spawnCurl(const std::string& cmd, int* outFd) {
     int pfd[2];
     if (pipe(pfd) != 0) return -1;
     pid_t pid = fork();
@@ -304,32 +292,27 @@ pid_t spawnCurl(const std::string& cmd, int* outFd) {
     return pid;
 }
 
-// HEAD 获取 Content-Length
-long long getContentLength(const std::string& url) {
-    static std::string cachedUrl;
-    static long long cachedLen = 0;
-    if (cachedUrl == url && cachedLen > 0) return cachedLen;
-
-    std::string cmd = "curl -sI --connect-timeout 8 --max-time 15"
-        " -e '" + std::string(kReferer) + "'"
-        " -A '" + std::string(kUserAgent) + "'";
-    std::string escUrl;
-    for (char c : url) { if (c == '\'') escUrl += "'\\''"; else escUrl += c; }
-    cmd += " '" + escUrl + "' 2>/dev/null";
-
-    long long len = 0;
-    FILE* fp = popen(cmd.c_str(), "r");
-    if (fp) {
-        char line[1024];
-        while (fgets(line, sizeof(line), fp)) {
-            if (strncasecmp(line, "Content-Length:", 15) == 0) {
-                len = atoll(line + 15); break;
+// 从已读取的前导数据中解析 HTTP 响应头，返回 Content-Length；找不到返回 -1。
+static long long parseContentLength(const char* data, size_t len) {
+    const char* p = data;
+    const char* end = data + len;
+    while (p + 16 < end) {
+        if (p[0] == '\r' && p[1] == '\n') { p += 2; continue; }
+        if (p[0] == '\n') { p += 1; continue; }
+        if (strncasecmp(p, "Content-Length:", 15) == 0) {
+            const char* q = p + 15;
+            while (q < end && (*q == ' ' || *q == '\t')) q++;
+            long long v = 0;
+            while (q < end && *q >= '0' && *q <= '9') {
+                v = v * 10 + (*q - '0');
+                q++;
             }
+            return v;
         }
-        pclose(fp);
+        while (p < end && *p != '\n') p++;
+        if (p < end) p++;
     }
-    if (len > 0) { cachedUrl = url; cachedLen = len; }
-    return len;
+    return -1;
 }
 
 // ===== 单连接处理 =====
@@ -386,19 +369,32 @@ void handleClient(int fd) {
         if (rangeStart < 0) rangeStart = 0;
     }
 
-    long long totalLen = getContentLength(targetUrl);
-    bool useCL = (totalLen > 0);
-
-    // 【修正】对开区间 Range bytes=0-（无 end），用 totalLen 推断有效终点
-    // 这样只要首 1MB 落盘，第二次打开即可命中缓存，进入瞬时观看。
+    // 长视频优化：开区间 Range bytes=0- 时，用已缓存段推断有效终点
+    // 这样即使没有 totalLen，也能判断后续段是否命中缓存
     if (!range.empty() && rangeStart >= 0 && rangeEnd < rangeStart) {
-        if (useCL && totalLen > rangeStart) rangeEnd = totalLen - 1;
+        std::string dir = ensurePageDir(targetUrl);
+        uint32_t segIdx = (uint32_t)((unsigned long long)rangeStart / kSegSize);
+        long long inferredEnd = rangeStart - 1;
+        for (;;) {
+            std::string dp = segDatPath(dir, segIdx);
+            struct stat st;
+            if (stat(dp.c_str(), &st) != 0) break;
+            if (st.st_size <= 0) break;
+            long long lastByte = (long long)segIdx * (long long)kSegSize + st.st_size - 1;
+            inferredEnd = lastByte;
+            if ((size_t)st.st_size < kSegSize) break; // 不完整段，不能继续推断
+            segIdx++;
+        }
+        if (inferredEnd >= rangeStart) {
+            rangeEnd = inferredEnd;
+            PROXY_LOG("open-range inferred end=%lld via %u segs", (long long)rangeEnd, (unsigned)segIdx);
+        }
     }
 
-    // 缓存命中判断
+    // 缓存命中判断（完全不依赖 curl）
     bool servedFromCache = false;
     long long cacheProduced = 0;
-    if (!range.empty() && rangeEnd >= rangeStart && useCL) {
+    if (!range.empty() && rangeEnd >= rangeStart) {
         long long produced = 0;
         if (rangeInCache(targetUrl, rangeStart, rangeEnd, &produced)) {
             servedFromCache = true;
@@ -406,60 +402,25 @@ void handleClient(int fd) {
         }
     }
 
-    // 响应头
-    std::string hdr;
+    // 缓存命中路径：直接磁盘服务，完全不 spawn curl
     if (servedFromCache) {
-        char cl[32];
+        char cl[32], cr[96];
         snprintf(cl, sizeof(cl), "%lld", cacheProduced);
-        char cr[96];
         snprintf(cr, sizeof(cr), "bytes %lld-%lld/%lld",
-                 rangeStart, rangeEnd, totalLen);
-        hdr = "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
-              "Accept-Ranges: bytes\r\nCache-Control: no-store\r\n"
-              "Connection: keep-alive\r\nContent-Range: " + std::string(cr) +
-              "\r\nContent-Length: " + std::string(cl) + "\r\n\r\n";
-    } else if (range.empty()) {
-        if (useCL) {
-            char cl[32]; snprintf(cl, sizeof(cl), "%lld", totalLen);
-            hdr = "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nAccept-Ranges: bytes\r\n"
-                  "Cache-Control: no-store\r\nConnection: keep-alive\r\n"
-                  "Content-Length: " + std::string(cl) + "\r\n\r\n";
-        } else {
-            hdr = "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\nAccept-Ranges: bytes\r\n"
-                  "Cache-Control: no-store\r\nConnection: keep-alive\r\nTransfer-Encoding: chunked\r\n\r\n";
+                 rangeStart, rangeEnd, cacheProduced);
+        std::string hdr =
+            "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
+            "Accept-Ranges: bytes\r\nCache-Control: no-store\r\n"
+            "Connection: keep-alive\r\nContent-Range: bytes " + std::string(cr) +
+            "\r\nContent-Length: " + std::string(cl) + "\r\n\r\n";
+        if (writeAll(fd, hdr.data(), hdr.size())) {
+            serveFromCache(fd, targetUrl, rangeStart, rangeEnd);
         }
-    } else {
-        if (useCL) {
-            long long start = rangeStart;
-            if (start < 0) start = 0;
-            if (start >= totalLen) start = totalLen - 1;
-            long long end = (rangeEnd >= start && rangeEnd < totalLen) ? rangeEnd : totalLen - 1;
-            long long remain = end - start + 1;
-            char cl[32], cr[96];
-            snprintf(cl, sizeof(cl), "%lld", remain);
-            snprintf(cr, sizeof(cr), "bytes %lld-%lld/%lld", start, end, totalLen);
-            hdr = "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
-                  "Accept-Ranges: bytes\r\nCache-Control: no-store\r\n"
-                  "Connection: keep-alive\r\nContent-Range: " + std::string(cr) +
-                  "\r\nContent-Length: " + std::string(cl) + "\r\n\r\n";
-        } else {
-            hdr = "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
-                  "Accept-Ranges: bytes\r\nCache-Control: no-store\r\n"
-                  "Connection: keep-alive\r\nContent-Range: bytes " + range + "/*\r\n"
-                  "Transfer-Encoding: chunked\r\n\r\n";
-        }
-    }
-    if (!writeAll(fd, hdr.data(), hdr.size())) { close(fd); return; }
-
-    // 缓存命中路径
-    if (servedFromCache) {
-        long long sent = serveFromCache(fd, targetUrl, rangeStart, rangeEnd);
-        (void)sent;
         close(fd);
         return;
     }
 
-    // 网络回源路径：组装 curl
+    // 网络回源路径：直接 spawn curl（不再独立 HEAD）
     std::string escUrl;
     for (char c : targetUrl) { if (c == '\'') escUrl += "'\\''"; else escUrl += c; }
     std::string cmd =
@@ -476,9 +437,87 @@ void handleClient(int fd) {
 
     int srcFd = -1;
     pid_t pid = spawnCurl(cmd, &srcFd);
-    if (pid < 0) { if (!useCL) writeAll(fd, "0\r\n\r\n", 5); close(fd); return; }
+    if (pid < 0) { close(fd); return; }
 
-    // 写入缓存：只要知道总长度（或首包）就启用，range.empty 也会 cache
+    // 从 curl 流前排解析 Content-Length（与传输共享同一连接，无额外 RTT）
+    char hdrBuf[65536];
+    ssize_t headerBytes = 0;
+    size_t headerEnd = 0;
+    while (headerBytes < (ssize_t)sizeof(hdrBuf) - 1) {
+        ssize_t n = read(srcFd, hdrBuf + headerBytes,
+                         (sizeof(hdrBuf) - 1) - (size_t)headerBytes);
+        if (n <= 0) break;
+        headerBytes += n;
+        const char* end = hdrBuf + headerBytes;
+        if (headerBytes >= 4) {
+            const char* p = hdrBuf;
+            const char* scanEnd = end - 3;
+            for (; p <= scanEnd; ++p) {
+                if (p[0] == '\r' && p[1] == '\n' && p[2] == '\r' && p[3] == '\n') {
+                    headerEnd = (size_t)(p + 4 - hdrBuf);
+                    break;
+                }
+            }
+            if (!headerEnd) {
+                const char* p2 = hdrBuf;
+                const char* scanEnd2 = end - 1;
+                for (; p2 <= scanEnd2; ++p2) {
+                    if (p2[0] == '\n' && p2[1] == '\n') {
+                        headerEnd = (size_t)(p2 + 2 - hdrBuf);
+                        break;
+                    }
+                }
+            }
+            if (headerEnd) break;
+        }
+    }
+
+    if (!headerEnd) {
+        // 头没收完：透传已有数据后关闭
+        if (headerBytes > 0 && !writeAll(fd, hdrBuf, (size_t)headerBytes)) {
+            kill(pid, SIGKILL); int st = 0; waitpid(pid, &st, 0);
+        }
+        close(fd); close(srcFd);
+        return;
+    }
+
+    // 发送 curl 返回的原始头
+    if (!writeAll(fd, hdrBuf, headerEnd)) {
+        kill(pid, SIGKILL); int st = 0; waitpid(pid, &st, 0);
+        close(fd); close(srcFd);
+        return;
+    }
+
+    // 跳过 curl 流中已读取的头，进入 body 转发 + 缓存
+    const char* bodyPtr = hdrBuf;
+    size_t bodyRem = headerBytes;
+    {
+        const char* p = bodyPtr;
+        const char* end = bodyPtr + bodyRem;
+        bool found = false;
+        while (p + 3 < end) {
+            if (p[0] == '\r' && p[1] == '\n' && p[2] == '\r' && p[3] == '\n') {
+                found = true;
+                bodyPtr = p + 4;
+                bodyRem = (size_t)(end - bodyPtr);
+                break;
+            }
+            if (p[0] == '\n' && p[1] == '\n') {
+                found = true;
+                bodyPtr = p + 2;
+                bodyRem = (size_t)(end - bodyPtr);
+                break;
+            }
+            while (p < end && *p != '\n') p++;
+            if (p < end) p++;
+        }
+        if (!found) bodyRem = 0;
+    }
+
+    long long headerCL = parseContentLength(hdrBuf, headerEnd);
+    bool useCL = (headerCL >= 0);
+
+    // 缓存启用条件：知道总长度（Content-Length 存在）
     bool caching = useCL;
     uint32_t cacheSegIdx = 0;
     size_t cacheSegOff = 0;
@@ -489,43 +528,57 @@ void handleClient(int fd) {
         }
     }
 
+    // 先转发 hdrBuf 中封装的 body 数据
+    if (bodyRem > 0) {
+        if (!writeAll(fd, bodyPtr, bodyRem)) {
+            kill(pid, SIGKILL); int st = 0; waitpid(pid, &st, 0);
+            close(fd); close(srcFd);
+            return;
+        }
+        if (caching) {
+            size_t off = 0;
+            while (off < bodyRem) {
+                if (cacheSegOff >= kSegSize) {
+                    cacheSegOff = 0;
+                    cacheSegIdx++;
+                }
+                size_t room = kSegSize - cacheSegOff;
+                size_t chunk = std::min(bodyRem - off, room);
+                cacheAppend(targetUrl, cacheSegIdx, bodyPtr + off, chunk);
+                off += chunk;
+                cacheSegOff += chunk;
+            }
+        }
+    }
+
+    // 继续转发 curl 剩余 body
     char cbuf[65536];
     bool clientAlive = true;
     for (;;) {
         ssize_t n = read(srcFd, cbuf, sizeof(cbuf));
         if (n <= 0) break;
-        if (useCL) {
-            if (!clientAlive) break;
-            if (!writeAll(fd, cbuf, (size_t)n)) { clientAlive = false; break; }
-            if (caching) {
-                size_t off = 0;
-                while (off < (size_t)n) {
-                    if (cacheSegOff >= kSegSize) {
-                        cacheSegOff = 0;
-                        cacheSegIdx++;
-                    }
-                    size_t room = kSegSize - cacheSegOff;
-                    size_t chunk = std::min((size_t)n - off, room);
-                    cacheAppend(targetUrl, cacheSegIdx, cbuf + off, chunk);
-                    off += chunk;
-                    cacheSegOff += chunk;
+        if (!clientAlive) break;
+        if (!writeAll(fd, cbuf, (size_t)n)) { clientAlive = false; break; }
+        if (caching) {
+            size_t off = 0;
+            while (off < (size_t)n) {
+                if (cacheSegOff >= kSegSize) {
+                    cacheSegOff = 0;
+                    cacheSegIdx++;
                 }
+                size_t room = kSegSize - cacheSegOff;
+                size_t chunk = std::min((size_t)n - off, room);
+                cacheAppend(targetUrl, cacheSegIdx, cbuf + off, chunk);
+                off += chunk;
+                cacheSegOff += chunk;
             }
-        } else {
-            char hb[32];
-            int hl = snprintf(hb, sizeof(hb), "%zx\r\n", (size_t)n);
-            if (!clientAlive) break;
-            if (!writeAll(fd, hb, hl) ||
-                !writeAll(fd, cbuf, (size_t)n) ||
-                !writeAll(fd, "\r\n", 2)) { clientAlive = false; break; }
         }
     }
     close(srcFd);
 
-    if (!useCL && clientAlive) writeAll(fd, "0\r\n\r\n", 5);
-    else if (!clientAlive) { kill(pid, SIGKILL); int st = 0; waitpid(pid, &st, 0); }
-
-    if (clientAlive) {
+    if (!clientAlive) {
+        kill(pid, SIGKILL); int st = 0; waitpid(pid, &st, 0);
+    } else {
         int st = 0;
         for (int i = 0; i < 40 && waitpid(pid, &st, WNOHANG) == 0; i++) usleep(50000);
         if (waitpid(pid, &st, WNOHANG) == 0) { kill(pid, SIGKILL); waitpid(pid, &st, 0); }
