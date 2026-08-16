@@ -10,6 +10,10 @@ tools/
 docs/
 opencode.json
 
+# 误加的本地模块（暂不纳入 CI）
+native/bilistream/
+artifacts_build/testseek/
+
 # Node
 node_modules/
 .cache/
