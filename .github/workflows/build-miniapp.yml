@@ -25,6 +25,7 @@ jobs:
           sudo add-apt-repository -y universe
           sudo dpkg --add-architecture arm64
           sudo apt-get update
+          # Install libsqlite3-dev:arm64 from main repo only (security repos lack arm64)
           sudo apt-get install -y --no-install-recommends \
             gcc-aarch64-linux-gnu \
             g++-aarch64-linux-gnu \
@@ -40,6 +41,8 @@ jobs:
             libfontconfig1-dev \
             libsqlite3-dev:arm64 \
             && sudo rm -rf /var/lib/apt/lists/*
+        env:
+          DEBIAN_FRONTEND: noninteractive
 
       - name: Build libjsapi_gstplayer.so (aarch64)
         run: |
