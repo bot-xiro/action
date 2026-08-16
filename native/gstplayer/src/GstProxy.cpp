@@ -415,7 +415,7 @@ void handleClient(int fd) {
         std::string hdr =
             "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
             "Accept-Ranges: bytes\r\nCache-Control: no-store\r\n"
-            "Connection: keep-alive\r\nContent-Range: bytes " + std::string(cr) +
+            "Connection: keep-alive\r\nContent-Range: " + std::string(cr) +
             "\r\nContent-Length: " + std::string(cl) + "\r\n\r\n";
         if (writeAll(fd, hdr.data(), hdr.size())) {
             serveFromCache(fd, targetUrl, rangeStart, rangeEnd);
