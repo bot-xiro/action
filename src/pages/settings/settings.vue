@@ -222,34 +222,34 @@
 }
 
 .modal-box {
-    width: 400px;
+    width: 320px;
     background-color: #ffffff;
     border-radius: 12px;
-    padding: 24px;
+    padding: 20px;
     flex-direction: column;
     align-items: center;
 }
 
 .modal-title {
-    font-size: 24px;
+    font-size: 22px;
     color: #222222;
     font-weight: bold;
-    margin-bottom: 16px;
+    margin-bottom: 12px;
 }
 
 .qr-container {
-    width: 200px;
-    height: 200px;
+    width: 160px;
+    height: 160px;
     background-color: #fafafa;
     border-radius: 8px;
     align-items: center;
     justify-content: center;
-    margin-bottom: 12px.
+    margin-bottom: 10px;
 }
 
 .qr-image {
-    width: 180px;
-    height: 180px;
+    width: 150px;
+    height: 150px;
 }
 
 .qr-loading {
@@ -367,8 +367,10 @@ export default {
             
             auth.generateQrCode().then(function (res) {
                 if (res && res.code === 0 && res.data) {
-                    self.qrCodeUrl = res.data.url
+                    var loginUrl = res.data.url
                     self.qrCodeKey = res.data.qrcode_key
+                    // 使用在线二维码生成服务生成二维码图片（B站返回的是登录页面URL，非直接图片）
+                    self.qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(loginUrl)
                     self.qrStatus = '请使用哔哩哔哩 APP 扫码'
                     self.startQrPolling()
                 } else {
