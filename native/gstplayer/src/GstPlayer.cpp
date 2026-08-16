@@ -288,15 +288,11 @@ void GstPlayer::open(JQFunctionInfo& info)
     // 关闭旧管线
     teardown();
 
-    // 【2026-08-11 用户指令最终版】自研播放器 + 本地反向代理（结合 lilo 官方方案：
-    // lilo 的 tools_video 用 Video.getProxyUrl() 把 B 站 url 转本地代理
-    // 127.0.0.1:<port>/__video_proxy__/...，附加 Referer/w3c UA + 白名单
-    // (bilibili.com/bilivideo.com/mountaintoys.cn/hdslb.com)，绕过 B 站 CDN 403。
-    // 我们在本 .so 内复刻同款：GstProxy 线程代理 + curl 带 Referer/UA + Range 透传；
-    // 白名单域才走代理，其余直连（见 GstProxy.cpp kWhiteList）。
-    // 双保险：非白名单/代理不可用时仍直连，且 buildPipeline 的 souphttpsrc
-    // extra-headers Referer（877be03）依然在管线里生效。
-    uri = proxy::maybeRewrite(uri);
+    // 【2026-08-16 移除本地代理】直接请求 CDN 地址。
+    // souphttpsrc 已在下方设置 UA + Referer extra-headers（lines 888-900），
+    // 足以通过 B 站 CDN 防盗链；Range 请求由 souphttpsrc 原生支持。
+    // 保留 GstProxy.cpp 以备后续需要时恢复。
+    // uri = proxy::maybeRewrite(uri);  // DISABLED
 
     PLAYER_LOG("open uri=%s audio=%d rect=%s fill=%s", uri.c_str(), audio ? 1 : 0, rect.str().c_str(), fill.c_str());
     // 【2026-08-14 悬浮控制栏】画布尺寸 = sink render-rectangle 尺寸（KMSSINK 物理坐标 / waylandsink 逻辑坐标），
