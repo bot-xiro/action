@@ -42,6 +42,20 @@ const char* kCacheRoot   = "/userdisk/cache/gstproxy";
 const size_t kSegSize    = 1 * 1024 * 1024;          // 每块 1MB
 const size_t kMaxSegs    = 20;                        // 最多 20 块
 const size_t kMaxBytes   = kMaxSegs * kSegSize;       // 20MB
+
+const int kListenPort = 18600;
+const char* kReferer = "https://www.bilibili.com/";
+const char* kUserAgent =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+// 代理白名单（lilo 官方 tools_video 同款）
+// 子串匹配（域名 Contains），覆盖 *.<domain> 与裸 domain。
+const char* kWhiteList[] = {
+    "bilibili.com",
+    "bilivideo.com",
+    "hdslb.com",
+    "mountaintoys.cn",
+};
 }  // namespace
 
 namespace gstplayer {
