@@ -57,5 +57,7 @@ try {
 
 // 预热 gstplayer 原生模块：延后到 App.onLaunch 执行（避免 JQuick ES module 初始化期间调用被禁用）
 import { gstPlayer } from 'gstplayer'
+// 强制引用 bili-auth，使 aiot-cli 静态分析将其纳入 manifest.json 打包进 .amr
+import { biliAuth } from 'biliauth'
 
 export default App
