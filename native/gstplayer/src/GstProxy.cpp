@@ -564,8 +564,6 @@ void listenLoop() {
     close(ls);
 }
 
-}  // namespace
-
 bool ensureStarted() {
     if (g_started.load()) return true;
     std::lock_guard<std::mutex> lk(g_startMutex);
