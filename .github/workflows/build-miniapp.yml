@@ -20,12 +20,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install cross toolchain + GStreamer dev headers + sqlite3 (arm64)
+      - name: Install cross toolchain + GStreamer dev headers
         run: |
           sudo add-apt-repository -y universe
-          sudo dpkg --add-architecture arm64
           sudo apt-get update
-          # Install arm64 sqlite3 libs from main archive (security repos lack arm64 packages)
           sudo apt-get install -y --no-install-recommends \
             gcc-aarch64-linux-gnu \
             g++-aarch64-linux-gnu \
@@ -40,9 +38,19 @@ jobs:
             libgdk-pixbuf-2.0-dev \
             libfontconfig1-dev \
             libsqlite3-dev \
-            libsqlite3-0:arm64 \
-            libsqlite3-dev:arm64 \
             && sudo rm -rf /var/lib/apt/lists/*
+        env:
+          DEBIAN_FRONTEND: noninteractive
+
+      - name: Build sqlite3 for arm64
+        run: |
+          cd /tmp
+          wget https://www.sqlite.org/2024/sqlite-autoconf-3460000.tar.gz
+          tar xzf sqlite-autoconf-3460000.tar.gz
+          cd sqlite-autoconf-3460000
+          CC=aarch64-linux-gnu-gcc CXX=aarch64-linux-gnu-g++ ./configure --host=aarch64-linux-gnu --prefix=/usr/aarch64-linux-gnu --disable-shared --enable-static
+          make -j$(nproc)
+          sudo make install
         env:
           DEBIAN_FRONTEND: noninteractive
 
