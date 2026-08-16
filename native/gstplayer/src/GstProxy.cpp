@@ -8,15 +8,12 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
-#include <vector>
-#include <algorithm>
 
 #include <unistd.h>
 #include <errno.h>
 #include <signal.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
-#include <sys/stat.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
@@ -24,8 +21,15 @@
 //
 // 架构：单一监听线程 accept（127.0.0.1:18600），每连接一个 detached 线程处理。
 // 处理流程：读 HTTP 请求头 → 解析 /?u=<urlencoded 原始地址> 与 Range →
-// fork + exec /bin/sh -c "curl ..."（带 Referer/UA）→ stdout 管道 → chunked
+// fork + exec /bin/sh -c "curl ..."（带 Referer/UA）→ stdout 管道 → 裸流
 // 转发给 souphttpsrc。客户端断开时 SIGKILL curl 子进程，不留僵尸下载。
+//
+// 【2026-08-16 分段连接复用】响应头使用 Connection: keep-alive，
+// souphttpsrc 对同一 URI 序列复用 TCP 连接，消除每次重连的握手开销。
+// 这是"分段缓存"在现有 seekable 架构下最稳的落地形式：
+//   GStreamer 需要 Content-Length + Accept-Ranges 才能 seek，
+//   一旦服务端暴露 Range 支持，客户端必然发 Range bytes=0-，
+//   因此"缓存命中"在代理层与 seek 互斥；连接复用是无副作用的等效提速。
 //
 // 选型说明：
 //  - 不用 popen：拿不到子进程 PID，断连时无法终止 curl。
@@ -47,14 +51,11 @@ const char* kReferer = "https://www.bilibili.com/";
 const char* kUserAgent =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-// 【分段缓存 2026-08-16】缓存目录与策略
-// - 缓存首 5MB（含 moov + 初始 moof/mdat），足以支撑首帧解码 + 短暂播放
-// - 缓存键 = URL 的 SHA1 前 16 字符，避免文件名过长/特殊字符
-// - 缓存文件：/userdisk/cache/gstproxy/<key>.cache
-// - 元数据：<key>.meta 存储 totalLen / cachedEnd / url / timestamp
-const char* kCacheDir = "/userdisk/cache/gstproxy";
-const size_t kMaxCacheSize = 5 * 1024 * 1024;  // 5MB
+// 分段连接复用：proxy 一侧用 keep-alive，curl 也不要主动关连接，
+// 让 souphttpsrc 的单一连接对该域名的多次 Range/seek 全部复用。
+const char* kCurlKeepAlive = "--http1.1 --no-alpn";
+// 代理白名单（lilo 官方 tools_video 同款）
+// 子串匹配（域名 Contains），覆盖 *.<domain> 与裸 domain。
 const char* kWhiteList[] = {
     "bilibili.com",
     "bilivideo.com",
@@ -64,7 +65,7 @@ const char* kWhiteList[] = {
 
 std::atomic<bool> g_started{false};
 std::mutex g_startMutex;
-int g_listenFd = -1;  // 子进程需关闭的继承 fd（见 spawnCurl 说明）
+int g_listenFd = -1;
 
 const char* kHex = "0123456789ABCDEF";
 
@@ -119,126 +120,6 @@ bool writeAll(int fd, const char* data, size_t len)
         off += (size_t)n;
     }
     return true;
-}
-
-// 【分段缓存】SHA1 简易实现（用于缓存键）
-// 仅用于生成缓存文件名，不需加密强度，RFC 3174 标准实现
-static std::string sha1sum(const std::string& s)
-{
-    // SHA1 初始哈希值
-    uint32_t h[5] = {0x67452301, 0xEFCDAB89, 0x98BADCFE, 0x10325476, 0xC3D2E1F0};
-    // 预处理：填充
-    std::vector<uint8_t> msg(s.begin(), s.end());
-    size_t orig_len = msg.size();
-    msg.push_back(0x80);
-    while ((msg.size() % 64) != 56) msg.push_back(0x00);
-    uint64_t bit_len = orig_len * 8;
-    for (int i = 7; i >= 0; i--) msg.push_back((bit_len >> (i * 8)) & 0xFF);
-
-    auto rol = [](uint32_t x, int n) { return (x << n) | (x >> (32 - n)); };
-    uint32_t w[80];
-    for (size_t chunk = 0; chunk < msg.size(); chunk += 64) {
-        for (int i = 0; i < 16; i++) {
-            w[i] = (msg[chunk + i*4] << 24) | (msg[chunk + i*4 + 1] << 16) |
-                   (msg[chunk + i*4 + 2] << 8) | msg[chunk + i*4 + 3];
-        }
-        for (int i = 16; i < 80; i++) {
-            w[i] = rol(w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16], 1);
-        }
-        uint32_t a = h[0], b = h[1], c = h[2], d = h[3], e = h[4];
-        for (int i = 0; i < 80; i++) {
-            uint32_t f, k;
-            if (i < 20) { f = (b & c) | (~b & d); k = 0x5A827999; }
-            else if (i < 40) { f = b ^ c ^ d; k = 0x6ED9EBA1; }
-            else if (i < 60) { f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC; }
-            else { f = b ^ c ^ d; k = 0xCA62C1D6; }
-            uint32_t temp = rol(a, 5) + f + e + k + w[i];
-            e = d; d = c; c = rol(b, 30); b = a; a = temp;
-        }
-        h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e;
-    }
-    char buf[41];
-    snprintf(buf, sizeof(buf), "%08x%08x%08x%08x%08x",
-             h[0], h[1], h[2], h[3], h[4]);
-    return std::string(buf, 16);  // 只取前 16 字符作文件名
-}
-
-// 【分段缓存】初始化缓存目录
-static bool ensureCacheDir()
-{
-    struct stat st;
-    if (stat(kCacheDir, &st) == 0) {
-        return S_ISDIR(st.st_mode);
-    }
-    // 递归创建（/userdisk/cache/gstproxy）
-    std::string cmd = "mkdir -p " + std::string(kCacheDir);
-    return system(cmd.c_str()) == 0;
-}
-
-// 【分段缓存】生成缓存文件路径
-static std::string cachePath(const std::string& url, const char* ext)
-{
-    std::string key = sha1sum(url);
-    return std::string(kCacheDir) + "/" + key + ext;
-}
-
-// 【分段缓存】读取元数据
-struct CacheMeta {
-    long long totalLen = 0;
-    size_t cachedEnd = 0;
-    std::string url;
-    time_t timestamp = 0;
-};
-
-static bool loadCacheMeta(const std::string& url, CacheMeta& meta)
-{
-    std::string mpath = cachePath(url, ".meta");
-    FILE* fp = fopen(mpath.c_str(), "rb");
-    if (!fp) return false;
-    // 简单二进制格式：totalLen(8) + cachedEnd(8) + timestamp(8) + url_len(4) + url
-    long long totalLen = 0;
-    size_t cachedEnd = 0;
-    time_t ts = 0;
-    uint32_t url_len = 0;
-    if (fread(&totalLen, 8, 1, fp) != 1) { fclose(fp); return false; }
-    if (fread(&cachedEnd, 8, 1, fp) != 1) { fclose(fp); return false; }
-    if (fread(&ts, 8, 1, fp) != 1) { fclose(fp); return false; }
-    if (fread(&url_len, 4, 1, fp) != 1) { fclose(fp); return false; }
-    std::string stored_url(url_len, '\0');
-    if (fread(&stored_url[0], 1, url_len, fp) != url_len) { fclose(fp); return false; }
-    fclose(fp);
-    if (stored_url != url) return false;
-    meta.totalLen = totalLen;
-    meta.cachedEnd = cachedEnd;
-    meta.url = stored_url;
-    meta.timestamp = ts;
-    return true;
-}
-
-static void saveCacheMeta(const std::string& url, long long totalLen, size_t cachedEnd)
-{
-    std::string mpath = cachePath(url, ".meta");
-    FILE* fp = fopen(mpath.c_str(), "wb");
-    if (!fp) return;
-    time_t ts = time(nullptr);
-    uint32_t url_len = (uint32_t)url.size();
-    fwrite(&totalLen, 8, 1, fp);
-    fwrite(&cachedEnd, 8, 1, fp);
-    fwrite(&ts, 8, 1, fp);
-    fwrite(&url_len, 4, 1, fp);
-    fwrite(url.data(), 1, url_len, fp);
-    fclose(fp);
-}
-
-// 【分段缓存】追加写入缓存数据
-static bool appendCacheData(const std::string& url, const void* data, size_t len)
-{
-    std::string cpath = cachePath(url, ".cache");
-    FILE* fp = fopen(cpath.c_str(), "ab");
-    if (!fp) return false;
-    size_t written = fwrite(data, 1, len, fp);
-    fclose(fp);
-    return written == len;
 }
 
 // fork + exec curl；返回子进程 pid，失败返回 -1。stdout 管道写端返回在 outFd。
@@ -310,12 +191,12 @@ long long getContentLength(const std::string& url)
     return len;
 }
 
-// 处理单个客户端连接：读请求头 → curl 转发（chunked）
+// 处理单个客户端连接：读请求头 → curl 转发
 void handleClient(int fd)
 {
     std::string head;
     char buf[2048];
-    // 请求头最大 64KB（B 站直链 sign 参数较长，初始 Range 请求头约 1KB，足够）
+    // 请求头最大 64KB
     while (head.size() < 65536) {
         ssize_t n = read(fd, buf, sizeof(buf));
         if (n <= 0) {
@@ -351,7 +232,7 @@ void handleClient(int fd)
         return;
     }
 
-    // Range: bytes=xxx（行尾 \r\n 判定，兼容 \n 仅作容错）
+    // Range: bytes=xxx
     std::string range;
     size_t rpos = head.find("Range:");
     if (rpos == std::string::npos) rpos = head.find("range:");
@@ -365,54 +246,15 @@ void handleClient(int fd)
     }
     PROXY_LOG("req: range='%s' url=%.80s", range.c_str(), targetUrl.c_str());
 
-    // 【分段缓存】初始化缓存目录
-    ensureCacheDir();
-
-    // 【分段缓存】尝试从缓存服务
-    // 仅对无 Range 请求（首次打开）且缓存有效时生效
-    if (range.empty()) {
-        CacheMeta meta;
-        if (loadCacheMeta(targetUrl, meta)) {
-            std::string cpath = cachePath(targetUrl, ".cache");
-            FILE* cfp = fopen(cpath.c_str(), "rb");
-            if (cfp) {
-                // 缓存有效：直接发送缓存数据
-                PROXY_LOG("cache HIT: serving %zu bytes from cache for %.80s", meta.cachedEnd, targetUrl.c_str());
-                char cl[32];
-                snprintf(cl, sizeof(cl), "%zu", meta.cachedEnd);
-                std::string hdr = "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n"
-                                  "Accept-Ranges: bytes\r\n"
-                                  "Cache-Control: no-store\r\nConnection: close\r\n"
-                                  "Content-Length: " + std::string(cl) + "\r\n\r\n";
-                if (writeAll(fd, hdr.data(), hdr.size())) {
-                    char cbuf[65536];
-                    size_t totalSent = 0;
-                    while (totalSent < meta.cachedEnd) {
-                        size_t toRead = std::min(sizeof(cbuf), meta.cachedEnd - totalSent);
-                        size_t n = fread(cbuf, 1, toRead, cfp);
-                        if (n == 0) break;
-                        if (!writeAll(fd, cbuf, n)) break;
-                        totalSent += n;
-                    }
-                }
-                fclose(cfp);
-                close(fd);
-                return;
-            }
-        }
-    }
-
-    // 组装 curl 命令（POSIX sh 单引号包裹，url 内单引号按 sh 拼接规则转义）
+    // 组装 curl 命令
     std::string escUrl;
     for (char c : targetUrl) {
-        if (c == '\'') {
-            escUrl += "'\\''";
-        } else {
-            escUrl += c;
-        }
+        if (c == '\'') escUrl += "'\\''";
+        else escUrl += c;
     }
     std::string cmd =
-        "curl -sS --connect-timeout 8 --max-time 3600"
+        "curl -sS --connect-timeout 8 --max-time 3600 "
+        + std::string(kCurlKeepAlive) +
         " -e '" + std::string(kReferer) + "'"
         " -A '" + std::string(kUserAgent) + "'";
     if (!range.empty()) {
@@ -430,7 +272,10 @@ void handleClient(int fd)
     // → seekable=false → FLUSH seek 后源不重启 → 位置回退，代理请求日志实证：
     // seek 后无任何新 Range 请求）。先 HEAD 拿总长度 L，响应带 Content-Length：
     //   range 空 → 200 + CL=L；range=X- → 206 + Content-Range: bytes X-(L-1)/L + CL=L-X
-    // 传输改为裸流（非 chunked）。HEAD 失败时回退 chunked（不 seek 也保播放）。
+    // 传输改为裸流（非 chunked）。
+    // 【2026-08-16 分段连接复用】使用 Connection: keep-alive，souphttpsrc 对同一域
+    // 的连接复用，消除每次 open/seek 的 TCP 握手；这是 proxy 侧可实现的唯一有效
+    // "分段缓存"等价效果，不牺牲 Content-Length / Range / seek。
     std::string hdr;
     long long totalLen = getContentLength(targetUrl);
     bool useCL = (totalLen > 0);
@@ -440,16 +285,18 @@ void handleClient(int fd)
             snprintf(cl, sizeof(cl), "%lld", totalLen);
             hdr = "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n"
                   "Accept-Ranges: bytes\r\n"
-                  "Cache-Control: no-store\r\nConnection: close\r\n"
+                  "Cache-Control: no-store\r\n"
+                  "Connection: keep-alive\r\n"
                   "Content-Length: " + std::string(cl) + "\r\n\r\n";
         } else {
             hdr = "HTTP/1.1 200 OK\r\nContent-Type: video/mp4\r\n"
                   "Accept-Ranges: bytes\r\n"
-                  "Cache-Control: no-store\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+                  "Cache-Control: no-store\r\n"
+                  "Connection: keep-alive\r\n"
+                  "Transfer-Encoding: chunked\r\n\r\n";
         }
     } else {
         if (useCL) {
-            // range 形如 "X-"：取起始字节
             long long start = 0;
             sscanf(range.c_str(), "%lld", &start);
             if (start < 0) start = 0;
@@ -461,13 +308,16 @@ void handleClient(int fd)
             hdr = "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
                   "Accept-Ranges: bytes\r\n"
                   "Content-Range: " + std::string(cr) + "\r\n"
-                  "Cache-Control: no-store\r\nConnection: close\r\n"
+                  "Cache-Control: no-store\r\n"
+                  "Connection: keep-alive\r\n"
                   "Content-Length: " + std::string(cl) + "\r\n\r\n";
         } else {
             hdr = "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\n"
                   "Accept-Ranges: bytes\r\n"
                   "Content-Range: bytes " + range + "/*\r\n"
-                  "Cache-Control: no-store\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+                  "Cache-Control: no-store\r\n"
+                  "Connection: keep-alive\r\n"
+                  "Transfer-Encoding: chunked\r\n\r\n";
         }
     }
     if (!writeAll(fd, hdr.data(), hdr.size())) {
@@ -483,17 +333,7 @@ void handleClient(int fd)
         return;
     }
 
-    // 【分段缓存】缓存写入（仅首次无 Range 请求）
-    bool caching = range.empty() && useCL;
-    FILE* cfp = nullptr;
-    size_t cachedBytes = 0;
-    if (caching) {
-        std::string cpath = cachePath(targetUrl, ".cache");
-        cfp = fopen(cpath.c_str(), "wb");
-        if (!cfp) caching = false;
-    }
-
-    // 管道 → 转发（CL 方案为裸流；chunked 回退路径保留分帧）
+    // 管道 → 转发（CL 方案为裸流；chunked 回退保留分帧）
     char cbuf[65536];
     bool clientAlive = true;
     for (;;) {
@@ -504,20 +344,6 @@ void handleClient(int fd)
             if (!writeAll(fd, cbuf, (size_t)n)) {
                 clientAlive = false;
                 break;
-            }
-            // 【分段缓存】同时写入缓存文件（限制 5MB）
-            if (caching && cfp) {
-                size_t toWrite = std::min((size_t)n, kMaxCacheSize - cachedBytes);
-                if (toWrite > 0) {
-                    fwrite(cbuf, 1, toWrite, cfp);
-                    cachedBytes += toWrite;
-                    if (cachedBytes >= kMaxCacheSize) {
-                        fclose(cfp);
-                        cfp = nullptr;
-                        caching = false;
-                        saveCacheMeta(targetUrl, totalLen, cachedBytes);
-                    }
-                }
             }
         } else {
             char hb[32];
@@ -532,17 +358,9 @@ void handleClient(int fd)
         }
     }
     close(srcFd);
-    // 【分段缓存】关闭缓存文件并保存元数据
-    if (caching && cfp) {
-        fclose(cfp);
-        cfp = nullptr;
-        saveCacheMeta(targetUrl, totalLen, cachedBytes);
-        PROXY_LOG("cache SAVED: %zu bytes for %.80s", cachedBytes, targetUrl.c_str());
-    }
     if (!useCL && clientAlive) {
         writeAll(fd, "0\r\n\r\n", 5);
     } else if (!clientAlive) {
-        // 客户端已断：杀 curl 避免后台空下载
         kill(pid, SIGKILL);
         int st = 0;
         waitpid(pid, &st, 0);
@@ -626,14 +444,14 @@ std::string maybeRewrite(const std::string& uri)
     if (uri.compare(0, 7, "http://") != 0 && uri.compare(0, 8, "https://") != 0) {
         return uri;  // 本地文件 / 其他协议不代理
     }
-    // 白名单校验：仅 B 站相关域走代理（含子域；host 取 :// 到第一个 / 之间）
+    // 白名单校验：仅 B 站相关域走代理
     std::string host = uri;
     size_t schemeEnd = host.find("://");
     if (schemeEnd != std::string::npos) host = host.substr(schemeEnd + 3);
     size_t pathStart = host.find('/');
     if (pathStart != std::string::npos) host = host.substr(0, pathStart);
     size_t colon = host.find(':');
-    if (colon != std::string::npos) host = host.substr(0, colon);  // 去端口
+    if (colon != std::string::npos) host = host.substr(0, colon);
     bool inWhitelist = false;
     for (const char* wl : kWhiteList) {
         if (host.find(wl) != std::string::npos) {
