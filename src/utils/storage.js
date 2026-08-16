@@ -94,6 +94,33 @@ async function writeCookie(cookieStr) {
   }
 }
 
+// ============ 通用设置存取（供 auth.js 等使用）===========
+const SETTINGS_PREFIX = 'bili_setting_'
+
+async function getSetting(key) {
+  if (key === 'all') {
+    return '{}'
+  }
+  const fullKey = 'bili_setting_' + key
+  try {
+    if (storage && typeof storage.getStorage === 'function') {
+      const v = await storage.getStorage('bili_setting_' + key)
+      if (v !== undefined && v !== null) return v
+    }
+  } catch (e) {}
+  return undefined
+}
+
+async function setSetting(key, value) {
+  try {
+    if (storage && typeof storage.setStorage === 'function') {
+      await storage.setStorage('bili_setting_' + key, value)
+    }
+  } catch (e) {
+    // 仅保留内存
+  }
+}
+
 function getHistory() {
   return readRaw()
 }
@@ -156,5 +183,8 @@ export default {
   // 登录 cookie 存取
   getCookie: getCookie,
   setCookie: setCookie,
-  clearCookie: clearCookie
+  clearCookie: clearCookie,
+  // 通用设置存取
+  getSetting: getSetting,
+  setSetting: setSetting
 }

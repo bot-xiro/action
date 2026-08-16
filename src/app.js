@@ -22,16 +22,6 @@ class App extends $falcon.App {
     } catch (err) {
       console.warn('[app] gstPlayer.preheat error in onLaunch: ' + (err && err.message))
     }
-    // 初始化 bili-auth 原生模块（注册 native bili-auth 模块，供后续 import 'biliauth' 使用）
-    try {
-      console.warn('[app] biliAuth type=' + typeof biliAuth + ' keys=' + Object.keys(biliAuth || {}).join(','))
-      var r2 = biliAuth && biliAuth.init
-        ? biliAuth.init()
-        : undefined;
-      console.warn('[app] biliAuth.init in onLaunch ret=' + r2)
-    } catch (err) {
-      console.warn('[app] biliAuth.init error in onLaunch: ' + (err && err.message))
-    }
   }
 
   /**
@@ -67,7 +57,5 @@ try {
 
 // 预热 gstplayer 原生模块：延后到 App.onLaunch 执行（避免 JQuick ES module 初始化期间调用被禁用）
 import { gstPlayer } from 'gstplayer'
-// 强制引用 bili-auth，使 aiot-cli 静态分析将其纳入 manifest.json 打包进 .amr
-import { biliAuth } from 'biliauth'
 
 export default App

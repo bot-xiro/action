@@ -1,14 +1,11 @@
 /**
- * B站登录认证与本地数据库存储（基于 native bili-auth 模块）
+ * B站登录认证（纯 JS 实现，基于 storage.js + gstPlayer.httpGet）
  *
- * 数据库路径：/userdisk/xiro/bili/app.db
- * 表结构：
- *   - cookies: key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER
- *   - settings: key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER
- *   - user_info: key TEXT PRIMARY KEY, value TEXT, updated_at INTEGER
+ * Cookie/设置存储：复用 storage.js 的系统 storage JSAPI（已验证可用）
+ * 二维码生成/轮询：使用 gstPlayer.httpGet（native gstplayer 已加载正常，含 curl + UA/Referer）
  *
  * 对外接口（返回 Promise）：
- *   init()                        // 初始化数据库
+ *   init()                        // 预热（空实现，兼容旧调用）
  *   getCookie()                   // 获取保存的 cookie 字符串
  *   setCookie(cookieStr)          // 保存 cookie 字符串
  *   clearCookie()                 // 清除 cookie
@@ -21,25 +18,16 @@
  *   logout()                      // 登出
  */
 
-import { biliAuth } from 'biliauth'
-
-let _inited = false
+import storage from './storage.js'
+import { gstPlayer } from 'gstplayer'
 
 async function ensureInit() {
-  if (!_inited) {
-    try {
-      await biliAuth.init()
-      _inited = true
-    } catch (e) {
-      console.warn('[bili-auth] init failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
-    }
-  }
+  return true
 }
 
 async function getCookie() {
-  await ensureInit()
   try {
-    return await biliAuth.getCookie()
+    return await storage.getCookie()
   } catch (e) {
     console.warn('[bili-auth] getCookie failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
     return ''
@@ -47,9 +35,8 @@ async function getCookie() {
 }
 
 async function setCookie(cookieStr) {
-  await ensureInit()
   try {
-    return await biliAuth.setCookie(cookieStr || '')
+    return await storage.setCookie(cookieStr || '')
   } catch (e) {
     console.warn('[bili-auth] setCookie failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
     return false
@@ -57,9 +44,8 @@ async function setCookie(cookieStr) {
 }
 
 async function clearCookie() {
-  await ensureInit()
   try {
-    return await biliAuth.clearCookie()
+    return await storage.clearCookie()
   } catch (e) {
     console.warn('[bili-auth] clearCookie failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
     return false
@@ -67,9 +53,8 @@ async function clearCookie() {
 }
 
 async function getSettings() {
-  await ensureInit()
   try {
-    const jsonStr = await biliAuth.getSettings()
+    const jsonStr = await storage.getSetting('all')
     if (!jsonStr) return {}
     return JSON.parse(jsonStr)
   } catch (e) {
@@ -79,21 +64,33 @@ async function getSettings() {
 }
 
 async function setSetting(key, value) {
-  await ensureInit()
   try {
-    return await biliAuth.setSetting(key, String(value))
+    return await storage.setSetting(key, String(value))
   } catch (e) {
     console.warn('[bili-auth] setSetting failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
     return false
   }
 }
 
-async function generateQrCode() {
-  await ensureInit()
+// 通用 HTTP GET（复用 gstPlayer.httpGet，已带 UA+Referer）
+async function httpGet(url, timeout = 10) {
   try {
-    const jsonStr = await biliAuth.generateQrCode()
-    if (!jsonStr) return null
-    return JSON.parse(jsonStr)
+    if (!gstPlayer || typeof gstPlayer.httpGet !== 'function') {
+      throw new Error('gstPlayer.httpGet not available')
+    }
+    return await gstPlayer.httpGet(url, timeout)
+  } catch (e) {
+    console.warn('[bili-auth] httpGet failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
+    throw e
+  }
+}
+
+async function generateQrCode() {
+  try {
+    const url = 'https://passport.bilibili.com/x/passport-login/web/qrcode/generate?source=main-fe-header'
+    const body = await httpGet(url, 10)
+    if (!body) return null
+    return JSON.parse(body)
   } catch (e) {
     console.warn('[bili-auth] generateQrCode failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
     return null
@@ -101,11 +98,12 @@ async function generateQrCode() {
 }
 
 async function pollQrCode(qrcodeKey) {
-  await ensureInit()
   try {
-    const jsonStr = await biliAuth.pollQrCode(qrcodeKey)
-    if (!jsonStr) return { code: -1, message: 'empty response' }
-    return JSON.parse(jsonStr)
+    if (!qrcodeKey) return { code: -1, message: 'empty qrcodeKey' }
+    const url = 'https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key=' + encodeURIComponent(qrcodeKey) + '&source=main-fe-header'
+    const body = await httpGet(url, 10)
+    if (!body) return { code: -1, message: 'empty response' }
+    return JSON.parse(body)
   } catch (e) {
     console.warn('[bili-auth] pollQrCode failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
     return { code: -1, message: 'error' }
@@ -113,9 +111,9 @@ async function pollQrCode(qrcodeKey) {
 }
 
 async function isLoggedIn() {
-  await ensureInit()
   try {
-    return await biliAuth.isLoggedIn()
+    const cookie = await storage.getCookie()
+    return !!cookie
   } catch (e) {
     console.warn('[bili-auth] isLoggedIn failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
     return false
@@ -123,9 +121,8 @@ async function isLoggedIn() {
 }
 
 async function getUserInfo() {
-  await ensureInit()
   try {
-    const jsonStr = await biliAuth.getUserInfo()
+    const jsonStr = await storage.getSetting('user_info')
     if (!jsonStr) return {}
     return JSON.parse(jsonStr)
   } catch (e) {
@@ -135,9 +132,10 @@ async function getUserInfo() {
 }
 
 async function logout() {
-  await ensureInit()
   try {
-    return await biliAuth.logout()
+    await storage.clearCookie()
+    await storage.setSetting('user_info', '')
+    return true
   } catch (e) {
     console.warn('[bili-auth] logout failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
     return false
