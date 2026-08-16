@@ -365,7 +365,11 @@ void handleClient(int fd) {
     // 计算 Range 区间
     long long rangeStart = -1, rangeEnd = -1;
     if (!range.empty()) {
-        if (sscanf(range.c_str(), "%lld-%lld", &rangeStart, &rangeEnd) < 1) rangeStart = -1;
+        int matched = sscanf(range.c_str(), "%lld-%lld", &rangeStart, &rangeEnd);
+        if (matched < 1) {
+            rangeStart = -1;
+            rangeEnd = -1;
+        }
         if (rangeStart < 0) rangeStart = 0;
     }
 
