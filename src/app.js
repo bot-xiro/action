@@ -22,6 +22,15 @@ class App extends $falcon.App {
     } catch (err) {
       console.warn('[app] gstPlayer.preheat error in onLaunch: ' + (err && err.message))
     }
+    // 初始化 bili-auth 原生模块（注册 native bili-auth 模块，供后续 import 'biliauth' 使用）
+    try {
+      var r2 = biliAuth && biliAuth.init
+        ? biliAuth.init()
+        : undefined;
+      console.warn('[app] biliAuth.init in onLaunch ret=' + r2)
+    } catch (err) {
+      console.warn('[app] biliAuth.init error in onLaunch: ' + (err && err.message))
+    }
   }
 
   /**
