@@ -428,7 +428,7 @@ void handleClient(int fd) {
     std::string escUrl;
     for (char c : targetUrl) { if (c == '\'') escUrl += "'\\''"; else escUrl += c; }
     std::string cmd =
-        "curl -sS --connect-timeout 8 --max-time 3600 "
+        "curl -sS -L -k --connect-timeout 8 --max-time 3600 "
         "--http1.1 --no-alpn "
         " -e '" + std::string(kReferer) + "'"
         " -A '" + std::string(kUserAgent) + "'";
