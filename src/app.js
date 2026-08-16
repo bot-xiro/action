@@ -24,6 +24,7 @@ class App extends $falcon.App {
     }
     // 初始化 bili-auth 原生模块（注册 native bili-auth 模块，供后续 import 'biliauth' 使用）
     try {
+      console.warn('[app] biliAuth type=' + typeof biliAuth + ' keys=' + Object.keys(biliAuth || {}).join(','))
       var r2 = biliAuth && biliAuth.init
         ? biliAuth.init()
         : undefined;
