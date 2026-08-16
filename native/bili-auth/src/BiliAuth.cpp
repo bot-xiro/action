@@ -7,6 +7,10 @@
 #include <sys/stat.h>
 #include <ctime>
 
+#include "jqutil_v2/jqutil.h"
+#include "jsmodules/JSCModuleExtension.h"
+#include "jquick_config.h"
+
 #define AUTH_LOG(fmt, ...) syslog(LOG_LOCAL7 | LOG_ERR, "[bili-auth] " fmt, ##__VA_ARGS__)
 
 namespace biliauth {
@@ -375,9 +379,9 @@ void BiliAuth::logout(JQUTIL_NS::JQFunctionInfo& info) {
     info.GetReturnValue().Set(ok1 && ok2);
 }
 
-JQFunctionTemplateRef createBiliAuth(JQModuleEnv* env)
+JQUTIL_NS::JQFunctionTemplateRef createBiliAuth(JQUTIL_NS::JQModuleEnv* env)
 {
-    JQFunctionTemplateRef tpl = JQFunctionTemplate::New(env, "BiliAuth");
+    JQUTIL_NS::JQFunctionTemplateRef tpl = JQUTIL_NS::JQFunctionTemplate::New(env, "BiliAuth");
     tpl->InstanceTemplate()->setObjectCreator([]() {
         static BiliAuth* auth = []() {
             BiliAuth* instance = new BiliAuth();
@@ -402,7 +406,7 @@ JQFunctionTemplateRef createBiliAuth(JQModuleEnv* env)
     return tpl->CallConstructor();
 }
 
-void biliauth_init(JQModuleEnv* env)
+void biliauth_init(JQUTIL_NS::JQModuleEnv* env)
 {
     env->setModuleExport("biliAuth", createBiliAuth(env));
 }

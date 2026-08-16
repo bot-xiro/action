@@ -27,5 +27,5 @@ DEF_MODULE_LOAD_FUNC_EXPORT(bili_auth, module_init, exportList)
 
 extern "C" JQUICK_EXPORT void custom_init_jsapis()
 {
-    registerCModuleLoader("bili-auth", &biliauth::biliauth_module_load);
+    registerCModuleLoader("bili-auth", &biliauth::bili_auth_module_load);
 }
