@@ -9,6 +9,29 @@
 
         <!-- 内容滚动区：视口 960×266 有限，内容超出可上下翻动 -->
         <scroller scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60">
+            <!-- 登录区块 -->
+            <div class="section">
+                <text class="section-title">账号</text>
+
+                <!-- 未登录：显示登录按钮 -->
+                <div class="option" v-if="!loggedIn" @click="onLogin">
+                    <div class="option-left">
+                        <text class="option-name">登录 Bilibili</text>
+                        <text class="option-desc">扫码登录，同步收藏、历史记录</text>
+                    </div>
+                    <text class="option-badge">去登录</text>
+                </div>
+
+                <!-- 已登录：显示用户信息 -->
+                <div class="option" v-else>
+                    <div class="option-left">
+                        <text class="option-name">{{ userInfo.uname || 'Bilibili 用户' }}</text>
+                        <text class="option-desc">UID: {{ userInfo.mid || '-' }}  •  等级: {{ userInfo.level || '-' }}</text>
+                    </div>
+                    <text class="option-badge" @click.stop="onLogout">退出登录</text>
+                </div>
+            </div>
+
             <!-- 播放器设置 -->
             <div class="section">
                 <text class="section-title">播放器</text>
@@ -32,11 +55,45 @@
                 </div>
             </div>
 
+            <!-- 其他设置 -->
+            <div class="section">
+                <text class="section-title">其他</text>
+
+                <div class="option" @click="onClearCache">
+                    <div class="option-left">
+                        <text class="option-name">清理缓存</text>
+                        <text class="option-desc">清除搜索历史、播放记录等本地数据</text>
+                    </div>
+                </div>
+
+                <div class="option" @click="onAbout">
+                    <div class="option-left">
+                        <text class="option-name">关于</text>
+                        <text class="option-desc">版本信息、开源协议</text>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 登录二维码弹窗 -->
+            <div v-if="showQrModal" class="modal-overlay" @click.self="closeQrModal">
+                <div class="modal-box">
+                    <text class="modal-title">扫码登录 Bilibili</text>
+                    <div class="qr-container">
+                        <image v-if="qrCodeUrl" :src="qrCodeUrl" class="qr-image" mode="aspectFit"></image>
+                        <text v-else class="qr-loading">生成二维码中...</text>
+                    </div>
+                    <text class="qr-tip">请使用哔哩哔哩 APP 扫码登录</text>
+                    <text class="qr-status">{{ qrStatus }}</text>
+                    <text class="modal-close" @click="closeQrModal">取消</text>
+                </div>
+            </div>
+
             <!-- 说明 -->
             <div class="tips">
-                <text class="tips-text">提示：切换后进入播放页生效。</text>
+                <text class="tips-text">提示：切换播放器后进入播放页生效。</text>
                 <text class="tips-text">系统播放器 = 调起系统视频播放器应用播放（8001661999525016）：自带控制栏悬浮、无层级遮挡问题；播放期间本应用退到后台，返回后继续浏览。</text>
                 <text class="tips-text">自研播放器 = gstplayer（KMS 双平面），视频独立平面渲染；控制栏唤出时视频画面让位。</text>
+                <text class="tips-text">登录数据保存在 /userdisk/xiro/bili/app.db（SQLite），卸载应用不丢失。</text>
             </div>
         </scroller>
     </div>
@@ -124,7 +181,7 @@
 .option-desc {
     margin-top: 4px;
     font-size: 18px;
-    color: #999999;
+    color: #999999.
 }
 
 .option-badge {
@@ -135,7 +192,7 @@
     padding-left: 14px;
     padding-right: 14px;
     padding-top: 3px;
-    padding-bottom: 3px;
+    padding-bottom: 3px.
 }
 
 .tips {
@@ -150,25 +207,110 @@
     color: #aaaaaa;
     margin-top: 4px;
 }
+
+/* 二维码弹窗 */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 960px;
+    height: 266px;
+    background-color: rgba(0, 0, 0, 0.7);
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.modal-box {
+    width: 400px;
+    background-color: #ffffff;
+    border-radius: 12px;
+    padding: 24px;
+    flex-direction: column;
+    align-items: center;
+}
+
+.modal-title {
+    font-size: 24px;
+    color: #222222;
+    font-weight: bold;
+    margin-bottom: 16px;
+}
+
+.qr-container {
+    width: 200px;
+    height: 200px;
+    background-color: #fafafa;
+    border-radius: 8px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 12px.
+}
+
+.qr-image {
+    width: 180px;
+    height: 180px;
+}
+
+.qr-loading {
+    font-size: 18px;
+    color: #999999.
+}
+
+.qr-tip {
+    font-size: 16px;
+    color: #888888;
+    margin-bottom: 8px.
+}
+
+.qr-status {
+    font-size: 16px;
+    color: #fb7299;
+    margin-bottom: 16px.
+}
+
+.modal-close {
+    font-size: 18px;
+    color: #fb7299;
+    padding: 8px 24px.
+    border-radius: 20px;
+    background-color: rgba(251, 114, 153, 0.1);
+}
 </style>
 
 <script>
 import settings from '../../utils/settings.js'
+import auth from '../../utils/auth.js'
 
 export default {
     name: 'settings',
     data() {
         return {
-            mode: settings.DEFAULT_MODE
+            mode: settings.DEFAULT_MODE,
+            loggedIn: false,
+            userInfo: {},
+            showQrModal: false,
+            qrCodeUrl: '',
+            qrCodeKey: '',
+            qrStatus: '',
+            qrPollTimer: null
         }
     },
     mounted() {
         var self = this
         console.warn('[settings] mounted')
+        
+        // 加载播放器模式
         settings.getMode().then(function (m) {
             self.mode = m
             console.warn('[settings] loaded mode=' + m)
         })
+        
+        // 检查登录状态
+        this.checkLoginStatus()
+    },
+    beforeDestroy() {
+        this.stopQrPolling()
     },
     methods: {
         goBack() {
@@ -179,6 +321,24 @@ export default {
                 console.warn('[settings] finish error: ' + (e ? e.message : e))
             }
         },
+        
+        checkLoginStatus() {
+            var self = this
+            auth.isLoggedIn().then(function (loggedIn) {
+                self.loggedIn = loggedIn
+                if (loggedIn) {
+                    self.loadUserInfo()
+                }
+            })
+        },
+        
+        loadUserInfo() {
+            var self = this
+            auth.getUserInfo().then(function (info) {
+                self.userInfo = info || {}
+            })
+        },
+        
         onSelect(mode) {
             var self = this
             console.warn('[settings] select mode=' + mode + ' (current=' + this.mode + ')')
@@ -186,7 +346,6 @@ export default {
             settings.setMode(mode).then(function (saved) {
                 self.mode = saved
                 console.warn('[settings] saved mode=' + saved)
-                // 轻提示（jsapi modal.toast，框架内置）
                 try {
                     var m = $falcon.jsapi && $falcon.jsapi.modal
                     if (m && typeof m.toast === 'function') {
@@ -199,6 +358,163 @@ export default {
                     console.warn('[settings] toast error: ' + (e && e.message))
                 }
             })
+        },
+        
+        onLogin() {
+            var self = this
+            this.showQrModal = true
+            this.qrStatus = '正在生成二维码...'
+            
+            auth.generateQrCode().then(function (res) {
+                if (res && res.code === 0 && res.data) {
+                    self.qrCodeUrl = res.data.url
+                    self.qrCodeKey = res.data.qrcode_key
+                    self.qrStatus = '请使用哔哩哔哩 APP 扫码'
+                    self.startQrPolling()
+                } else {
+                    self.qrStatus = '生成失败: ' + (res && res.message ? res.message : '未知错误')
+                    console.warn('[settings] generateQrCode failed: ' + JSON.stringify(res))
+                }
+            }).catch(function (e) {
+                self.qrStatus = '生成异常: ' + (e && e.message ? e.message : String(e))
+            })
+        },
+        
+        startQrPolling() {
+            var self = this
+            if (!self.qrCodeKey) return
+            
+            var poll = function () {
+                if (!self.showQrModal || !self.qrCodeKey) return
+                
+                auth.pollQrCode(self.qrCodeKey).then(function (res) {
+                    if (!self.showQrModal) return
+                    
+                    if (res && res.code === 0) {
+                        if (res.data && res.data.url) {
+                            // 登录成功
+                            self.qrStatus = '登录成功！'
+                            // 解析 cookie 并保存
+                            try {
+                                var u = new URL(res.data.url)
+                                var cookie = ''
+                                for (var _i = 0, _a = u.searchParams.entries(); _i < _a.length; _i++) {
+                                    var _b = _a[_i], k = _b[0], v = _b[1]
+                                    if (k === 'SESSDATA' || k === 'bili_jct' || k === 'DedeUserID' || k === 'DedeUserID__ckMd5' || k === 'sid') {
+                                        cookie += k + '=' + v + '; '
+                                    }
+                                }
+                                if (cookie) {
+                                    auth.setCookie(cookie).then(function () {
+                                        console.warn('[settings] cookie saved')
+                                    })
+                                }
+                            } catch (e) {
+                                console.warn('[settings] parse cookie error: ' + e)
+                            }
+                            
+                            self.stopQrPolling()
+                            self.closeQrModal()
+                            self.checkLoginStatus()
+                            
+                            try {
+                                var m = $falcon.jsapi && $falcon.jsapi.modal
+                                if (m && typeof m.toast === 'function') {
+                                    m.toast({ message: '登录成功', duration: 2000 })
+                                }
+                            } catch (e) {}
+                        } else if (res.code === 86038) {
+                            self.qrStatus = '等待扫码...'
+                            self.qrPollTimer = setTimeout(poll, 2000)
+                        } else if (res.code === 86090) {
+                            self.qrStatus = '已扫码，等待确认...'
+                            self.qrPollTimer = setTimeout(poll, 2000)
+                        } else if (res.code === 86101) {
+                            self.qrStatus = '二维码已过期，请重试'
+                            self.stopQrPolling()
+                        } else {
+                            self.qrStatus = '状态: ' + (res.message || res.code)
+                            self.qrPollTimer = setTimeout(poll, 3000)
+                        }
+                    } else {
+                        self.qrStatus = '轮询失败: ' + (res && res.message ? res.message : '网络错误')
+                        self.qrPollTimer = setTimeout(poll, 5000)
+                    }
+                }).catch(function (e) {
+                    self.qrStatus = '轮询异常: ' + (e && e.message ? e.message : String(e))
+                    self.qrPollTimer = setTimeout(poll, 5000)
+                })
+            }
+            poll()
+        },
+        
+        stopQrPolling() {
+            if (this.qrPollTimer) {
+                clearTimeout(this.qrPollTimer)
+                this.qrPollTimer = null
+            }
+        },
+        
+        closeQrModal() {
+            this.stopQrPolling()
+            this.showQrModal = false
+            this.qrCodeUrl = ''
+            this.qrCodeKey = ''
+            this.qrStatus = ''
+        },
+        
+        onLogout() {
+            var self = this
+            auth.logout().then(function () {
+                self.loggedIn = false
+                self.userInfo = {}
+                try {
+                    var m = $falcon.jsapi && $falcon.jsapi.modal
+                    if (m && typeof m.toast === 'function') {
+                        m.toast({ message: '已退出登录', duration: 2000 })
+                    }
+                } catch (e) {}
+            })
+        },
+        
+        onClearCache() {
+            var self = this
+            try {
+                var m = $falcon.jsapi && $falcon.jsapi.modal
+                if (m && typeof m.confirm === 'function') {
+                    m.confirm({
+                        title: '清理缓存',
+                        message: '将清除搜索历史、播放记录等本地数据，确定吗？',
+                        confirmText: '确定',
+                        cancelText: '取消'
+                    }).then(function (res) {
+                        if (res && res.confirm) {
+                            auth.clearCookie()
+                            // 同时清理 storage.js 的搜索历史
+                            var storage = require('../../utils/storage.js')
+                            storage.clearHistory()
+                            if (m && typeof m.toast === 'function') {
+                                m.toast({ message: '缓存已清理', duration: 2000 })
+                            }
+                        }
+                    })
+                }
+            } catch (e) {
+                console.warn('[settings] clearCache error: ' + e)
+            }
+        },
+        
+        onAbout() {
+            try {
+                var m = $falcon.jsapi && $falcon.jsapi.modal
+                if (m && typeof m.alert === 'function') {
+                    m.alert({
+                        title: '关于',
+                        message: 'Bilibili MiniApp for X6PRO\n版本: 1.0.0\n基于 HAAS UI 框架开发\n数据存储: SQLite (/userdisk/xiro/bili/app.db)',
+                        confirmText: '确定'
+                    })
+                }
+            } catch (e) {}
         }
     }
 }

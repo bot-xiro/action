@@ -1,6 +1,6 @@
 # 构建 bilibili miniapp：交叉编译 gstplayer 原生模块 → 打包 .amr
 # 触发: push main / 手动 dispatch
-# 产物: bilibili.amr（含 libs/libjsapi_gstplayer.so）
+# 产物: bilibili.amr（含 libs/libjsapi_gstplayer.so, libs/libjsapi_biliauth.so）
 name: Build bilibili miniapp
 
 on:
@@ -20,7 +20,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install cross toolchain + GStreamer dev headers
+      - name: Install cross toolchain + GStreamer dev headers + sqlite3
         run: |
           sudo add-apt-repository -y universe
           sudo apt-get update
@@ -37,6 +37,7 @@ jobs:
             libcairo2-dev \
             libgdk-pixbuf-2.0-dev \
             libfontconfig1-dev \
+            libsqlite3-dev \
             && sudo rm -rf /var/lib/apt/lists/*
 
       - name: Build libjsapi_gstplayer.so (aarch64)
@@ -54,6 +55,20 @@ jobs:
           cp build/libjsapi_gstplayer.so libs/libjsapi_gstplayer.so
           ls -la libs/libjsapi_gstplayer.so
           file libs/libjsapi_gstplayer.so
+
+      - name: Build libjsapi_biliauth.so (aarch64)
+        run: |
+          cmake -B build-auth \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            native/bili-auth
+          cmake --build build-auth --config Release --parallel $(nproc)
+          cp build-auth/libjsapi_biliauth.so libs/libjsapi_biliauth.so
+          ls -la libs/libjsapi_biliauth.so
+          file libs/libjsapi_biliauth.so
 
       - name: Build testseek (aarch64, 设备端 seek 实验)
         run: |
@@ -87,6 +102,13 @@ jobs:
         with:
           name: libjsapi_gstplayer.so
           path: libs/libjsapi_gstplayer.so
+          retention-days: 7
+
+      - name: Upload libjsapi_biliauth.so
+        uses: actions/upload-artifact@v4
+        with:
+          name: libjsapi_biliauth.so
+          path: libs/libjsapi_biliauth.so
           retention-days: 7
 
       - name: Upload testseek

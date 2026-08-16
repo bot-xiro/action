@@ -1,0 +1,56 @@
+{
+  "appName": "Bilibili",
+  "version": "0.0.3",
+  "appid": "8001812345678901",
+  "icon": "app_icon.png",
+  "quickjs": {
+    "version": "20200705",
+    "bigNum": false
+  },
+  "cert": {
+    "app.js.bin": {
+      "size": 1583,
+      "md5": "30d5d7b906f23dd3991abb9d54fc96b1"
+    },
+    "api-f924bfc6.js.bin": {
+      "size": 12610,
+      "md5": "40fda605e3f0ca4d5ebb641e30756935"
+    },
+    "detail.js.bin": {
+      "size": 13001,
+      "md5": "2bfe7ca4b81377920b311ad62ad66a5f"
+    },
+    "index.js.bin": {
+      "size": 6421,
+      "md5": "464e23a32a17e131dd0bd74760677940"
+    },
+    "player.js.bin": {
+      "size": 13079,
+      "md5": "cdf3068843b69eb0c827548c2eac1e40"
+    },
+    "search.js.bin": {
+      "size": 11790,
+      "md5": "39f928b0d50ae29a5735461d7a7513bb"
+    },
+    "settings-16d7ab48.js.bin": {
+      "size": 685,
+      "md5": "8c56019b733e07c57518d960a6303466"
+    },
+    "settings.js.bin": {
+      "size": 4770,
+      "md5": "9db4b0a609f6e669febef4ffe7e65084"
+    },
+    "storage-96af7bf1.js.bin": {
+      "size": 98,
+      "md5": "b388998b321d58bd69b00df728284c67"
+    },
+    "libs/.gitkeep": {
+      "size": 0,
+      "md5": "d41d8cd98f00b204e9800998ecf8427e"
+    },
+    "libs/libjsapi_gstplayer.so": {
+      "size": 8276328,
+      "md5": "433e2fd73a7f31e4f9bf1c74c15f713c"
+    }
+  }
+}
