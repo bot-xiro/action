@@ -21,6 +21,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <condition_variable>
 
 // GstProxy 本地反向代理 + 磁盘分块缓存
 //
@@ -66,7 +67,10 @@ namespace proxy {
 
 // ===== 全局状态 =====
 std::atomic<bool> g_started{false};
+std::atomic<bool> g_listening{false};
 std::mutex g_startMutex;
+std::mutex g_listenCvMutex;
+std::condition_variable g_listenCv;
 std::mutex g_cacheMutex;           // 保护全部缓存结构
 int g_listenFd = -1;
 static time_t g_lastEvict = 0;     // 上次淘汰时间，避免热路径频繁扫描
@@ -545,13 +549,28 @@ void listenLoop() {
     addr.sin_port = htons(kListenPort);
     if (bind(ls, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
         PROXY_LOG("bind 127.0.0.1:%d failed: %s", kListenPort, strerror(errno));
+        g_started.store(false);
+        {
+            std::lock_guard<std::mutex> lk(g_listenCvMutex);
+            g_listenCv.notify_all();
+        }
         close(ls); return;
     }
     if (listen(ls, 8) != 0) {
         PROXY_LOG("listen failed: %s", strerror(errno));
+        g_started.store(false);
+        {
+            std::lock_guard<std::mutex> lk(g_listenCvMutex);
+            g_listenCv.notify_all();
+        }
         close(ls); return;
     }
     g_listenFd = ls;
+    g_listening.store(true);
+    {
+        std::lock_guard<std::mutex> lk(g_listenCvMutex);
+        g_listenCv.notify_all();
+    }
     PROXY_LOG("local reverse proxy (+disk cache) listening on 127.0.0.1:%d", kListenPort);
     for (;;) {
         int cfd = accept(ls, nullptr, nullptr);
@@ -565,9 +584,16 @@ void listenLoop() {
 }
 
 bool ensureStarted() {
-    if (g_started.load()) return true;
+    if (g_listening.load()) return true;
     std::lock_guard<std::mutex> lk(g_startMutex);
-    if (g_started.load()) return true;
+    if (g_listening.load()) return true;
+    if (g_started.load()) {
+        std::unique_lock<std::mutex> lk2(g_listenCvMutex);
+        g_listenCv.wait_for(lk2, std::chrono::milliseconds(300));
+        bool ok = g_listening.load();
+        if (!ok) g_started.store(false);
+        return ok;
+    }
     g_started.store(true);
     try {
         std::thread(listenLoop).detach();
@@ -578,7 +604,11 @@ bool ensureStarted() {
         PROXY_LOG("start thread failed: unknown");
         g_started.store(false); return false;
     }
-    return true;
+    std::unique_lock<std::mutex> lk2(g_listenCvMutex);
+    g_listenCv.wait_for(lk2, std::chrono::milliseconds(400));
+    bool ok = g_listening.load();
+    if (!ok) g_started.store(false);
+    return ok;
 }
 
 std::string maybeRewrite(const std::string& uri) {
