@@ -103,6 +103,7 @@
 <script>
 import api from '../../utils/api.js'
 import settings from '../../utils/settings.js'
+import { gstPlayer } from 'gstplayer'
 
 // 系统播放器 appid（设备自带视频播放应用，自带 GStreamer + 控制栏悬浮）
 const SYSTEM_PLAYER_APP_ID = '8001661999525016'
@@ -160,6 +161,51 @@ export default {
         this.cid = opt.cid || ''
         this.title = opt.title || '视频播放'
         console.warn('[player] mounted bvid=' + this.bvid + ' cid=' + this.cid)
+
+        // 播放器状态事件（原生 bus 线程 → JS 线程）
+        this.stateCb = (state) => {
+            console.warn('[player] stateChanged: ' + state)
+            if (state === 'playing') {
+                this.paused = false
+                this.ended = false
+                this.error = ''
+                // 此时重建已完成（若有），安全显示 stage
+                if (!this.ready) {
+                    this.ready = true
+                    console.warn('[player] ready=true on playing state')
+                }
+                this.startProgressPolling()
+                this.scheduleBarHide()
+                this.pushBarState()
+            } else if (state === 'paused') {
+                this.paused = true
+                this.stopProgressPolling()
+                this.cancelBarHide()
+                this.barVisible = true
+                this.pushBarState()
+            } else if (state === 'ended') {
+                this.ended = true
+                this.paused = true
+                this.stopProgressPolling()
+                this.cancelBarHide()
+                this.barVisible = true
+                this.pushBarState()
+                console.warn('[player] ended, tap play to replay')
+            } else if (state && state.indexOf('error:') === 0) {
+                this.error = '播放错误: ' + state.substring(6)
+                this.paused = true
+                this.stopProgressPolling()
+                this.cancelBarHide()
+                this.barVisible = true
+                this.pushBarState()
+                console.warn('[player] runtime error: ' + this.error)
+            }
+        }
+        try {
+            gstPlayer.stateChanged.on(this.stateCb)
+        } catch (e) {
+            console.warn('[player] stateChanged.on error: ' + (e && e.message ? e.message : String(e)))
+        }
 
         var self = this
         settings.getMode().then(function (m) {
@@ -228,34 +274,27 @@ export default {
 
             // 默认：自研 gstplayer 路径
             this.systemModeActive = false
-            import('gstplayer').then(mod => {
-                var gstPlayer = mod.gstPlayer || mod.default
-                this.mPlayer = gstPlayer
-                try {
-                    var ok = this.mPlayer.open({
-                        uri: url,
-                        audio: true,
-                        pos_x: 0,
-                        pos_y: LOGIC_TOP,
-                        pos_w: 960,
-                        pos_h: 266,
-                        loop: 0
-                    })
-                    console.warn('[player] open ret: ' + ok)
-                    this.mPlayer.start()
-                    this.loading = false
-                    console.warn('[player] start OK, waiting for playing state')
-                } catch (e) {
-                    var msg = (e && e.message) ? e.message : JSON.stringify(e)
-                    this.error = '播放失败: ' + msg
-                    this.loading = false
-                    console.warn('[player] play error: ' + msg)
-                }
-            }).catch(e => {
-                console.warn('[player] import gstplayer failed: ' + (e && e.message))
-                this.error = '加载播放器模块失败'
+            this.mPlayer = gstPlayer
+            try {
+                var ok = this.mPlayer.open({
+                    uri: url,
+                    audio: true,
+                    pos_x: 0,
+                    pos_y: LOGIC_TOP,
+                    pos_w: 960,
+                    pos_h: 266,
+                    loop: 0
+                })
+                console.warn('[player] open ret: ' + ok)
+                this.mPlayer.start()
                 this.loading = false
-            })
+                console.warn('[player] start OK, waiting for playing state')
+            } catch (e) {
+                var msg = (e && e.message) ? e.message : JSON.stringify(e)
+                this.error = '播放失败: ' + msg
+                this.loading = false
+                console.warn('[player] play error: ' + msg)
+            }
         },
         playWithSystemPlayer(url) {
             console.warn('[player] system player mode, navTo app=' + SYSTEM_PLAYER_APP_ID)
