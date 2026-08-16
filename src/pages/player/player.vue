@@ -302,6 +302,12 @@ export default {
             this.systemModeActive = true
             this.loading = false
             this.ready = true  // 跳过自研播放器 stage，显示"已调起"提示
+            // 先改写 URL 走本地代理（device 上 18600 已由 C++ GstProxy 监听）
+            var playUrl = url
+            if (url && url.indexOf("http") === 0) {
+                playUrl = "http://127.0.0.1:18600/?u=" + encodeURIComponent(url)
+                console.warn("[player] rewrite URL via local proxy 18600")
+            }
             try {
                 // 系统播放器注册页面为 index（app.js.bin: pages/index/index.js），
                 // 非 player。通过 $falcon.navTo 跳转并传播放参数。
@@ -310,9 +316,9 @@ export default {
                 // 系统播放器 index 页读取 loadOptions 中的 video_url 字段（字符串取证结论）。
                 // 同时冗余传 url 和 durl 做兜底，确保字段名命中。
                 var opts = {
-                    video_url: url,
-                    url: url,
-                    durl: url,
+                    video_url: playUrl,
+                    url: playUrl,
+                    durl: playUrl,
                     bvid: this.bvid || '',
                     cid: this.cid || '',
                     title: this.title || '',
