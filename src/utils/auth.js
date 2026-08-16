@@ -21,7 +21,7 @@
  *   logout()                      // 登出
  */
 
-import { biliAuth } from 'bili-auth'
+import { biliAuth } from 'biliauth'
 
 let _inited = false
 
