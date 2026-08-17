@@ -174,6 +174,25 @@ function parseUserInfoFromCookie(cookieStr) {
   }
 }
 
+// 从电脑端同步服务器获取 Cookie
+async function fetchCookieFromComputer(ip, browser) {
+  try {
+    var url = 'http://' + ip + ':5000/cookie' + (browser ? '?browser=' + browser : '')
+    var body = await httpGet(url, 10)
+    if (!body) return { code: -1, message: 'empty response' }
+    var res = JSON.parse(body)
+    if (res.code === 0 && res.cookie) {
+      // 保存到本地存储
+      await setCookie(res.cookie_string)
+      return { code: 0, message: 'success', cookie: res.cookie }
+    }
+    return res
+  } catch (e) {
+    console.warn('[bili-auth] fetchCookieFromComputer failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
+    return { code: -1, message: e && e.message ? e.message : JSON.stringify(e) }
+  }
+}
+
 export default {
   init: ensureInit,
   getCookie: getCookie,
@@ -186,5 +205,6 @@ export default {
   isLoggedIn: isLoggedIn,
   getUserInfo: getUserInfo,
   logout: logout,
-  parseUserInfoFromCookie: parseUserInfoFromCookie
+  parseUserInfoFromCookie: parseUserInfoFromCookie,
+  fetchCookieFromComputer: fetchCookieFromComputer
 }
