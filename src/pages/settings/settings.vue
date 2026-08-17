@@ -7,8 +7,17 @@
             <text class="topbar-right"></text>
         </div>
 
-        <!-- 内容滚动区：视口 960×266 有限，内容超出可上下翻动 -->
-        <scroller scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60" style="flex: 1; min-height: 0;">
+        <template>
+    <div class="page">
+        <!-- 顶部栏：返回 + 标题 -->
+        <div class="topbar">
+            <text class="back-btn" @click="goBack">‹ 返回</text>
+            <text class="topbar-title">设置</text>
+            <text class="topbar-right"></text>
+        </div>
+
+        <!-- 内容滚动区：使用原生 scroll-view 替代自定义 scroller 组件 -->
+        <scroll-view class="content-scroll" scroll-y="true" show-scrollbar="false" :enhanced="true" :enable-back-to-top="false" :scroll-with-animation="true">
             <!-- 登录区块 -->
             <div class="section">
                 <text class="section-title">账号</text>
@@ -89,7 +98,7 @@
                 <text class="tips-text">自研播放器 = gstplayer（KMS 双平面），视频独立平面渲染；控制栏唤出时视频画面让位。</text>
                 <text class="tips-text">登录数据保存在系统存储，卸载应用不丢失。</text>
             </div>
-        </scroller>
+        </scroll-view>
 
         <!-- 统一的模态框：根据 modalMode 显示不同内容 -->
         <div v-if="modalVisible" class="modal-overlay" @click.self="closeModal">
@@ -130,6 +139,12 @@
     flex: 1;
     background-color: #f5f6f7;
     flex-direction: column;
+    min-height: 0;
+}
+
+.content-scroll {
+    flex: 1;
+    width: 100%;
     min-height: 0;
 }
 
