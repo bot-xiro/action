@@ -8,7 +8,7 @@
         </div>
 
         <!-- 内容滚动区：视口 960×266 有限，内容超出可上下翻动 -->
-        <scroller scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60" style="flex: 1; min-height: 0;">
+        <scroller scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60" style="flex: 1;">
             <!-- 登录区块 -->
             <div class="section">
                 <text class="section-title">账号</text>
@@ -99,7 +99,7 @@
                     <div v-if="modalMode === 'qr'">
                         <text class="modal-title">扫码登录 Bilibili</text>
                         <div class="qr-container" style="width: 160px; height: 160px;">
-                            <image v-if="qrCodeUrl" :src="qrCodeUrl" class="qr-image" mode="aspectFit"></image>
+                            <image v-if="qrCodeUrl" :src="qrCodeUrl" class="qr-image" mode="aspectFit" style="width: 150px; height: 150px;"></image>
                             <text v-else class="qr-loading">生成二维码中...</text>
                         </div>
                         <text class="qr-tip">请使用哔哩哔哩 APP 扫码登录</text>
@@ -285,18 +285,11 @@ input.cookie-input {
     background-color: #ffffff;
     border-radius: 12px;
     padding: 20px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
 }
 
 .modal-content {
     width: 100%;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
 }
 
 .modal-title {
