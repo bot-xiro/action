@@ -208,7 +208,7 @@
 .option-desc {
     margin-top: 4px;
     font-size: 18px;
-    color: #999999.
+    color: #999999;
 }
 
 .option-badge {
@@ -217,9 +217,9 @@
     background-color: #fb7299;
     border-radius: 10px;
     padding-left: 14px;
-    padding-right: 14px.
-    padding-top: 3px.
-    padding-bottom: 3px.
+    padding-right: 14px;
+    padding-top: 3px;
+    padding-bottom: 3px;
 }
 
 .tips {
@@ -230,9 +230,9 @@
 }
 
 .tips-text {
-    font-size: 18px.
+    font-size: 18px;
     color: #aaaaaa;
-    margin-top: 4px.
+    margin-top: 4px;
 }
 
 /* 统一模态框样式 */
@@ -299,20 +299,20 @@ input.cookie-input {
 }
 
 .modal-title {
-    font-size: 22px.
-    color: #222222.
-    font-weight: bold.
-    margin-bottom: 12px.
+    font-size: 22px;
+    color: #222222;
+    font-weight: bold;
+    margin-bottom: 12px;
 }
 
 .qr-container {
-    width: 160px.
-    height: 160px.
-    background-color: #fafafa.
-    border-radius: 8px.
-    align-items: center.
-    justify-content: center.
-    margin-bottom: 10px.
+    width: 160px;
+    height: 160px;
+    background-color: #fafafa;
+    border-radius: 8px;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
 }
 
 .qr-image {
@@ -346,82 +346,82 @@ input.cookie-input {
 }
 
 .qr-loading {
-    font-size: 18px.
-    color: #999999.
+    font-size: 18px;
+    color: #999999;
 }
 
 .qr-tip {
-    font-size: 16px.
-    color: #888888.
-    margin-bottom: 8px.
+    font-size: 16px;
+    color: #888888;
+    margin-bottom: 8px;
 }
 
 .qr-status {
-    font-size: 16px.
-    color: #fb7299.
-    margin-bottom: 16px.
+    font-size: 16px;
+    color: #fb7299;
+    margin-bottom: 16px;
 }
 
 .modal-close {
-    font-size: 18px.
-    color: #fb7299.
-    padding: 8px 24px.
-    border-radius: 20px.
-    background-color: rgba(251, 114, 153, 0.1).
+    font-size: 18px;
+    color: #fb7299;
+    padding: 8px 24px;
+    border-radius: 20px;
+    background-color: rgba(251, 114, 153, 0.1);
 }
 
 /* Cookie 登录弹窗 */
 .cookie-tip {
-    font-size: 14px.
-    color: #888888.
-    margin-bottom: 12px.
-    width: 100%.
-    text-align: left.
+    font-size: 14px;
+    color: #888888;
+    margin-bottom: 12px;
+    width: 100%;
+    text-align: left;
 }
 
 .cookie-input {
-    width: 100%.
-    height: 80px.
-    background-color: #fafafa.
-    border-radius: 8px.
-    border-width: 1px.
-    border-color: #eeeeee.
-    padding: 10px.
-    font-size: 14px.
-    color: #333333.
-    margin-bottom: 10px.
+    width: 100%;
+    height: 80px;
+    background-color: #fafafa;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: #eeeeee;
+    padding: 10px;
+    font-size: 14px;
+    color: #333333;
+    margin-bottom: 10px;
 }
 
 .cookie-status {
-    font-size: 14px.
-    color: #fb7299.
-    margin-bottom: 12px.
-    width: 100%.
-    text-align: center.
+    font-size: 14px;
+    color: #fb7299;
+    margin-bottom: 12px;
+    width: 100%;
+    text-align: center;
 }
 
 .cookie-btns {
-    width: 100%.
-    flex-direction: row.
-    justify-content: space-between.
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
 }
 
 .cookie-btn {
-    width: 48%.
-    text-align: center.
-    padding: 10px 0.
-    font-size: 16px.
-    border-radius: 8px.
+    width: 48%;
+    text-align: center;
+    padding: 10px 0;
+    font-size: 16px;
+    border-radius: 8px;
 }
 
 .cookie-btn.cancel {
-    color: #888888.
-    background-color: #f0f0f0.
+    color: #888888;
+    background-color: #f0f0f0;
 }
 
 .cookie-btn.confirm {
-    color: #ffffff.
-    background-color: #fb7299.
+    color: #ffffff;
+    background-color: #fb7299;
 }
 </style>
 
