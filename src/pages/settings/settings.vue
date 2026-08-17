@@ -291,6 +291,7 @@
     width: 100%;
     flex: 1;
     min-height: 0;
+    overflow: hidden;
 }
 
 .modal-title {
@@ -485,6 +486,7 @@ export default {
         onLogin() {
             var self = this
             this.showQrModal = true
+            this.showCookieModal = false  // 互斥：关闭 Cookie 弹窗
             this.qrStatus = '正在生成二维码...'
             
             auth.generateQrCode().then(function (res) {
@@ -590,6 +592,7 @@ export default {
         onCookieLogin() {
             var self = this
             this.showCookieModal = true
+            this.showQrModal = false  // 互斥：关闭二维码弹窗
             this.cookieInput = ''
             this.cookieStatus = ''
         },
