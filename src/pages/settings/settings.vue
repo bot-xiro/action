@@ -257,11 +257,14 @@
     background-color: #ffffff;
     border-radius: 12px;
     padding: 20px;
+    display: flex;
+    flex-direction: column;
 }
 
 .modal-content {
     width: 100%;
     height: 100%;
+    flex: 1;
 }
 
 .modal-title {
