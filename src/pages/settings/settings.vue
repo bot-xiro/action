@@ -106,7 +106,7 @@
         </scroller>
 
         <!-- 二维码弹窗 - 放在 scroller 外层，避免阻挡滚动 -->
-        <div v-if="showQrModal" class="modal-overlay" @click.self="closeQrModal">
+        <div v-if="showQrModal" class="modal-overlay modal-overlay-qr" @click.self="closeQrModal">
             <div class="modal-box">
                 <scroller scroll-direction="vertical" :show-scrollbar="false" style="flex: 1; width: 100%;">
                     <div class="modal-content">
@@ -124,7 +124,7 @@
         </div>
 
         <!-- Cookie 登录输入框 -->
-        <div v-if="showCookieModal" class="modal-overlay" @click.self="closeCookieModal">
+        <div v-if="showCookieModal" class="modal-overlay modal-overlay-cookie" @click.self="closeCookieModal">
             <div class="modal-box">
                 <scroller scroll-direction="vertical" :show-scrollbar="false" style="flex: 1; width: 100%;">
                     <div class="modal-content">
@@ -268,13 +268,29 @@
     z-index: 100;
 }
 
+.modal-overlay-qr {
+    z-index: 100;
+}
+
+.modal-overlay-cookie {
+    z-index: 101;
+}
+
 .modal-box {
     width: 320px;
+    max-height: 220px;
     background-color: #ffffff;
     border-radius: 12px;
     padding: 20px;
     flex-direction: column;
     align-items: center;
+    overflow: hidden;
+    display: flex;
+}
+
+.modal-content {
+    width: 100%;
+    flex: 1;
 }
 
 .modal-title {
