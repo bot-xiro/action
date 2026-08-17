@@ -8,7 +8,12 @@
         </div>
 
         <!-- 内容滚动区：视口 960×266 有限，内容超出可上下翻动 -->
-        <scroller scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60" style="flex: 1; min-height: 0;">
+        .scroller {
+    scroll-direction: vertical;
+    show-scrollbar: false;
+    over-scroll: 60;
+    style: flex: 1; min-height: 0;
+}
             <!-- 登录区块 -->
             <div class="section">
                 <text class="section-title">账号</text>
@@ -249,9 +254,39 @@
     z-index: 100;
 }
 
+.qr-image {
+    width: 150px;
+    height: 150px;
+}
+
+.cookie-input {
+    width: 100%;
+    height: 80px;
+    background-color: #fafafa;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: #eeeeee;
+    padding: 10px;
+    font-size: 14px;
+    color: #333333;
+    margin-bottom: 10px;
+}
+
+input.cookie-input {
+    width: 100%;
+    height: 40px;
+    background-color: #fafafa;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: #eeeeee;
+    padding: 10px;
+    font-size: 14px;
+    color: #333333;
+}
+
 .modal-box {
     width: 320px;
-    max-height: 220px;
+    height: 220px;
     background-color: #ffffff;
     border-radius: 12px;
     padding: 20px;
@@ -262,6 +297,10 @@
 
 .modal-content {
     width: 100%;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
 }
 
 .modal-title {
