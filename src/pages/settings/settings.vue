@@ -285,11 +285,18 @@ input.cookie-input {
     background-color: #ffffff;
     border-radius: 12px;
     padding: 20px;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .modal-content {
     width: 100%;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
 }
 
 .modal-title {
@@ -310,8 +317,33 @@ input.cookie-input {
 }
 
 .qr-image {
-    width: 150px.
-    height: 150px.
+    width: 150px;
+    height: 150px;
+}
+
+.cookie-input {
+    width: 100%;
+    height: 80px;
+    background-color: #fafafa;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: #eeeeee;
+    padding: 10px;
+    font-size: 14px;
+    color: #333333;
+    margin-bottom: 10px;
+}
+
+input.cookie-input {
+    width: 100%;
+    height: 40px;
+    background-color: #fafafa;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: #eeeeee;
+    padding: 10px;
+    font-size: 14px;
+    color: #333333;
 }
 
 .qr-loading {
