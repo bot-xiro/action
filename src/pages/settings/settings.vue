@@ -283,7 +283,6 @@
     border-radius: 12px;
     padding: 20px;
     flex-direction: column;
-    align-items: center;
     overflow: hidden;
     display: flex;
 }
@@ -291,6 +290,7 @@
 .modal-content {
     width: 100%;
     flex: 1;
+    min-height: 0;
 }
 
 .modal-title {
