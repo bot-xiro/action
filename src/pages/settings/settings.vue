@@ -13,13 +13,21 @@
             <div class="section">
                 <text class="section-title">账号</text>
 
-                <!-- 未登录：显示登录按钮 -->
+                <!-- 未登录：显示登录选项 -->
                 <div class="option" v-if="!loggedIn" @click="onLogin">
                     <div class="option-left">
-                        <text class="option-name">登录 Bilibili</text>
-                        <text class="option-desc">扫码登录，同步收藏、历史记录</text>
+                        <text class="option-name">扫码登录</text>
+                        <text class="option-desc">使用哔哩哔哩 APP 扫码登录</text>
                     </div>
                     <text class="option-badge">去登录</text>
+                </div>
+
+                <div class="option" v-if="!loggedIn" @click="onCookieLogin">
+                    <div class="option-left">
+                        <text class="option-name">Cookie 登录</text>
+                        <text class="option-desc">从浏览器复制 Cookie 粘贴登录</text>
+                    </div>
+                    <text class="option-badge">粘贴 Cookie</text>
                 </div>
 
                 <!-- 已登录：显示用户信息 -->
@@ -85,6 +93,20 @@
                     <text class="qr-tip">请使用哔哩哔哩 APP 扫码登录</text>
                     <text class="qr-status">{{ qrStatus }}</text>
                     <text class="modal-close" @click="closeQrModal">取消</text>
+                </div>
+            </div>
+
+            <!-- Cookie 登录输入框 -->
+            <div v-if="showCookieModal" class="modal-overlay" @click.self="closeCookieModal">
+                <div class="modal-box">
+                    <text class="modal-title">Cookie 登录</text>
+                    <text class="cookie-tip">请在电脑浏览器登录 B站，按 F12 打开开发者工具，在 Network 里找到任意请求，复制 Request Headers 里的 Cookie 值粘贴下方：</text>
+                    <textarea class="cookie-input" v-model="cookieInput" placeholder="粘贴 Cookie 字符串 (SESSDATA=xxx; bili_jct=xxx; ...)" @input="onCookieInput"></textarea>
+                    <text class="cookie-status">{{ cookieStatus }}</text>
+                    <div class="cookie-btns">
+                        <text class="cookie-btn cancel" @click="closeCookieModal">取消</text>
+                        <text class="cookie-btn confirm" @click="confirmCookieLogin">确定登录</text>
+                    </div>
                 </div>
             </div>
 
@@ -276,6 +298,60 @@
     border-radius: 20px;
     background-color: rgba(251, 114, 153, 0.1);
 }
+
+/* Cookie 登录弹窗 */
+.cookie-tip {
+    font-size: 14px;
+    color: #888888;
+    margin-bottom: 12px;
+    width: 100%;
+    text-align: left;
+}
+
+.cookie-input {
+    width: 100%;
+    height: 80px;
+    background-color: #fafafa;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: #eeeeee;
+    padding: 10px;
+    font-size: 14px;
+    color: #333333;
+    margin-bottom: 10px;
+}
+
+.cookie-status {
+    font-size: 14px;
+    color: #fb7299;
+    margin-bottom: 12px;
+    width: 100%;
+    text-align: center;
+}
+
+.cookie-btns {
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-between;
+}
+
+.cookie-btn {
+    width: 48%;
+    text-align: center;
+    padding: 10px 0;
+    font-size: 16px;
+    border-radius: 8px;
+}
+
+.cookie-btn.cancel {
+    color: #888888;
+    background-color: #f0f0f0;
+}
+
+.cookie-btn.confirm {
+    color: #ffffff;
+    background-color: #fb7299;
+}
 </style>
 
 <script>
@@ -293,7 +369,11 @@ export default {
             qrCodeUrl: '',
             qrCodeKey: '',
             qrStatus: '',
-            qrPollTimer: null
+            qrPollTimer: null,
+            // Cookie 登录
+            showCookieModal: false,
+            cookieInput: '',
+            cookieStatus: ''
         }
     },
     mounted() {
@@ -463,6 +543,45 @@ export default {
             this.qrCodeUrl = ''
             this.qrCodeKey = ''
             this.qrStatus = ''
+        },
+        
+        onCookieLogin() {
+            var self = this
+            this.showCookieModal = true
+            this.cookieInput = ''
+            this.cookieStatus = ''
+        },
+        
+        closeCookieModal() {
+            this.showCookieModal = false
+            this.cookieInput = ''
+            this.cookieStatus = ''
+        },
+        
+        onCookieInput() {
+            this.cookieStatus = ''
+        },
+        
+        confirmCookieLogin() {
+            var self = this
+            var cookieStr = this.cookieInput.trim()
+            if (!cookieStr) {
+                this.cookieStatus = '请粘贴 Cookie'
+                return
+            }
+            // 简单验证：必须包含 SESSDATA 或 bili_jct
+            if (cookieStr.indexOf('SESSDATA') === -1 && cookieStr.indexOf('bili_jct') === -1) {
+                this.cookieStatus = 'Cookie 无效：缺少 SESSDATA 或 bili_jct'
+                return
+            }
+            this.cookieStatus = '验证中...'
+            auth.setCookie(cookieStr).then(function () {
+                self.cookieStatus = '保存成功，验证中...'
+                self.closeCookieModal()
+                self.checkLoginStatus()
+            }).catch(function (e) {
+                self.cookieStatus = '保存失败: ' + (e && e.message ? e.message : String(e))
+            })
         },
         
         onLogout() {

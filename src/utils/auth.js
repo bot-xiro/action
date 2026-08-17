@@ -36,7 +36,15 @@ async function getCookie() {
 
 async function setCookie(cookieStr) {
   try {
-    return await storage.setCookie(cookieStr || '')
+    var ok = await storage.setCookie(cookieStr || '')
+    if (ok) {
+      // 解析并保存用户信息
+      var info = parseUserInfoFromCookie(cookieStr)
+      if (info && info.mid) {
+        await storage.setSetting('user_info', JSON.stringify(info))
+      }
+    }
+    return ok
   } catch (e) {
     console.warn('[bili-auth] setCookie failed: ' + (e && e.message ? e.message : JSON.stringify(e)))
     return false
@@ -142,6 +150,30 @@ async function logout() {
   }
 }
 
+// 从 cookie 字符串解析用户信息（DedeUserID 等）
+function parseUserInfoFromCookie(cookieStr) {
+  if (!cookieStr) return null
+  try {
+    var info = {}
+    var parts = cookieStr.split(';')
+    for (var i = 0; i < parts.length; i++) {
+      var kv = parts[i].trim().split('=')
+      if (kv.length === 2) {
+        var k = kv[0].trim()
+        var v = kv[1].trim()
+        if (k === 'DedeUserID') info.mid = v
+        else if (k === 'DedeUserID__ckMd5') info.mid_ckmd5 = v
+        else if (k === 'SESSDATA') info.sessdata = v
+        else if (k === 'bili_jct') info.bili_jct = v
+        else if (k === 'sid') info.sid = v
+      }
+    }
+    return info
+  } catch (e) {
+    return null
+  }
+}
+
 export default {
   init: ensureInit,
   getCookie: getCookie,
@@ -153,5 +185,6 @@ export default {
   pollQrCode: pollQrCode,
   isLoggedIn: isLoggedIn,
   getUserInfo: getUserInfo,
-  logout: logout
+  logout: logout,
+  parseUserInfoFromCookie: parseUserInfoFromCookie
 }
