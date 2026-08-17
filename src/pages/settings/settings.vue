@@ -94,36 +94,34 @@
         <!-- 统一的模态框：根据 modalMode 显示不同内容 -->
         <div v-if="modalVisible" class="modal-overlay" @click.self="closeModal">
             <div class="modal-box">
-                <scroller scroll-direction="vertical" :show-scrollbar="false" style="height: 100%; width: 100%;">
-                    <div class="modal-content">
-                        <!-- 二维码登录模式 -->
-                        <div v-if="modalMode === 'qr'">
-                            <text class="modal-title">扫码登录 Bilibili</text>
-                            <div class="qr-container">
-                                <image v-if="qrCodeUrl" :src="qrCodeUrl" class="qr-image" mode="aspectFit"></image>
-                                <text v-else class="qr-loading">生成二维码中...</text>
-                            </div>
-                            <text class="qr-tip">请使用哔哩哔哩 APP 扫码登录</text>
-                            <text class="qr-status">{{ qrStatus }}</text>
-                            <text class="modal-close" @click="closeModal">取消</text>
+                <div class="modal-content">
+                    <!-- 二维码登录模式 -->
+                    <div v-if="modalMode === 'qr'">
+                        <text class="modal-title">扫码登录 Bilibili</text>
+                        <div class="qr-container">
+                            <image v-if="qrCodeUrl" :src="qrCodeUrl" class="qr-image" mode="aspectFit"></image>
+                            <text v-else class="qr-loading">生成二维码中...</text>
                         </div>
+                        <text class="qr-tip">请使用哔哩哔哩 APP 扫码登录</text>
+                        <text class="qr-status">{{ qrStatus }}</text>
+                        <text class="modal-close" @click="closeModal">取消</text>
+                    </div>
 
-                        <!-- Cookie 登录模式 -->
-                        <div v-else-if="modalMode === 'cookie'">
-                            <text class="modal-title">Cookie 登录</text>
-                            <text class="cookie-tip">方式1: 在电脑浏览器登录 B站，按 F12 打开开发者工具，在 Network 里找到任意请求，复制 Request Headers 里的 Cookie 值粘贴下方</text>
-                            <textarea class="cookie-input" v-model="cookieInput" placeholder="粘贴 Cookie 字符串 (SESSDATA=xxx; bili_jct=xxx; ...)" @input="onCookieInput" autofocus="true" softInputEnable="true"></textarea>
-                            <text class="cookie-tip">方式2: 电脑运行同步服务，输入电脑 IP 点击下方按钮自动获取</text>
-                            <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" autofocus="true" softInputEnable="true"></input>
-                            <text class="cookie-status">{{ cookieStatus }}</text>
-                            <div class="cookie-btns">
-                                <text class="cookie-btn cancel" @click="closeModal">取消</text>
-                                <text class="cookie-btn confirm" @click="confirmCookieLogin">粘贴登录</text>
-                                <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
-                            </div>
+                    <!-- Cookie 登录模式 -->
+                    <div v-else-if="modalMode === 'cookie'">
+                        <text class="modal-title">Cookie 登录</text>
+                        <text class="cookie-tip">方式1: 在电脑浏览器登录 B站，按 F12 打开开发者工具，在 Network 里找到任意请求，复制 Request Headers 里的 Cookie 值粘贴下方</text>
+                        <textarea class="cookie-input" v-model="cookieInput" placeholder="粘贴 Cookie 字符串 (SESSDATA=xxx; bili_jct=xxx; ...)" @input="onCookieInput" autofocus="true" softInputEnable="true"></textarea>
+                        <text class="cookie-tip">方式2: 电脑运行同步服务，输入电脑 IP 点击下方按钮自动获取</text>
+                        <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" autofocus="true" softInputEnable="true"></input>
+                        <text class="cookie-status">{{ cookieStatus }}</text>
+                        <div class="cookie-btns">
+                            <text class="cookie-btn cancel" @click="closeModal">取消</text>
+                            <text class="cookie-btn confirm" @click="confirmCookieLogin">粘贴登录</text>
+                            <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
                         </div>
                     </div>
-                </scroller>
+                </div>
             </div>
         </div>
     </div>
@@ -253,18 +251,17 @@
 
 .modal-box {
     width: 320px;
-    height: 220px;
+    max-height: 220px;
     background-color: #ffffff;
     border-radius: 12px;
     padding: 20px;
     display: flex;
     flex-direction: column;
+    overflow: auto;
 }
 
 .modal-content {
     width: 100%;
-    height: 100%;
-    flex: 1;
 }
 
 .modal-title {
