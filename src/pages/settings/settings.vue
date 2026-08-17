@@ -7,15 +7,6 @@
             <text class="topbar-right"></text>
         </div>
 
-        <template>
-    <div class="page">
-        <!-- 顶部栏：返回 + 标题 -->
-        <div class="topbar">
-            <text class="back-btn" @click="goBack">‹ 返回</text>
-            <text class="topbar-title">设置</text>
-            <text class="topbar-right"></text>
-        </div>
-
         <!-- 内容滚动区：使用原生 scroll-view 替代自定义 scroller 组件 -->
         <scroll-view class="content-scroll" scroll-y="true" show-scrollbar="false" :enhanced="true" :enable-back-to-top="false" :scroll-with-animation="true">
             <!-- 登录区块 -->
