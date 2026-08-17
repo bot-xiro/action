@@ -8,7 +8,7 @@
         </div>
 
         <!-- 内容滚动区：视口 960×266 有限，内容超出可上下翻动 -->
-        <scroller scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60">
+        <scroller scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60" style="flex: 1;">
             <!-- 登录区块 -->
             <div class="section">
                 <text class="section-title">账号</text>
@@ -96,23 +96,6 @@
                 </div>
             </div>
 
-            <!-- Cookie 登录输入框 -->
-            <div v-if="showCookieModal" class="modal-overlay" @click.self="closeCookieModal">
-                <div class="modal-box">
-                    <text class="modal-title">Cookie 登录</text>
-                    <text class="cookie-tip">方式1: 在电脑浏览器登录 B站，按 F12 打开开发者工具，在 Network 里找到任意请求，复制 Request Headers 里的 Cookie 值粘贴下方</text>
-                    <textarea class="cookie-input" v-model="cookieInput" placeholder="粘贴 Cookie 字符串 (SESSDATA=xxx; bili_jct=xxx; ...)" @input="onCookieInput"></textarea>
-                    <text class="cookie-tip">方式2: 电脑运行同步服务，输入电脑 IP 点击下方按钮自动获取</text>
-                    <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput"></input>
-                    <text class="cookie-status">{{ cookieStatus }}</text>
-                    <div class="cookie-btns">
-                        <text class="cookie-btn cancel" @click="closeCookieModal">取消</text>
-                        <text class="cookie-btn confirm" @click="confirmCookieLogin">粘贴登录</text>
-                        <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
-                    </div>
-                </div>
-            </div>
-
             <!-- 说明 -->
             <div class="tips">
                 <text class="tips-text">提示：切换播放器后进入播放页生效。</text>
@@ -121,6 +104,37 @@
                 <text class="tips-text">登录数据保存在 /userdisk/xiro/bili/app.db（SQLite），卸载应用不丢失。</text>
             </div>
         </scroller>
+
+        <!-- 二维码弹窗 - 放在 scroller 外层，避免阻挡滚动 -->
+        <div v-if="showQrModal" class="modal-overlay" @click.self="closeQrModal">
+            <div class="modal-box">
+                <text class="modal-title">扫码登录 Bilibili</text>
+                <div class="qr-container">
+                    <image v-if="qrCodeUrl" :src="qrCodeUrl" class="qr-image" mode="aspectFit"></image>
+                    <text v-else class="qr-loading">生成二维码中...</text>
+                </div>
+                <text class="qr-tip">请使用哔哩哔哩 APP 扫码登录</text>
+                <text class="qr-status">{{ qrStatus }}</text>
+                <text class="modal-close" @click="closeQrModal">取消</text>
+            </div>
+        </div>
+
+        <!-- Cookie 登录输入框 -->
+        <div v-if="showCookieModal" class="modal-overlay" @click.self="closeCookieModal">
+            <div class="modal-box">
+                <text class="modal-title">Cookie 登录</text>
+                <text class="cookie-tip">方式1: 在电脑浏览器登录 B站，按 F12 打开开发者工具，在 Network 里找到任意请求，复制 Request Headers 里的 Cookie 值粘贴下方</text>
+                <textarea class="cookie-input" v-model="cookieInput" placeholder="粘贴 Cookie 字符串 (SESSDATA=xxx; bili_jct=xxx; ...)" @input="onCookieInput"></textarea>
+                <text class="cookie-tip">方式2: 电脑运行同步服务，输入电脑 IP 点击下方按钮自动获取</text>
+                <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput"></input>
+                <text class="cookie-status">{{ cookieStatus }}</text>
+                <div class="cookie-btns">
+                    <text class="cookie-btn cancel" @click="closeCookieModal">取消</text>
+                    <text class="cookie-btn confirm" @click="confirmCookieLogin">粘贴登录</text>
+                    <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
+                </div>
+            </div>
+        </div>
     </div>
 </template>
 
