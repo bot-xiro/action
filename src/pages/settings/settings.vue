@@ -14,7 +14,7 @@
                 <text class="section-title">账号</text>
 
                 <!-- 未登录：显示登录选项 -->
-                <div class="option" v-if="!loggedIn" @click="openModal('qr')">
+                <div class="option" v-if="!loggedIn" @click="openQRModal">
                     <div class="option-left">
                         <text class="option-name">扫码登录</text>
                         <text class="option-desc">使用哔哩哔哩 APP 扫码登录</text>
@@ -22,7 +22,7 @@
                     <text class="option-badge">去登录</text>
                 </div>
 
-                <div class="option" v-if="!loggedIn" @click="openModal('cookie')">
+                <div class="option" v-if="!loggedIn" @click="openCookieModal">
                     <div class="option-left">
                         <text class="option-name">Cookie 登录</text>
                         <text class="option-desc">从浏览器复制 Cookie 或从电脑同步</text>
