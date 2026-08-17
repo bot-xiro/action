@@ -130,6 +130,7 @@
     flex: 1;
     background-color: #f5f6f7;
     flex-direction: column;
+    min-height: 0;
 }
 
 .topbar {
@@ -290,6 +291,9 @@ input.cookie-input {
 
 .modal-content {
     width: 100%;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
 }
