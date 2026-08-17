@@ -8,12 +8,7 @@
         </div>
 
         <!-- 内容滚动区：视口 960×266 有限，内容超出可上下翻动 -->
-        .scroller {
-    scroll-direction: vertical;
-    show-scrollbar: false;
-    over-scroll: 60;
-    style: flex: 1; min-height: 0;
-}
+        <scroller scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60" style="flex: 1; min-height: 0;">
             <!-- 登录区块 -->
             <div class="section">
                 <text class="section-title">账号</text>
@@ -98,7 +93,7 @@
 
         <!-- 统一的模态框：根据 modalMode 显示不同内容 -->
         <div v-if="modalVisible" class="modal-overlay" @click.self="closeModal">
-            <div class="modal-box">
+            <div class="modal-box" @click.stop>
                 <div class="modal-content">
                     <!-- 二维码登录模式 -->
                     <div v-if="modalMode === 'qr'">
@@ -286,7 +281,7 @@ input.cookie-input {
 
 .modal-box {
     width: 320px;
-    height: 220px;
+    max-height: 220px;
     background-color: #ffffff;
     border-radius: 12px;
     padding: 20px;
@@ -300,8 +295,6 @@ input.cookie-input {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    display: flex;
-    flex-direction: column;
 }
 
 .modal-title {
