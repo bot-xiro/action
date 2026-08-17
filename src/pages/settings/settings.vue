@@ -8,7 +8,7 @@
         </div>
 
         <!-- 内容滚动区：使用原生 scroll-view 替代自定义 scroller 组件 -->
-        <scroll-view class="content-scroll" scroll-y="true" show-scrollbar="false" :enhanced="true" :enable-back-to-top="false" :scroll-with-animation="true">
+        <scroll-view class="content-scroll" :scroll-y="true" :show-scrollbar="false" :enhanced="true" :enable-back-to-top="false" :scroll-with-animation="true">
             <!-- 登录区块 -->
             <div class="section">
                 <text class="section-title">账号</text>
@@ -131,12 +131,15 @@
     background-color: #f5f6f7;
     flex-direction: column;
     min-height: 0;
+    height: 100%;
 }
 
 .content-scroll {
     flex: 1;
     width: 100%;
     min-height: 0;
+    height: 100%;
+    overflow: hidden;
 }
 
 .topbar {
