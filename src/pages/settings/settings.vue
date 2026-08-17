@@ -94,7 +94,7 @@
         <!-- 统一的模态框：根据 modalMode 显示不同内容 -->
         <div v-if="modalVisible" class="modal-overlay" @click.self="closeModal">
             <div class="modal-box">
-                <scroller scroll-direction="vertical" :show-scrollbar="false" style="flex: 1; width: 100%;">
+                <scroller scroll-direction="vertical" :show-scrollbar="false" style="height: 100%; width: 100%;">
                     <div class="modal-content">
                         <!-- 二维码登录模式 -->
                         <div v-if="modalMode === 'qr'">
@@ -253,19 +253,15 @@
 
 .modal-box {
     width: 320px;
-    max-height: 220px;
+    height: 220px;
     background-color: #ffffff;
     border-radius: 12px;
-    padding: 20px.
-    flex-direction: column.
-    overflow: hidden.
+    padding: 20px;
 }
 
 .modal-content {
-    width: 100%.
-    flex: 1.
-    min-height: 0.
-    overflow: hidden.
+    width: 100%;
+    height: 100%;
 }
 
 .modal-title {
