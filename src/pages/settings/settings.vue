@@ -14,7 +14,7 @@
                 <text class="section-title">账号</text>
 
                 <!-- 未登录：显示登录选项 -->
-                <div class="option" v-if="!loggedIn" @click="onLogin">
+                <div class="option" v-if="!loggedIn" @click="openModal('qr')">
                     <div class="option-left">
                         <text class="option-name">扫码登录</text>
                         <text class="option-desc">使用哔哩哔哩 APP 扫码登录</text>
@@ -22,12 +22,12 @@
                     <text class="option-badge">去登录</text>
                 </div>
 
-                <div class="option" v-if="!loggedIn" @click="onCookieLogin">
+                <div class="option" v-if="!loggedIn" @click="openModal('cookie')">
                     <div class="option-left">
                         <text class="option-name">Cookie 登录</text>
-                        <text class="option-desc">从浏览器复制 Cookie 粘贴登录</text>
+                        <text class="option-desc">从浏览器复制 Cookie 或从电脑同步</text>
                     </div>
-                    <text class="option-badge">粘贴 Cookie</text>
+                    <text class="option-badge">去登录</text>
                 </div>
 
                 <!-- 已登录：显示用户信息 -->
@@ -82,62 +82,45 @@
                 </div>
             </div>
 
-            <!-- 登录二维码弹窗 -->
-            <div v-if="showQrModal" class="modal-overlay" @click.self="closeQrModal">
-                <div class="modal-box">
-                    <text class="modal-title">扫码登录 Bilibili</text>
-                    <div class="qr-container">
-                        <image v-if="qrCodeUrl" :src="qrCodeUrl" class="qr-image" mode="aspectFit"></image>
-                        <text v-else class="qr-loading">生成二维码中...</text>
-                    </div>
-                    <text class="qr-tip">请使用哔哩哔哩 APP 扫码登录</text>
-                    <text class="qr-status">{{ qrStatus }}</text>
-                    <text class="modal-close" @click="closeQrModal">取消</text>
-                </div>
-            </div>
-
             <!-- 说明 -->
             <div class="tips">
                 <text class="tips-text">提示：切换播放器后进入播放页生效。</text>
                 <text class="tips-text">系统播放器 = 调起系统视频播放器应用播放（8001661999525016）：自带控制栏悬浮、无层级遮挡问题；播放期间本应用退到后台，返回后继续浏览。</text>
                 <text class="tips-text">自研播放器 = gstplayer（KMS 双平面），视频独立平面渲染；控制栏唤出时视频画面让位。</text>
-                <text class="tips-text">登录数据保存在 /userdisk/xiro/bili/app.db（SQLite），卸载应用不丢失。</text>
+                <text class="tips-text">登录数据保存在系统存储，卸载应用不丢失。</text>
             </div>
         </scroller>
 
-        <!-- 二维码弹窗 - 放在 scroller 外层，避免阻挡滚动 -->
-        <div v-if="showQrModal" class="modal-overlay modal-overlay-qr" @click.self="closeQrModal">
+        <!-- 统一的模态框：根据 modalMode 显示不同内容 -->
+        <div v-if="modalVisible" class="modal-overlay" @click.self="closeModal">
             <div class="modal-box">
                 <scroller scroll-direction="vertical" :show-scrollbar="false" style="flex: 1; width: 100%;">
                     <div class="modal-content">
-                        <text class="modal-title">扫码登录 Bilibili</text>
-                        <div class="qr-container">
-                            <image v-if="qrCodeUrl" :src="qrCodeUrl" class="qr-image" mode="aspectFit"></image>
-                            <text v-else class="qr-loading">生成二维码中...</text>
+                        <!-- 二维码登录模式 -->
+                        <div v-if="modalMode === 'qr'">
+                            <text class="modal-title">扫码登录 Bilibili</text>
+                            <div class="qr-container">
+                                <image v-if="qrCodeUrl" :src="qrCodeUrl" class="qr-image" mode="aspectFit"></image>
+                                <text v-else class="qr-loading">生成二维码中...</text>
+                            </div>
+                            <text class="qr-tip">请使用哔哩哔哩 APP 扫码登录</text>
+                            <text class="qr-status">{{ qrStatus }}</text>
+                            <text class="modal-close" @click="closeModal">取消</text>
                         </div>
-                        <text class="qr-tip">请使用哔哩哔哩 APP 扫码登录</text>
-                        <text class="qr-status">{{ qrStatus }}</text>
-                        <text class="modal-close" @click="closeQrModal">取消</text>
-                    </div>
-                </scroller>
-            </div>
-        </div>
 
-        <!-- Cookie 登录输入框 -->
-        <div v-if="showCookieModal" class="modal-overlay modal-overlay-cookie" @click.self="closeCookieModal">
-            <div class="modal-box">
-                <scroller scroll-direction="vertical" :show-scrollbar="false" style="flex: 1; width: 100%;">
-                    <div class="modal-content">
-                        <text class="modal-title">Cookie 登录</text>
-                        <text class="cookie-tip">方式1: 在电脑浏览器登录 B站，按 F12 打开开发者工具，在 Network 里找到任意请求，复制 Request Headers 里的 Cookie 值粘贴下方</text>
-                        <textarea class="cookie-input" v-model="cookieInput" placeholder="粘贴 Cookie 字符串 (SESSDATA=xxx; bili_jct=xxx; ...)" @input="onCookieInput" autofocus="true" softInputEnable="true"></textarea>
-                        <text class="cookie-tip">方式2: 电脑运行同步服务，输入电脑 IP 点击下方按钮自动获取</text>
-                        <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" autofocus="true" softInputEnable="true"></input>
-                        <text class="cookie-status">{{ cookieStatus }}</text>
-                        <div class="cookie-btns">
-                            <text class="cookie-btn cancel" @click="closeCookieModal">取消</text>
-                            <text class="cookie-btn confirm" @click="confirmCookieLogin">粘贴登录</text>
-                            <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
+                        <!-- Cookie 登录模式 -->
+                        <div v-else-if="modalMode === 'cookie'">
+                            <text class="modal-title">Cookie 登录</text>
+                            <text class="cookie-tip">方式1: 在电脑浏览器登录 B站，按 F12 打开开发者工具，在 Network 里找到任意请求，复制 Request Headers 里的 Cookie 值粘贴下方</text>
+                            <textarea class="cookie-input" v-model="cookieInput" placeholder="粘贴 Cookie 字符串 (SESSDATA=xxx; bili_jct=xxx; ...)" @input="onCookieInput" autofocus="true" softInputEnable="true"></textarea>
+                            <text class="cookie-tip">方式2: 电脑运行同步服务，输入电脑 IP 点击下方按钮自动获取</text>
+                            <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" autofocus="true" softInputEnable="true"></input>
+                            <text class="cookie-status">{{ cookieStatus }}</text>
+                            <div class="cookie-btns">
+                                <text class="cookie-btn cancel" @click="closeModal">取消</text>
+                                <text class="cookie-btn confirm" @click="confirmCookieLogin">粘贴登录</text>
+                                <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
+                            </div>
                         </div>
                     </div>
                 </scroller>
@@ -237,8 +220,8 @@
     background-color: #fb7299;
     border-radius: 10px;
     padding-left: 14px;
-    padding-right: 14px;
-    padding-top: 3px;
+    padding-right: 14px.
+    padding-top: 3px.
     padding-bottom: 3px.
 }
 
@@ -250,12 +233,12 @@
 }
 
 .tips-text {
-    font-size: 18px;
+    font-size: 18px.
     color: #aaaaaa;
-    margin-top: 4px;
+    margin-top: 4px.
 }
 
-/* 二维码弹窗 */
+/* 统一模态框样式 */
 .modal-overlay {
     position: fixed;
     top: 0;
@@ -268,131 +251,122 @@
     z-index: 100;
 }
 
-.modal-overlay-qr {
-    z-index: 100;
-}
-
-.modal-overlay-cookie {
-    z-index: 101;
-}
-
 .modal-box {
     width: 320px;
     max-height: 220px;
     background-color: #ffffff;
     border-radius: 12px;
-    padding: 20px;
-    flex-direction: column;
-    overflow: hidden;
-    display: flex;
+    padding: 20px.
+    flex-direction: column.
+    overflow: hidden.
 }
 
 .modal-content {
-    width: 100%;
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
+    width: 100%.
+    flex: 1.
+    min-height: 0.
+    overflow: hidden.
 }
 
 .modal-title {
-    font-size: 22px;
-    color: #222222;
-    font-weight: bold;
-    margin-bottom: 12px;
+    font-size: 22px.
+    color: #222222.
+    font-weight: bold.
+    margin-bottom: 12px.
 }
 
 .qr-container {
-    width: 160px;
-    height: 160px;
-    background-color: #fafafa;
-    border-radius: 8px;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 10px;
+    width: 160px.
+    height: 160px.
+    background-color: #fafafa.
+    border-radius: 8px.
+    align-items: center.
+    justify-content: center.
+    margin-bottom: 10px.
 }
 
 .qr-image {
-    width: 150px;
-    height: 150px;
+    width: 150px.
+    height: 150px.
 }
 
 .qr-loading {
-    font-size: 18px;
+    font-size: 18px.
     color: #999999.
 }
 
 .qr-tip {
-    font-size: 16px;
-    color: #888888;
+    font-size: 16px.
+    color: #888888.
     margin-bottom: 8px.
 }
 
 .qr-status {
-    font-size: 16px;
-    color: #fb7299;
+    font-size: 16px.
+    color: #fb7299.
     margin-bottom: 16px.
 }
 
 .modal-close {
-    font-size: 18px;
-    color: #fb7299;
+    font-size: 18px.
+    color: #fb7299.
     padding: 8px 24px.
-    border-radius: 20px;
-    background-color: rgba(251, 114, 153, 0.1);
+    border-radius: 20px.
+    background-color: rgba(251, 114, 153, 0.1).
 }
 
 /* Cookie 登录弹窗 */
 .cookie-tip {
-    font-size: 14px;
-    color: #888888;
-    margin-bottom: 12px;
-    width: 100%;
-    text-align: left;
+    font-size: 14px.
+    color: #888888.
+    margin-bottom: 12px.
+    width: 100%.
+    text-align: left.
 }
 
 .cookie-input {
-    width: 100%;
-    height: 80px;
-    background-color: #fafafa;
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: #eeeeee;
-    padding: 10px;
-    font-size: 14px;
-    color: #333333;
-    margin-bottom: 10px;
+    width: 100%.
+    height: 80px.
+    background-color: #fafafa.
+    border-radius: 8px.
+    border-width: 1px.
+    border-color: #eeeeee.
+    padding: 10px.
+    font-size: 14px.
+    color: #333333.
+    margin-bottom: 10px.
 }
 
 .cookie-status {
-    font-size: 14px;
-    color: #fb7299;
-    margin-bottom: 12px;
-    width: 100%;
-    text-align: center;
+    font-size: 14px.
+    color: #fb7299.
+    margin-bottom: 12px.
+    width: 100%.
+    text-align: center.
 }
 
 .cookie-btns {
-    width: 100%;
-    flex-direction: row;
-    justify-content: space-between;
+    width: 100%.
+    flex-direction: row.
+    justify-content: space-between.
 }
 
 .cookie-btn {
-    width: 48%;
-    text-align: center;
-    padding: 10px 0;
-    font-size: 16px;
-    border-radius: 8px;
+    width: 48%.
+    text-align: center.
+    padding: 10px 0.
+    font-size: 16px.
+    border-radius: 8px.
 }
 
 .cookie-btn.cancel {
-    color: #888888;
-    background-color: #f0f0f0;
+    color: #888888.
+    background-color: #f0f0f0.
 }
 
 .cookie-btn.confirm {
-    color: #ffffff;
-    background-color: #fb7299;
+    color: #ffffff.
+    background-color: #fb7299.
 }
 </style>
 
@@ -407,13 +381,15 @@ export default {
             mode: settings.DEFAULT_MODE,
             loggedIn: false,
             userInfo: {},
-            showQrModal: false,
+            // 统一的模态框状态
+            modalVisible: false,
+            modalMode: '',  // 'qr' | 'cookie'
+            // 二维码登录相关
             qrCodeUrl: '',
             qrCodeKey: '',
             qrStatus: '',
             qrPollTimer: null,
-            // Cookie 登录
-            showCookieModal: false,
+            // Cookie 登录相关
             cookieInput: '',
             cookieStatus: '',
             computerIp: '192.168.1.100'
@@ -483,10 +459,11 @@ export default {
             })
         },
         
-        onLogin() {
+        // 打开二维码登录模态框
+        openQRModal() {
             var self = this
-            this.showQrModal = true
-            this.showCookieModal = false  // 互斥：关闭 Cookie 弹窗
+            this.modalMode = 'qr'
+            this.modalVisible = true
             this.qrStatus = '正在生成二维码...'
             
             auth.generateQrCode().then(function (res) {
@@ -511,10 +488,10 @@ export default {
             if (!self.qrCodeKey) return
             
             var poll = function () {
-                if (!self.showQrModal || !self.qrCodeKey) return
+                if (!self.modalVisible || self.modalMode !== 'qr' || !self.qrCodeKey) return
                 
                 auth.pollQrCode(self.qrCodeKey).then(function (res) {
-                    if (!self.showQrModal) return
+                    if (!self.modalVisible || self.modalMode !== 'qr') return
                     
                     if (res && res.code === 0) {
                         if (res.data && res.data.url) {
@@ -540,7 +517,7 @@ export default {
                             }
                             
                             self.stopQrPolling()
-                            self.closeQrModal()
+                            self.closeModal()
                             self.checkLoginStatus()
                             
                             try {
@@ -581,24 +558,21 @@ export default {
             }
         },
         
-        closeQrModal() {
-            this.stopQrPolling()
-            this.showQrModal = false
-            this.qrCodeUrl = ''
-            this.qrCodeKey = ''
-            this.qrStatus = ''
-        },
-        
-        onCookieLogin() {
-            var self = this
-            this.showCookieModal = true
-            this.showQrModal = false  // 互斥：关闭二维码弹窗
+        // 打开 Cookie 登录模态框
+        openCookieModal() {
+            this.modalMode = 'cookie'
+            this.modalVisible = true
             this.cookieInput = ''
             this.cookieStatus = ''
         },
         
-        closeCookieModal() {
-            this.showCookieModal = false
+        closeModal() {
+            this.stopQrPolling()
+            this.modalVisible = false
+            this.modalMode = ''
+            this.qrCodeUrl = ''
+            this.qrCodeKey = ''
+            this.qrStatus = ''
             this.cookieInput = ''
             this.cookieStatus = ''
         },
@@ -622,7 +596,7 @@ export default {
             this.cookieStatus = '验证中...'
             auth.setCookie(cookieStr).then(function () {
                 self.cookieStatus = '保存成功，验证中...'
-                self.closeCookieModal()
+                self.closeModal()
                 self.checkLoginStatus()
             }).catch(function (e) {
                 self.cookieStatus = '保存失败: ' + (e && e.message ? e.message : String(e))
@@ -641,7 +615,7 @@ export default {
                 if (res.code === 0) {
                     self.cookieStatus = '获取成功！'
                     setTimeout(function () {
-                        self.closeCookieModal()
+                        self.closeModal()
                         self.checkLoginStatus()
                     }, 1000)
                 } else {
@@ -697,7 +671,7 @@ export default {
                 if (m && typeof m.alert === 'function') {
                     m.alert({
                         title: '关于',
-                        message: 'Bilibili MiniApp for X6PRO\n版本: 1.0.0\n基于 HAAS UI 框架开发\n数据存储: SQLite (/userdisk/xiro/bili/app.db)',
+                        message: 'Bilibili MiniApp for X6PRO\n版本: 1.0.0\n基于 HAAS UI 框架开发\n数据存储: 系统存储',
                         confirmText: '确定'
                     })
                 }
