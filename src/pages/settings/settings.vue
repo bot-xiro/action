@@ -26,12 +26,10 @@
                     <div class="option" v-if="!loggedIn" @click="openCookieModal">
                         <div class="option-left">
                             <text class="option-name">Cookie 登录</text>
-                            <text class="option-desc">从浏览器复制 Cookie 或从电脑同步</text>
+                            <text class="option-desc">从电脑同步 Cookie（方式2）</text>
                         </div>
                         <text class="option-badge">去登录</text>
                     </div>
-
-                    <!-- 已登录：显示用户信息 -->
                     <div class="option" v-else>
                         <div class="option-left">
                             <text class="option-name">{{ userInfo.uname || 'Bilibili 用户' }}</text>
@@ -111,14 +109,11 @@
                 <!-- Cookie 登录模式 -->
                 <div v-else-if="modalMode === 'cookie'">
                     <text class="modal-title" @click.stop>Cookie 登录</text>
-                    <text class="cookie-tip" @click.stop>方式1: 在电脑浏览器登录 B站，按 F12 打开开发者工具，在 Network 里找到任意请求，复制 Request Headers 里的 Cookie 值粘贴下方</text>
-                    <textarea class="cookie-input" v-model="cookieInput" placeholder="粘贴 Cookie 字符串 (SESSDATA=xxx; bili_jct=xxx; ...)" @input="onCookieInput" autofocus="true" softInputEnable="true" style="min-height: 80px;"></textarea>
-                    <text class="cookie-tip" @click.stop>方式2: 电脑运行同步服务，输入电脑 IP 点击下方按钮自动获取</text>
+                    <text class="cookie-tip" @click.stop>电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" autofocus="true" softInputEnable="true" style="height: 40px;"></input>
                     <text class="cookie-status" @click.stop>{{ cookieStatus }}</text>
                     <div class="cookie-btns">
                         <text class="cookie-btn cancel" @click="closeModal">取消</text>
-                        <text class="cookie-btn confirm" @click="confirmCookieLogin">粘贴登录</text>
                         <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
                     </div>
                 </div>
