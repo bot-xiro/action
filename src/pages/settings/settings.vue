@@ -147,10 +147,7 @@
 }
 
 .list-inner {
-    flex: 1;
     flex-direction: column;
-    min-height: 0;
-    overflow-y: auto;
 }
 
 .topbar {
