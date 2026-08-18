@@ -98,24 +98,24 @@
             <div class="modal-box" @click.stop>
                 <!-- 二维码登录模式 -->
                 <div v-if="modalMode === 'qr'">
-                    <text class="modal-title">扫码登录 Bilibili</text>
+                    <text class="modal-title" @click.stop>扫码登录 Bilibili</text>
                     <div class="qr-container" style="width: 160px; height: 160px;">
                         <image v-if="qrCodeUrl" :src="qrCodeUrl" class="qr-image" mode="aspectFit" style="width: 150px; height: 150px;"></image>
-                        <text v-else class="qr-loading">生成二维码中...</text>
+                        <text v-else class="qr-loading" @click.stop>生成二维码中...</text>
                     </div>
-                    <text class="qr-tip">请使用哔哩哔哩 APP 扫码登录</text>
-                    <text class="qr-status">{{ qrStatus }}</text>
+                    <text class="qr-tip" @click.stop>请使用哔哩哔哩 APP 扫码登录</text>
+                    <text class="qr-status" @click.stop>{{ qrStatus }}</text>
                     <text class="modal-close" @click="closeModal">取消</text>
                 </div>
 
                 <!-- Cookie 登录模式 -->
                 <div v-else-if="modalMode === 'cookie'">
-                    <text class="modal-title">Cookie 登录</text>
-                    <text class="cookie-tip">方式1: 在电脑浏览器登录 B站，按 F12 打开开发者工具，在 Network 里找到任意请求，复制 Request Headers 里的 Cookie 值粘贴下方</text>
+                    <text class="modal-title" @click.stop>Cookie 登录</text>
+                    <text class="cookie-tip" @click.stop>方式1: 在电脑浏览器登录 B站，按 F12 打开开发者工具，在 Network 里找到任意请求，复制 Request Headers 里的 Cookie 值粘贴下方</text>
                     <textarea class="cookie-input" v-model="cookieInput" placeholder="粘贴 Cookie 字符串 (SESSDATA=xxx; bili_jct=xxx; ...)" @input="onCookieInput" autofocus="true" softInputEnable="true" style="min-height: 80px;"></textarea>
-                    <text class="cookie-tip">方式2: 电脑运行同步服务，输入电脑 IP 点击下方按钮自动获取</text>
+                    <text class="cookie-tip" @click.stop>方式2: 电脑运行同步服务，输入电脑 IP 点击下方按钮自动获取</text>
                     <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" autofocus="true" softInputEnable="true" style="height: 40px;"></input>
-                    <text class="cookie-status">{{ cookieStatus }}</text>
+                    <text class="cookie-status" @click.stop>{{ cookieStatus }}</text>
                     <div class="cookie-btns">
                         <text class="cookie-btn cancel" @click="closeModal">取消</text>
                         <text class="cookie-btn confirm" @click="confirmCookieLogin">粘贴登录</text>
@@ -135,6 +135,7 @@
 }
 
 .content-scroll {
+    flex: 1;
     width: 100%;
     min-height: 0;
 }
@@ -145,7 +146,10 @@
 }
 
 .list-inner {
+    flex: 1;
     flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 .topbar {
@@ -295,11 +299,11 @@ input.cookie-input {
 
 .modal-box {
     width: 320px;
-    max-height: 220px;
+    max-height: 280px;
     background-color: #ffffff;
     border-radius: 12px;
     padding: 20px;
-    overflow-y: auto;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
 }
