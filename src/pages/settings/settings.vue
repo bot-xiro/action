@@ -8,7 +8,7 @@
         </div>
 
         <!-- 内容滚动区：使用原生 scroller 组件，完全参考首页 index.vue 的写法 -->
-        <scroller class="list" scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60">
+        <scroller class="list" scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60" @scroll="onScroll" @scrolltolower="onLoadMore">
             <div class="list-inner">
                 <!-- 登录区块 -->
                 <div class="section">
@@ -140,7 +140,10 @@
 }
 
 .list-inner {
+    flex: 1;
     flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 .topbar {
@@ -741,6 +744,20 @@ export default {
                     })
                 }
             } catch (e) {}
+        },
+        
+        onScroll(e) {
+            // contentOffset.y < 0 表示顶部下拉越界（over-scroll 回弹区域）
+            if (!e || !e.contentOffset) {
+                return
+            }
+            var y = e.contentOffset.y || 0
+            if (y < -40) {
+                // 可以在这里添加下拉刷新逻辑，目前设置页不需要下拉刷新
+            }
+        },
+        onLoadMore() {
+            // 设置页不需要加载更多，留空即可
         }
     }
 }
