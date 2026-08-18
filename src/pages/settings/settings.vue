@@ -130,8 +130,6 @@
     flex: 1;
     background-color: #f5f6f7;
     flex-direction: column;
-    min-height: 0;
-    height: 100%;
 }
 
 .content-scroll {
