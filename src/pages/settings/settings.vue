@@ -137,6 +137,7 @@
 .list {
     flex: 1;
     flex-direction: column;
+    height: 100%;
 }
 
 .list-inner {
