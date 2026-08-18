@@ -7,8 +7,8 @@
             <text class="topbar-right"></text>
         </div>
 
-        <!-- 内容滚动区：使用原生 scroller 组件 -->
-        <scroller class="content-scroll list" scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60">
+        <!-- 内容滚动区：使用原生 scroller 组件，完全参考首页 index.vue 的写法 -->
+        <scroller class="list" scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60">
             <div class="list-inner">
                 <!-- 登录区块 -->
                 <div class="section">
@@ -132,11 +132,6 @@
     flex: 1;
     background-color: #f5f6f7;
     flex-direction: column;
-}
-
-.content-scroll {
-    flex: 1;
-    min-height: 0;
 }
 
 .list {
