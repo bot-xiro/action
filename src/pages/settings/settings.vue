@@ -9,85 +9,87 @@
 
         <!-- 内容滚动区：使用原生 scroller 组件 -->
         <scroller class="content-scroll list" scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60">
-            <!-- 登录区块 -->
-            <div class="section">
-                <text class="section-title">账号</text>
+            <div class="list-inner">
+                <!-- 登录区块 -->
+                <div class="section">
+                    <text class="section-title">账号</text>
 
-                <!-- 未登录：显示登录选项 -->
-                <div class="option" v-if="!loggedIn" @click="openQRModal">
-                    <div class="option-left">
-                        <text class="option-name">扫码登录</text>
-                        <text class="option-desc">使用哔哩哔哩 APP 扫码登录</text>
+                    <!-- 未登录：显示登录选项 -->
+                    <div class="option" v-if="!loggedIn" @click="openQRModal">
+                        <div class="option-left">
+                            <text class="option-name">扫码登录</text>
+                            <text class="option-desc">使用哔哩哔哩 APP 扫码登录</text>
+                        </div>
+                        <text class="option-badge">去登录</text>
                     </div>
-                    <text class="option-badge">去登录</text>
-                </div>
 
-                <div class="option" v-if="!loggedIn" @click="openCookieModal">
-                    <div class="option-left">
-                        <text class="option-name">Cookie 登录</text>
-                        <text class="option-desc">从浏览器复制 Cookie 或从电脑同步</text>
+                    <div class="option" v-if="!loggedIn" @click="openCookieModal">
+                        <div class="option-left">
+                            <text class="option-name">Cookie 登录</text>
+                            <text class="option-desc">从浏览器复制 Cookie 或从电脑同步</text>
+                        </div>
+                        <text class="option-badge">去登录</text>
                     </div>
-                    <text class="option-badge">去登录</text>
-                </div>
 
-                <!-- 已登录：显示用户信息 -->
-                <div class="option" v-else>
-                    <div class="option-left">
-                        <text class="option-name">{{ userInfo.uname || 'Bilibili 用户' }}</text>
-                        <text class="option-desc">UID: {{ userInfo.mid || '-' }}  •  等级: {{ userInfo.level || '-' }}</text>
-                    </div>
-                    <text class="option-badge" @click.stop="onLogout">退出登录</text>
-                </div>
-            </div>
-
-            <!-- 播放器设置 -->
-            <div class="section">
-                <text class="section-title">播放器</text>
-
-                <!-- 选项1：自研 gstplayer -->
-                <div class="option" :class="{ 'option-active': mode === 'gst' }" @click="onSelect('gst')">
-                    <div class="option-left">
-                        <text class="option-name">自研播放器</text>
-                        <text class="option-desc">KMS 双平面，视频独立平面（gstplayer）</text>
-                    </div>
-                    <text v-if="mode === 'gst'" class="option-badge">当前</text>
-                </div>
-
-                <!-- 选项2：系统播放器 -->
-                <div class="option" :class="{ 'option-active': mode === 'system' }" @click="onSelect('system')">
-                    <div class="option-left">
-                        <text class="option-name">系统播放器</text>
-                        <text class="option-desc">调起系统播放器应用，自带控制栏悬浮</text>
-                    </div>
-                    <text v-if="mode === 'system'" class="option-badge">当前</text>
-                </div>
-            </div>
-
-            <!-- 其他设置 -->
-            <div class="section">
-                <text class="section-title">其他</text>
-
-                <div class="option" @click="onClearCache">
-                    <div class="option-left">
-                        <text class="option-name">清理缓存</text>
-                        <text class="option-desc">清除搜索历史、播放记录等本地数据</text>
+                    <!-- 已登录：显示用户信息 -->
+                    <div class="option" v-else>
+                        <div class="option-left">
+                            <text class="option-name">{{ userInfo.uname || 'Bilibili 用户' }}</text>
+                            <text class="option-desc">UID: {{ userInfo.mid || '-' }}  •  等级: {{ userInfo.level || '-' }}</text>
+                        </div>
+                        <text class="option-badge" @click.stop="onLogout">退出登录</text>
                     </div>
                 </div>
 
-                <div class="option" @click="onAbout">
-                    <div class="option-left">
-                        <text class="option-name">关于</text>
-                        <text class="option-desc">版本信息、开源协议</text>
+                <!-- 播放器设置 -->
+                <div class="section">
+                    <text class="section-title">播放器</text>
+
+                    <!-- 选项1：自研 gstplayer -->
+                    <div class="option" :class="{ 'option-active': mode === 'gst' }" @click="onSelect('gst')">
+                        <div class="option-left">
+                            <text class="option-name">自研播放器</text>
+                            <text class="option-desc">KMS 双平面，视频独立平面（gstplayer）</text>
+                        </div>
+                        <text v-if="mode === 'gst'" class="option-badge">当前</text>
+                    </div>
+
+                    <!-- 选项2：系统播放器 -->
+                    <div class="option" :class="{ 'option-active': mode === 'system' }" @click="onSelect('system')">
+                        <div class="option-left">
+                            <text class="option-name">系统播放器</text>
+                            <text class="option-desc">调起系统播放器应用，自带控制栏悬浮</text>
+                        </div>
+                        <text v-if="mode === 'system'" class="option-badge">当前</text>
                     </div>
                 </div>
-            </div>
 
-            <!-- 说明 -->
-            <div class="tips">
-                <text class="tips-text">提示：切换播放器后进入播放页生效。</text>
-                <text class="tips-text">系统播放器 = 调起系统视频播放器应用播放（8001661999525016）：自带控制栏悬浮、无层级遮挡问题；播放期间本应用退到后台，返回后继续浏览。</text>
-                <text class="tips-text">自研播放器 = gstplayer（KMS 双平面），视频独立平面渲染；控制栏唤出时视频画面让位。</text>
-                <text class="tips-text">登录数据保存在系统存储，卸载应用不丢失。</text>
+                <!-- 其他设置 -->
+                <div class="section">
+                    <text class="section-title">其他</text>
+
+                    <div class="option" @click="onClearCache">
+                        <div class="option-left">
+                            <text class="option-name">清理缓存</text>
+                            <text class="option-desc">清除搜索历史、播放记录等本地数据</text>
+                        </div>
+                    </div>
+
+                    <div class="option" @click="onAbout">
+                        <div class="option-left">
+                            <text class="option-name">关于</text>
+                            <text class="option-desc">版本信息、开源协议</text>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 说明 -->
+                <div class="tips">
+                    <text class="tips-text">提示：切换播放器后进入播放页生效。</text>
+                    <text class="tips-text">系统播放器 = 调起系统视频播放器应用播放（8001661999525016）：自带控制栏悬浮、无层级遮挡问题；播放期间本应用退到后台，返回后继续浏览。</text>
+                    <text class="tips-text">自研播放器 = gstplayer（KMS 双平面），视频独立平面渲染；控制栏唤出时视频画面让位。</text>
+                    <text class="tips-text">登录数据保存在系统存储，卸载应用不丢失。</text>
+                </div>
             </div>
         </scroller>
 
