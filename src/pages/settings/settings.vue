@@ -8,7 +8,7 @@
         </div>
 
         <!-- 内容滚动区：使用原生 scroller 组件 -->
-        <scroller class="content-scroll" scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60">
+        <scroller class="content-scroll list" scroll-direction="vertical" :show-scrollbar="false" :over-scroll="60">
             <!-- 登录区块 -->
             <div class="section">
                 <text class="section-title">账号</text>
@@ -135,9 +135,14 @@
 }
 
 .content-scroll {
+    flex: 1;
     width: 100%;
-    height: 218px;
-    overflow-y: auto;
+    min-height: 0;
+}
+
+.list {
+    flex: 1;
+    flex-direction: column;
 }
 
 .topbar {
