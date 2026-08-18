@@ -136,9 +136,7 @@
 
 .content-scroll {
     flex: 1;
-    width: 100%;
     min-height: 0;
-    height: 100%;
 }
 
 .list {
