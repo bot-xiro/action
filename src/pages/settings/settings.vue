@@ -144,6 +144,10 @@
     flex-direction: column;
 }
 
+.list-inner {
+    flex-direction: column;
+}
+
 .topbar {
     height: 48px;
     background-color: #fb7299;
