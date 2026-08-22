@@ -12,7 +12,6 @@
                     placeholder="搜索视频 / UP主"
                     :softInputEnable="true"
                     :single-line="true"
-                    :autofocus="true"
                     @input="onInput"
                     @focus="onFocus"
                     @blur="onBlur"
@@ -260,34 +259,38 @@ export default {
         }).catch(function () {
             self.history = []
         })
-        // 页面加载后自动聚焦触发输入法
-        var self2 = this
-        setTimeout(function() {
-            self2.tryFocusInput()
-        }, 100)
+        // 不自动聚焦，等待用户点击（参考 cookie.vue）
     },
     methods: {
-        // 程序化聚焦输入框，强制触发系统输入法（参考 cookie.vue 方案）
+        // 程序化聚焦输入框，强制触发系统输入法（完全对齐 cookie.vue 方案）
         tryFocusInput() {
-            console.warn('[search] tryFocusInput: blur then focus to trigger IME')
+            console.warn('[search] tryFocusInput called - blur then focus')
             var inputRef = this.$refs.searchInput
             if (inputRef) {
+                console.warn('[search] searchInput ref found, blur then focus')
                 try {
+                    // 先 blur 再 focus，强制触发软键盘
                     if (typeof inputRef.blur === 'function') {
                         inputRef.blur()
+                        console.warn('[search] blur() called')
                     }
+                    // 短暂延迟后 focus
                     setTimeout(function() {
                         if (typeof inputRef.focus === 'function') {
                             inputRef.focus()
-                            console.warn('[search] focus() called successfully')
+                            console.warn('[search] focus() called successfully after blur')
                         } else if (inputRef.$el && typeof inputRef.$el.focus === 'function') {
                             inputRef.$el.focus()
                             console.warn('[search] $el.focus() called successfully')
+                        } else {
+                            console.warn('[search] no focus method available on ref')
                         }
                     }.bind(this), 50)
                 } catch (e) {
                     console.warn('[search] focus error: ' + e)
                 }
+            } else {
+                console.warn('[search] searchInput ref NOT found')
             }
         },
         onInput(val) {
