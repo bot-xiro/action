@@ -260,6 +260,12 @@ export default {
             self.history = []
         })
         // 不自动聚焦，等待用户点击（参考 cookie.vue）
+        // 监听输入法返回结果
+        if (typeof $falcon !== 'undefined' && $falcon.on) {
+            $falcon.on('imeResult', this.onImeResult.bind(this))
+            $falcon.on('inputResult', this.onImeResult.bind(this))
+            $falcon.on('inputMethodResult', this.onImeResult.bind(this))
+        }
     },
     methods: {
         // 程序化聚焦输入框，强制触发系统输入法（完全对齐 cookie.vue 方案）
@@ -346,13 +352,30 @@ export default {
             console.log('[search] open: ' + v.bvid)
             $falcon.navTo('detail', { bvid: v.bvid })
         },
-        // 方案4备选: 通过 navTo 跳转有道输入法 App (appid: 8001666679481944)
+        // 方案4: 通过 navTo 调用有道输入法 (appid: 8001666679481944) - 带回调参数
         openSystemIME() {
-            console.warn('[search] openSystemIME: navTo 有道输入法')
+            console.warn('[search] openSystemIME: navTo 有道输入法 with callback')
             try {
-                $falcon.navTo('falcon://8001666679481944', {})
+                // 尝试多种可能的调用参数
+                var callbackUrl = 'falcon://8001812345678901/ime-result'
+                var params = {
+                    callback: callbackUrl,
+                    returnUrl: callbackUrl,
+                    action: 'input',
+                    type: 'text',
+                    hint: '搜索视频 / UP主'
+                }
+                $falcon.navTo('falcon://8001666679481944', params)
             } catch (e) {
                 console.warn('[search] openSystemIME error: ' + (e && e.message ? e.message : String(e)))
+            }
+        },
+        // 监听输入法返回结果的全局事件
+        onImeResult(result) {
+            console.warn('[search] onImeResult received: ' + JSON.stringify(result))
+            if (result && result.text) {
+                this.keyword = result.text
+                this.doSearch()
             }
         },
         // ---- 显示辅助 ----
@@ -368,6 +391,14 @@ export default {
                 return String(v)
             }
             return String(v == null ? '' : v)
+        },
+        beforeDestroy() {
+            // 清理事件监听
+            if (typeof $falcon !== 'undefined' && $falcon.off) {
+                $falcon.off('imeResult', this.onImeResult)
+                $falcon.off('inputResult', this.onImeResult)
+                $falcon.off('inputMethodResult', this.onImeResult)
+            }
         }
     }
 }
