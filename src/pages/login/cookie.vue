@@ -204,20 +204,32 @@ export default {
             try {
                 // 尝试多种可能的软键盘 API
                 var jsapi = $falcon.jsapi
+                console.warn('[cookie-login] jsapi keys: ' + Object.keys(jsapi || {}).join(', '))
                 if (jsapi) {
                     // 尝试输入法相关 API
-                    if (jsapi.ime && typeof jsapi.ime.show === 'function') {
-                        jsapi.ime.show()
-                        console.warn('[cookie-login] ime.show() called')
-                    } else if (jsapi.input && typeof jsapi.input.show === 'function') {
-                        jsapi.input.show()
-                        console.warn('[cookie-login] input.show() called')
-                    } else if (jsapi.softKeyboard && typeof jsapi.softKeyboard.show === 'function') {
-                        jsapi.softKeyboard.show()
-                        console.warn('[cookie-login] softKeyboard.show() called')
-                    } else if (jsapi.keyboard && typeof jsapi.keyboard.show === 'function') {
-                        jsapi.keyboard.show()
-                        console.warn('[cookie-login] keyboard.show() called')
+                    var apis = [
+                        {obj: jsapi.ime, method: 'show', name: 'ime.show'},
+                        {obj: jsapi.ime, method: 'open', name: 'ime.open'},
+                        {obj: jsapi.input, method: 'show', name: 'input.show'},
+                        {obj: jsapi.input, method: 'open', name: 'input.open'},
+                        {obj: jsapi.softInput, method: 'show', name: 'softInput.show'},
+                        {obj: jsapi.softInput, method: 'open', name: 'softInput.open'},
+                        {obj: jsapi.softKeyboard, method: 'show', name: 'softKeyboard.show'},
+                        {obj: jsapi.softKeyboard, method: 'open', name: 'softKeyboard.open'},
+                        {obj: jsapi.keyboard, method: 'show', name: 'keyboard.show'},
+                        {obj: jsapi.keyboard, method: 'open', name: 'keyboard.open'},
+                        {obj: jsapi.system, method: 'showSoftKeyboard', name: 'system.showSoftKeyboard'},
+                        {obj: jsapi.system, method: 'openKeyboard', name: 'system.openKeyboard'},
+                        {obj: jsapi.window, method: 'showKeyboard', name: 'window.showKeyboard'},
+                        {obj: jsapi.window, method: 'openKeyboard', name: 'window.openKeyboard'},
+                    ]
+                    for (var i = 0; i < apis.length; i++) {
+                        var api = apis[i]
+                        if (api.obj && typeof api.obj[api.method] === 'function') {
+                            console.warn('[cookie-login] calling ' + api.name)
+                            api.obj[api.method]()
+                            break
+                        }
                     }
                 }
             } catch (e) {
