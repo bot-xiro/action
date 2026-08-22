@@ -1,5 +1,5 @@
 <template>
-    <div class="page" ref="pageRoot">
+    <div class="page">
         <!-- 顶部栏：返回 + 标题 -->
         <div class="topbar">
             <text class="back-btn" @click="goBack">‹ 返回</text>
@@ -13,23 +13,13 @@
                 <div class="section cookie-section">
                     <text class="cookie-tip">电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     
-                    <!-- 单个 textarea 输入框 - 原生软键盘支持 -->
-                    <!-- 移除 autofocus，只在用户点击时聚焦 -->
-                    <div class="input-container" @click="onContainerClick">
+                    <!-- IP 输入显示区 - 点击打开系统键盘 miniapp -->
+                    <div class="input-wrapper" @click="openKeyboard">
                         <text class="input-label">电脑 IP 地址</text>
-                        <textarea 
-                            ref="ipInput"
-                            class="cookie-input" 
-                            v-model="computerIp" 
-                            placeholder="电脑 IP (如 192.168.1.100)" 
-                            @input="onCookieInput"
-                            @focus="onFocus"
-                            @blur="onBlur"
-                            @click="onTextareaClick"
-                            :softInputEnable="true"
-                            :single-line="true"
-                            style="height: 48px;">
-                        </textarea>
+                        <div class="ip-display">
+                            <text class="ip-text">{{ computerIp || '点击输入电脑 IP' }}</text>
+                            <text class="ip-hint">点击调用系统键盘输入</text>
+                        </div>
                     </div>
                     
                     <text class="cookie-status">{{ cookieStatus }}</text>
@@ -38,9 +28,6 @@
                         <text class="cookie-btn cancel" @click="goBack">取消</text>
                         <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
                     </div>
-                    
-                    <!-- 调试按钮：手动触发键盘 -->
-                    <text class="debug-btn" @click="debugKeyboard">🔧 测试键盘调用</text>
                 </div>
             </div>
         </scroller>
@@ -127,67 +114,69 @@
     margin-bottom: 8px;
 }
 
-.cookie-input {
+.ip-display {
     width: 100%;
     height: 48px;
-    font-size: 16px;
-    color: #333333;
+    flex-direction: column;
+    justify-content: center;
+    padding-left: 16px;
+    padding-right: 16px;
     background-color: #fafafa;
     border: 1px solid #e0e0e0;
     border-radius: 8px;
-    padding-left: 12px;
-    padding-right: 12px;
+}
+
+.ip-text {
+    font-size: 18px;
+    color: #333333;
+}
+
+.ip-hint {
+    font-size: 12px;
+    color: #999999;
+    margin-top: 2px.
 }
 
 .cookie-status {
     font-size: 14px;
-    color: #fb7299;
-    margin-bottom: 16px;
-    min-height: 20px;
-    margin-top: 16px;
+    color: #fb7299.
+    margin-bottom: 16px.
+    min-height: 20px.
+    margin-top: 16px.
 }
 
 .cookie-btns {
-    flex-direction: row;
-    justify-content: space-between;
-    gap: 12px;
-    margin-top: 16px;
+    flex-direction: row.
+    justify-content: space-between.
+    gap: 12px.
+    margin-top: 16px.
 }
 
 .cookie-btn {
-    flex: 1;
-    height: 48px;
-    line-height: 48px;
-    text-align: center;
-    border-radius: 8px;
-    font-size: 16px;
+    flex: 1.
+    height: 48px.
+    line-height: 48px.
+    text-align: center.
+    border-radius: 8px.
+    font-size: 16px.
 }
 
 .cookie-btn.cancel {
-    color: #888888;
-    background-color: #f0f0f0;
+    color: #888888.
+    background-color: #f0f0f0.
 }
 
 .cookie-btn.confirm {
-    color: #ffffff;
-    background-color: #fb7299;
-}
-
-/* 调试按钮 */
-.debug-btn {
-    height: 40px;
-    line-height: 40px;
-    text-align: center;
-    font-size: 14px;
-    color: #ffffff;
-    background-color: #666666;
-    border-radius: 6px;
-    margin-top: 20px;
+    color: #ffffff.
+    background-color: #fb7299.
 }
 </style>
 
 <script>
 import auth from '../../utils/auth.js'
+
+// 系统键盘 miniapp appid (有道输入法)
+const KEYBOARD_APPID = '8001666679481944'
 
 export default {
     name: 'cookie-login',
@@ -198,8 +187,7 @@ export default {
         }
     },
     mounted() {
-        console.warn('[cookie-login] mounted - NOT autofocusing, waiting for user click')
-        // 不再自动聚焦，等待用户点击
+        console.warn('[cookie-login] mounted')
     },
     methods: {
         goBack() {
@@ -211,53 +199,62 @@ export default {
             }
         },
         
-        // 显式聚焦输入框 - 触发软键盘
-        tryFocusInput() {
-            console.warn('[cookie-login] tryFocusInput called - blur first then focus')
-            var inputRef = this.$refs.ipInput
-            if (inputRef) {
-                console.warn('[cookie-login] ipInput ref found, blur then focus')
-                try {
-                    // 先 blur 再 focus，强制触发软键盘
-                    if (typeof inputRef.blur === 'function') {
-                        inputRef.blur()
-                        console.warn('[cookie-login] blur() called')
+        // 打开系统键盘 miniapp (有道输入法 appid: 8001666679481944)
+        openKeyboard() {
+            console.warn('[cookie-login] openKeyboard -> navTo keyboard appid: 8001666679481944')
+            var self = this
+            
+            // 方式1: 使用页面名 'keyboard'
+            $falcon.navTo('keyboard', {
+                text: self.computerIp,
+                type: 'ip',
+                inputType: 'ip',
+                hint: '输入电脑 IP',
+                title: '输入电脑 IP'
+            }).then(function(res) {
+                console.warn('[cookie-login] keyboard result: ' + JSON.stringify(res))
+                if (res && (res.text || res.value || (res.data && res.data.text) || res.inputText || res.result)) {
+                    var text = res.text || res.value || (res.data && res.data.text) || res.inputText || res.result
+                    self.computerIp = text.trim()
+                    self.cookieStatus = '已输入: ' + text
+                } else {
+                    self.cookieStatus = '键盘返回: ' + JSON.stringify(res)
+                }
+            }).catch(function(e) {
+                console.warn('[cookie-login] navTo keyboard error: ' + e)
+                self.cookieStatus = '打开键盘失败: ' + e
+                // 备用方式：直接用 appid
+                self.tryLegacyKeyboard()
+            })
+        },
+        
+        // 备用方式：直接用 appid
+        tryLegacyKeyboard() {
+            console.warn('[cookie-login] trying legacy keyboard method')
+            var self = this
+            try {
+                // 尝试直接 navTo appid
+                $falcon.navTo('8001666679481944', {
+                    text: self.computerIp,
+                    inputType: 'ip'
+                }).then(function(res) {
+                    console.warn('[cookie-login] legacy keyboard result: ' + JSON.stringify(res))
+                    if (res && (res.text || res.value || (res.data && res.data.text))) {
+                        var text = res.text || res.value || (res.data && res.data.text)
+                        self.computerIp = text.trim()
+                        self.cookieStatus = '已输入: ' + text
                     }
-                    // 短暂延迟后 focus
-                    setTimeout(function() {
-                        if (typeof inputRef.focus === 'function') {
-                            inputRef.focus()
-                            console.warn('[cookie-login] focus() called successfully after blur')
-                        } else if (inputRef.$el && typeof inputRef.$el.focus === 'function') {
-                            inputRef.$el.focus()
-                            console.warn('[cookie-login] $el.focus() called successfully')
-                        } else {
-                            console.warn('[cookie-login] no focus method available on ref')
-                        }
-                    }.bind(this), 50)
-                } catch (e) {
-                    console.warn('[cookie-login] focus error: ' + e)
-                }
-            } else {
-                console.warn('[cookie-login] ipInput ref NOT found')
+                }).catch(function(e) {
+                    console.warn('[cookie-login] legacy keyboard error: ' + e)
+                    self.cookieStatus = '键盘调用失败: ' + e
+                })
+            } catch (e) {
+                console.warn('[cookie-login] legacy keyboard exception: ' + e)
+                self.cookieStatus = '键盘异常: ' + e
             }
         },
         
-        // 点击输入框时显式聚焦
-        onTextareaClick() {
-            console.warn('[cookie-login] onTextareaClick - manually focusing')
-            this.tryFocusInput()
-        },
-        
-        // 调试按钮：手动触发键盘
-        debugKeyboard() {
-            console.warn('[cookie-login] debugKeyboard clicked - blur then focus')
-            this.tryFocusInput()
-            this.cookieStatus = '已尝试 blur+focus 调用，查看日志'
-        },
-        
         onCookieInput(val) {
-            console.warn('[cookie-login] onCookieInput: ' + val)
             this.cookieStatus = ''
             this.computerIp = val
         },
@@ -289,25 +286,7 @@ export default {
             })
         },
         
-        onFocus() {
-            console.warn('[cookie-login] onFocus - input focused')
-        },
-        
-        onBlur() {
-            console.warn('[cookie-login] onBlur - input blurred')
-        },
-        
-        goBack() {
-            console.log('[cookie-login] goBack')
-            try {
-                this.$page.finish()
-            } catch (e) {
-                console.warn('[cookie-login] finish error: ' + (e ? e.message : e))
-            }
-        },
-        
         onCookieInput(val) {
-            console.warn('[cookie-login] onCookieInput: ' + val)
             this.cookieStatus = ''
             this.computerIp = val
         },
@@ -337,23 +316,6 @@ export default {
             }).catch(function (e) {
                 self.cookieStatus = '获取异常: ' + (e && e.message ? e.message : String(e))
             })
-        },
-        
-        onFocus() {
-            console.warn('[cookie-login] onFocus - input focused')
-        },
-        
-        onBlur() {
-            console.warn('[cookie-login] onBlur - input blurred')
-        },
-        
-        goBack() {
-            console.log('[cookie-login] goBack')
-            try {
-                this.$page.finish()
-            } catch (e) {
-                console.warn('[cookie-login] finish error: ' + (e ? e.message : e))
-            }
         },
         
         onScroll(e) {
