@@ -13,11 +13,11 @@
                 <div class="section cookie-section">
                     <text class="cookie-tip">电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     
-                    <!-- 写法1: textarea single-line + softInputEnable="true" + autofocus="true" -->
+                    <!-- 仅一个输入框：textarea single-line + autofocus + softInputEnable -->
                     <div class="input-wrapper">
-                        <text class="input-label">方式1: textarea (single-line)</text>
+                        <text class="input-label">电脑 IP 地址</text>
                         <textarea 
-                            ref="textareaRef"
+                            ref="ipInput"
                             class="cookie-input" 
                             v-model="computerIp" 
                             placeholder="电脑 IP (如 192.168.1.100)" 
@@ -27,42 +27,7 @@
                             :autofocus="true"
                             :softInputEnable="true"
                             :single-line="true"
-                            style="height: 40px;">
-                        </textarea>
-                    </div>
-                    
-                    <!-- 写法2: input type=text + softInputEnable="true" + autofocus="true" -->
-                    <div class="input-wrapper" style="margin-top: 16px;">
-                        <text class="input-label">方式2: input type=text</text>
-                        <input 
-                            ref="inputRef"
-                            class="cookie-input" 
-                            v-model="computerIp" 
-                            placeholder="电脑 IP (如 192.168.1.100)" 
-                            @input="onCookieInput"
-                            @focus="onFocus"
-                            @blur="onBlur"
-                            :autofocus="true"
-                            :softInputEnable="true"
-                            type="text"
-                            style="height: 40px;">
-                        </input>
-                    </div>
-                    
-                    <!-- 写法3: textarea 多行 + softInputEnable="true" + autofocus="true" -->
-                    <div class="input-wrapper" style="margin-top: 16px;">
-                        <text class="input-label">方式3: textarea 多行</text>
-                        <textarea 
-                            ref="textareaRef2"
-                            class="cookie-input" 
-                            v-model="computerIp" 
-                            placeholder="电脑 IP (如 192.168.1.100)" 
-                            @input="onCookieInput"
-                            @focus="onFocus"
-                            @blur="onBlur"
-                            :autofocus="true"
-                            :softInputEnable="true"
-                            style="height: 60px;">
+                            style="height: 44px;">
                         </textarea>
                     </div>
                     
@@ -76,7 +41,6 @@
                     <!-- 测试按钮 -->
                     <div class="test-btns">
                         <text class="test-btn" @click="testKeyboardAPI">测试键盘 API</text>
-                        <text class="test-btn" @click="forceFocusAll">强制聚焦所有输入框</text>
                         <text class="test-btn" @click="testModalInput">测试 modal.input</text>
                     </div>
                 </div>
@@ -157,7 +121,6 @@
 
 .input-wrapper {
     flex-direction: column;
-    margin-bottom: 16px;
 }
 
 .input-label {
@@ -168,12 +131,12 @@
 
 .cookie-input {
     width: 100%;
-    height: 40px;
-    font-size: 14px;
+    height: 44px;
+    font-size: 16px;
     color: #333333;
     background-color: #fafafa;
     border: 1px solid #e0e0e0;
-    border-radius: 6px;
+    border-radius: 8px;
     padding-left: 12px;
     padding-right: 12px;
 }
@@ -195,9 +158,9 @@
 
 .cookie-btn {
     flex: 1;
-    height: 44px;
-    line-height: 44px;
-    text-align: center;
+    height: 48px;
+    line-height: 48px;
+    text-align: center
     border-radius: 8px;
     font-size: 16px;
 }
@@ -221,7 +184,7 @@
 .test-btn {
     height: 40px;
     line-height: 40px;
-    text-align: center;
+    text-align: center
     font-size: 14px;
     color: #ffffff;
     background-color: #999999;
@@ -242,10 +205,7 @@ export default {
     },
     mounted() {
         console.warn('[cookie-login] mounted')
-        // 页面加载后尝试聚焦第一个输入框
-        this.$nextTick(function () {
-            this.tryFocusInputs()
-        })
+        // 页面加载后依靠 autofocus 自动聚焦，不再手动调用 focus()
     },
     methods: {
         goBack() {
@@ -287,33 +247,6 @@ export default {
             }).catch(function (e) {
                 self.cookieStatus = '获取异常: ' + (e && e.message ? e.message : String(e))
             })
-        },
-        
-        // 页面加载时尝试聚焦
-        tryFocusInputs() {
-            console.warn('[cookie-login] trying to focus first input...')
-            // 只聚焦第一个输入框，避免焦点快速切换导致键盘隐藏
-            var ref = this.$refs.textareaRef
-            if (ref) {
-                console.warn('[cookie-login] found textareaRef, trying to focus...')
-                try {
-                    if (typeof ref.focus === 'function') {
-                        ref.focus()
-                        console.warn('[cookie-login] called focus() on textareaRef')
-                    }
-                } catch (e) {
-                    console.warn('[cookie-login] focus error on textareaRef: ' + e)
-                }
-            } else {
-                console.warn('[cookie-login] textareaRef not found')
-            }
-        },
-        
-        // 强制聚焦第一个输入框
-        forceFocusAll() {
-            console.warn('[cookie-login] forceFocusAll clicked')
-            this.tryFocusInputs()
-            this.cookieStatus = '已尝试强制聚焦第一个输入框，查看日志'
         },
         
         // 测试键盘 API
