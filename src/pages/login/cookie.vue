@@ -13,13 +13,22 @@
                 <div class="section cookie-section">
                     <text class="cookie-tip">电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     
-                    <!-- IP 输入框 - 点击打开系统键盘 miniapp -->
+                    <!-- 单个 textarea 输入框 - 原生软键盘支持（HAAS UI 文档标准写法） -->
                     <div class="input-wrapper">
                         <text class="input-label">电脑 IP 地址</text>
-                        <div class="ip-display" @click="openKeyboard">
-                            <text class="ip-text">{{ computerIp || '点击输入电脑 IP' }}</text>
-                            <text class="ip-hint">点击调用系统键盘输入</text>
-                        </div>
+                        <textarea 
+                            ref="ipInput"
+                            class="cookie-input" 
+                            v-model="computerIp" 
+                            placeholder="电脑 IP (如 192.168.1.100)" 
+                            @input="onCookieInput"
+                            @focus="onFocus"
+                            @blur="onBlur"
+                            :autofocus="true"
+                            :softInputEnable="true"
+                            :single-line="true"
+                            style="height: 44px;">
+                        </textarea>
                     </div>
                     
                     <text class="cookie-status">{{ cookieStatus }}</text>
@@ -114,27 +123,16 @@
     margin-bottom: 8px;
 }
 
-.ip-display {
+.cookie-input {
     width: 100%;
-    height: 48px;
-    flex-direction: column;
-    justify-content: center;
-    padding-left: 16px;
-    padding-right: 16px;
+    height: 44px;
+    font-size: 16px;
+    color: #333333;
     background-color: #fafafa;
     border: 1px solid #e0e0e0;
     border-radius: 8px;
-}
-
-.ip-text {
-    font-size: 18px;
-    color: #333333;
-}
-
-.ip-hint {
-    font-size: 12px;
-    color: #999999;
-    margin-top: 2px;
+    padding-left: 12px;
+    padding-right: 12px;
 }
 
 .cookie-status {
@@ -185,6 +183,7 @@ export default {
     },
     mounted() {
         console.warn('[cookie-login] mounted')
+        // 依靠 autofocus 自动聚焦，不做手动 focus() 调用
     },
     methods: {
         goBack() {
@@ -193,106 +192,6 @@ export default {
                 this.$page.finish()
             } catch (e) {
                 console.warn('[cookie-login] finish error: ' + (e ? e.message : e))
-            }
-        },
-        
-        // 打开系统键盘 miniapp - 顺序尝试多种参数
-        openKeyboard() {
-            console.warn('[cookie-login] openKeyboard')
-            this.tryKeyboard0()
-        },
-        
-        tryKeyboard0() {
-            var self = this
-            $falcon.navTo('keyboard', { text: this.computerIp }).then(function(res) {
-                self.handleKeyboardResult(res, 1)
-            }).catch(function(e) {
-                console.warn('[cookie-login] method 1 error: ' + e)
-                self.tryKeyboard1()
-            })
-        },
-        tryKeyboard1() {
-            var self = this
-            $falcon.navTo('keyboard', { inputText: this.computerIp }).then(function(res) {
-                self.handleKeyboardResult(res, 2)
-            }).catch(function(e) {
-                self.tryKeyboard2()
-            })
-        },
-        tryKeyboard2() {
-            var self = this
-            $falcon.navTo('keyboard', { initialValue: this.computerIp }).then(function(res) {
-                self.handleKeyboardResult(res, 3)
-            }).catch(function(e) {
-                self.tryKeyboard3()
-            })
-        },
-        tryKeyboard3() {
-            var self = this
-            $falcon.navTo('keyboard', { value: this.computerIp }).then(function(res) {
-                self.handleKeyboardResult(res, 4)
-            }).catch(function(e) {
-                self.tryKeyboard4()
-            })
-        },
-        tryKeyboard4() {
-            var self = this
-            $falcon.navTo('8001666679481944', { text: this.computerIp }).then(function(res) {
-                self.handleKeyboardResult(res, 5)
-            }).catch(function(e) {
-                self.tryKeyboard5()
-            })
-        },
-        tryKeyboard5() {
-            var self = this
-            $falcon.navTo('8001666679481944', { inputText: this.computerIp }).then(function(res) {
-                self.handleKeyboardResult(res, 6)
-            }).catch(function(e) {
-                self.tryKeyboard6()
-            })
-        },
-        tryKeyboard6() {
-            var self = this
-            $falcon.navTo('keyboard', {}).then(function(res) {
-                self.handleKeyboardResult(res, 7)
-            }).catch(function(e) {
-                self.tryKeyboard7()
-            })
-        },
-        tryKeyboard7() {
-            var self = this
-            $falcon.navTo('keyboard', { text: this.computerIp, type: 'text' }).then(function(res) {
-                self.handleKeyboardResult(res, 8)
-            }).catch(function(e) {
-                self.tryKeyboard8()
-            })
-        },
-        tryKeyboard8() {
-            var self = this
-            $falcon.navTo('keyboard', { text: this.computerIp, mode: 'text' }).then(function(res) {
-                self.handleKeyboardResult(res, 9)
-            }).catch(function(e) {
-                self.tryKeyboard9()
-            })
-        },
-        tryKeyboard9() {
-            var self = this
-            $falcon.navTo('keyboard', { text: this.computerIp, keyboardType: 'number' }).then(function(res) {
-                self.handleKeyboardResult(res, 10)
-            }).catch(function(e) {
-                console.warn('[cookie-login] all keyboard methods failed')
-                self.cookieStatus = '所有键盘调用方式均失败'
-            })
-        },
-        
-        handleKeyboardResult(res, methodNum) {
-            console.warn('[cookie-login] keyboard method ' + methodNum + ' result: ' + JSON.stringify(res))
-            if (res && (res.text || res.value || (res.data && res.data.text) || res.inputText || res.result || res.data)) {
-                var text = res.text || res.value || (res.data && res.data.text) || res.inputText || res.result || res.data
-                this.computerIp = text.trim()
-                this.cookieStatus = '已输入: ' + text
-            } else {
-                console.warn('[cookie-login] keyboard returned empty')
             }
         },
         
@@ -326,6 +225,14 @@ export default {
             }).catch(function (e) {
                 self.cookieStatus = '获取异常: ' + (e && e.message ? e.message : String(e))
             })
+        },
+        
+        onFocus() {
+            console.warn('[cookie-login] input focused')
+        },
+        
+        onBlur() {
+            console.warn('[cookie-login] input blurred')
         },
         
         goBack() {
