@@ -180,8 +180,7 @@ export default {
     data() {
         return {
             computerIp: '192.168.1.100',
-            cookieStatus: '',
-            keyboardIndex: 0
+            cookieStatus: ''
         }
     },
     mounted() {
@@ -197,67 +196,104 @@ export default {
             }
         },
         
-        // 打开系统键盘 miniapp - 尝试多种参数组合
+        // 打开系统键盘 miniapp - 顺序尝试多种参数
         openKeyboard() {
             console.warn('[cookie-login] openKeyboard')
-            var self = this
-            this.keyboardIndex = 0
-            this.tryKeyboard()
+            this.tryKeyboard0()
         },
         
-        tryKeyboard() {
+        tryKeyboard0() {
             var self = this
-            var configs = [
-                // 1: 最简参数
-                { name: 'keyboard', params: { text: self.computerIp }},
-                // 2: inputText
-                { name: 'keyboard', params: { inputText: self.computerIp }},
-                // 3: initialValue
-                { name: 'keyboard', params: { initialValue: self.computerIp }},
-                // 4: value
-                { name: 'keyboard', params: { value: self.computerIp }},
-                // 4: 直接用 appid
-                { name: '8001666679481944', params: { text: self.computerIp }},
-                // 6: appid + inputText
-                { name: '8001666679481944', params: { inputText: self.computerIp }},
-                // 7: 空参数
-                { name: 'keyboard', params: {}},
-                // 8: type=text
-                { name: 'keyboard', params: { text: self.computerIp, type: 'text' }},
-                // 9: mode=text
-                { name: 'keyboard', params: { text: self.computerIp, mode: 'text' }},
-                // 10: keyboardType=number
-                { name: 'keyboard', params: { text: self.computerIp, keyboardType: 'number' }},
-            ]
-            
-            var tryNext = function(index) {
-                if (index >= configs.length) {
-                    self.cookieStatus = '所有键盘调用方式均失败'
-                    return
-                }
-                var cfg = configs[index]
-                console.warn('[cookie-login] trying keyboard method ' + (index + 1) + ': ' + cfg.name)
-                try {
-                    $falcon.navTo(cfg.name, cfg.params).then(function(res) {
-                        console.warn('[cookie-login] keyboard result: ' + JSON.stringify(res))
-                        if (res && (res.text || res.value || (res.data && res.data.text) || res.inputText || res.result || res.data)) {
-                            var text = res.text || res.value || (res.data && res.data.text) || res.inputText || res.result || res.data
-                            self.computerIp = text.trim()
-                            self.cookieStatus = '已输入: ' + text
-                        } else {
-                            console.warn('[cookie-login] keyboard returned empty, trying next')
-                            self.tryKeyboardAt(index + 1)
-                        }
-                    }).catch(function(e) {
-                        console.warn('[cookie-login] method error: ' + e)
-                        self.tryKeyboardAt(index + 1)
-                    })
-                }.bind(self)
+            $falcon.navTo('keyboard', { text: this.computerIp }).then(function(res) {
+                self.handleKeyboardResult(res, 1)
+            }).catch(function(e) {
+                console.warn('[cookie-login] method 1 error: ' + e)
+                self.tryKeyboard1()
+            })
+        },
+        tryKeyboard1() {
+            var self = this
+            $falcon.navTo('keyboard', { inputText: this.computerIp }).then(function(res) {
+                self.handleKeyboardResult(res, 2)
+            }).catch(function(e) {
+                self.tryKeyboard2()
+            })
+        },
+        tryKeyboard2() {
+            var self = this
+            $falcon.navTo('keyboard', { initialValue: this.computerIp }).then(function(res) {
+                self.handleKeyboardResult(res, 3)
+            }).catch(function(e) {
+                self.tryKeyboard3()
+            })
+        },
+        tryKeyboard3() {
+            var self = this
+            $falcon.navTo('keyboard', { value: this.computerIp }).then(function(res) {
+                self.handleKeyboardResult(res, 4)
+            }).catch(function(e) {
+                self.tryKeyboard4()
+            })
+        },
+        tryKeyboard4() {
+            var self = this
+            $falcon.navTo('8001666679481944', { text: this.computerIp }).then(function(res) {
+                self.handleKeyboardResult(res, 5)
+            }).catch(function(e) {
+                self.tryKeyboard5()
+            })
+        },
+        tryKeyboard5() {
+            var self = this
+            $falcon.navTo('8001666679481944', { inputText: this.computerIp }).then(function(res) {
+                self.handleKeyboardResult(res, 6)
+            }).catch(function(e) {
+                self.tryKeyboard6()
+            })
+        },
+        tryKeyboard6() {
+            var self = this
+            $falcon.navTo('keyboard', {}).then(function(res) {
+                self.handleKeyboardResult(res, 7)
+            }).catch(function(e) {
+                self.tryKeyboard7()
+            })
+        },
+        tryKeyboard7() {
+            var self = this
+            $falcon.navTo('keyboard', { text: this.computerIp, type: 'text' }).then(function(res) {
+                self.handleKeyboardResult(res, 8)
+            }).catch(function(e) {
+                self.tryKeyboard8()
+            })
+        },
+        tryKeyboard8() {
+            var self = this
+            $falcon.navTo('keyboard', { text: this.computerIp, mode: 'text' }).then(function(res) {
+                self.handleKeyboardResult(res, 9)
+            }).catch(function(e) {
+                self.tryKeyboard9()
+            })
+        },
+        tryKeyboard9() {
+            var self = this
+            $falcon.navTo('keyboard', { text: this.computerIp, keyboardType: 'number' }).then(function(res) {
+                self.handleKeyboardResult(res, 10)
+            }).catch(function(e) {
+                console.warn('[cookie-login] all keyboard methods failed')
+                self.cookieStatus = '所有键盘调用方式均失败'
+            })
+        },
+        
+        handleKeyboardResult(res, methodNum) {
+            console.warn('[cookie-login] keyboard method ' + methodNum + ' result: ' + JSON.stringify(res))
+            if (res && (res.text || res.value || (res.data && res.data.text) || res.inputText || res.result || res.data)) {
+                var text = res.text || res.value || (res.data && res.data.text) || res.inputText || res.result || res.data
+                this.computerIp = text.trim()
+                this.cookieStatus = '已输入: ' + text
+            } else {
+                console.warn('[cookie-login] keyboard returned empty')
             }
-            
-            // 添加实例方法供内部调用
-            self.tryKeyboardAt = tryNext
-            tryNext(0)
         },
         
         onCookieInput(val) {
@@ -290,6 +326,15 @@ export default {
             }).catch(function (e) {
                 self.cookieStatus = '获取异常: ' + (e && e.message ? e.message : String(e))
             })
+        },
+        
+        goBack() {
+            console.log('[cookie-login] goBack')
+            try {
+                this.$page.finish()
+            } catch (e) {
+                console.warn('[cookie-login] finish error: ' + (e ? e.message : e))
+            }
         },
         
         onScroll(e) {
