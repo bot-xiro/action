@@ -1,5 +1,5 @@
 <template>
-    <div class="page">
+    <div class="page" ref="pageRoot">
         <!-- 顶部栏：返回 + 标题 -->
         <div class="topbar">
             <text class="back-btn" @click="goBack">‹ 返回</text>
@@ -13,15 +13,49 @@
                 <div class="section cookie-section">
                     <text class="cookie-tip">电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     
-                    <!-- IP 输入框 - 点击显示自定义数字键盘 -->
-                    <div class="input-wrapper" @click="showKeyboard">
-                        <input class="cookie-input" 
-                               :value="computerIp" 
-                               placeholder="电脑 IP (如 192.168.1.100)" 
-                               @input="onCookieInput" 
-                               readonly 
-                               style="height: 40px;"></input>
-                        <text class="keyboard-hint">点击输入 IP 地址</text>
+                    <!-- 尝试多种输入框写法 -->
+                    <div class="input-wrapper">
+                        <!-- 写法1: textarea single-line -->
+                        <textarea 
+                            ref="inputRef1"
+                            class="cookie-input" 
+                            v-model="computerIp" 
+                            placeholder="电脑 IP (如 192.168.1.100)" 
+                            @input="onCookieInput" 
+                            :autofocus="true"
+                            :softInputEnable="true"
+                            :single-line="true"
+                            style="height: 40px;">
+                        </textarea>
+                    </div>
+                    
+                    <div class="input-wrapper" style="margin-top: 12px;">
+                        <!-- 写法2: input type=text -->
+                        <input 
+                            ref="inputRef2"
+                            class="cookie-input" 
+                            v-model="computerIp" 
+                            placeholder="电脑 IP (如 192.168.1.100)" 
+                            @input="onCookieInput" 
+                            :autofocus="true"
+                            :softInputEnable="true"
+                            type="text"
+                            style="height: 40px;">
+                        </input>
+                    </div>
+                    
+                    <div class="input-wrapper" style="margin-top: 12px;">
+                        <!-- 写法3: textarea without single-line -->
+                        <textarea 
+                            ref="inputRef3"
+                            class="cookie-input" 
+                            v-model="computerIp" 
+                            placeholder="电脑 IP (如 192.168.1.100)" 
+                            @input="onCookieInput" 
+                            :autofocus="true"
+                            :softInputEnable="true"
+                            style="height: 40px;">
+                        </textarea>
                     </div>
                     
                     <text class="cookie-status">{{ cookieStatus }}</text>
@@ -30,50 +64,16 @@
                         <text class="cookie-btn cancel" @click="goBack">取消</text>
                         <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
                     </div>
+                    
+                    <!-- 测试按钮：尝试各种键盘 API -->
+                    <div class="test-btns">
+                        <text class="test-btn" @click="testKeyboardAPI">测试键盘 API</text>
+                        <text class="test-btn" @click="forceFocusInput">强制聚焦输入框</text>
+                        <text class="test-btn" @click="testModalInput">测试 modal.input</text>
+                    </div>
                 </div>
             </div>
         </scroller>
-
-        <!-- 自定义数字键盘 -->
-        <div v-if="showKeyboard" class="keyboard-overlay" @click="hideKeyboard">
-            <div class="keyboard-panel" @click.stop>
-                <div class="keyboard-header">
-                    <text class="keyboard-title">输入电脑 IP 地址</text>
-                    <text class="keyboard-close" @click="hideKeyboard">完成</text>
-                </div>
-                
-                <div class="keyboard-display">
-                    <input class="keyboard-input" :value="computerIp" readonly></input>
-                </div>
-                
-                <div class="keyboard-keys">
-                    <div class="keyboard-row">
-                        <text class="key" @click="addDigit('1')">1</text>
-                        <text class="key" @click="addDigit('2')">2</text>
-                        <text class="key" @click="addDigit('3')">3</text>
-                    </div>
-                    <div class="keyboard-row">
-                        <text class="key" @click="addDigit('4')">4</text>
-                        <text class="key" @click="addDigit('5')">5</text>
-                        <text class="key" @click="addDigit('6')">6</text>
-                    </div>
-                    <div class="keyboard-row">
-                        <text class="key" @click="addDigit('7')">7</text>
-                        <text class="key" @click="addDigit('8')">8</text>
-                        <text class="key" @click="addDigit('9')">9</text>
-                    </div>
-                    <div class="keyboard-row">
-                        <text class="key key-dot" @click="addDot">.</text>
-                        <text class="key" @click="addDigit('0')">0</text>
-                        <text class="key key-delete" @click="deleteLast">⌫</text>
-                    </div>
-                    <div class="keyboard-row">
-                        <text class="key key-clear" @click="clearInput">清空</text>
-                        <text class="key key-confirm" @click="confirmInput">确定</text>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 </template>
 
@@ -148,7 +148,6 @@
 }
 
 .input-wrapper {
-    flex-direction: column;
     margin-bottom: 12px;
 }
 
@@ -162,12 +161,6 @@
     border-radius: 6px;
     padding-left: 12px;
     padding-right: 12px;
-}
-
-.keyboard-hint {
-    font-size: 12px;
-    color: #999999;
-    margin-top: 4px;
 }
 
 .cookie-status {
@@ -202,126 +195,20 @@
     background-color: #fb7299;
 }
 
-/* 自定义数字键盘样式 */
-.keyboard-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    z-index: 1000;
-    justify-content: flex-end;
-}
-
-.keyboard-panel {
-    width: 100%;
-    background-color: #ffffff;
-    border-top-left-radius: 16px;
-    border-top-right-radius: 16px;
+.test-btns {
+    margin-top: 16px;
     flex-direction: column;
-    padding-bottom: 20px;
+    gap: 8px;
 }
 
-.keyboard-header {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px;
-    border-bottom: 1px solid #eeeeee;
-}
-
-.keyboard-title {
-    font-size: 18px;
-    color: #333333;
-    font-weight: bold;
-}
-
-.keyboard-close {
-    font-size: 16px;
-    color: #fb7299;
-}
-
-.keyboard-display {
-    padding: 16px;
-    background-color: #f5f6f7;
-    border-bottom: 1px solid #eeeeee;
-}
-
-.keyboard-input {
-    width: 100%;
+.test-btn {
     height: 40px;
-    font-size: 18px;
-    color: #333333;
-    background-color: #ffffff;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    padding-left: 12px;
-    padding-right: 12px;
-}
-
-.keyboard-keys {
-    flex: 1;
-    padding: 16px;
-    flex-direction: column;
-    justify-content: space-between;
-}
-
-.keyboard-row {
-    flex-direction: row;
-    justify-content: space-between;
-    margin-bottom: 12px;
-}
-
-.keyboard-row:last-child {
-    margin-bottom: 0;
-}
-
-.key {
-    flex: 1;
-    height: 56px;
-    line-height: 56px;
+    line-height: 40px;
     text-align: center;
-    font-size: 24px;
-    color: #333333;
-    background-color: #fafafa;
-    border: 1px solid #eeeeee;
-    border-radius: 8px;
-    margin-left: 8px;
-    margin-right: 8px;
-}
-
-.key:first-child {
-    margin-left: 0;
-}
-
-.key:last-child {
-    margin-right: 0;
-}
-
-.key:active {
-    background-color: #f0f0f0;
-}
-
-.key-dot {
-    font-size: 28px;
-}
-
-.key-delete {
-    color: #fb7299;
-    font-size: 22px;
-}
-
-.key-clear {
-    background-color: #fff0f0;
-    color: #fb7299;
-    font-size: 16px;
-}
-
-.key-confirm {
-    background-color: #fb7299;
+    font-size: 14px;
     color: #ffffff;
-    font-size: 16px;
+    background-color: #999999;
+    border-radius: 6px;
 }
 </style>
 
@@ -333,20 +220,19 @@ export default {
     data() {
         return {
             computerIp: '192.168.1.100',
-            cookieStatus: '',
-            showKeyboard: false
+            cookieStatus: ''
         }
     },
     mounted() {
         console.warn('[cookie-login] mounted')
+        // 页面加载后尝试聚焦第一个输入框
+        this.$nextTick(function () {
+            this.tryFocusInputs()
+        })
     },
     methods: {
         goBack() {
             console.log('[cookie-login] goBack')
-            if (this.showKeyboard) {
-                this.hideKeyboard()
-                return
-            }
             try {
                 this.$page.finish()
             } catch (e) {
@@ -386,59 +272,183 @@ export default {
             })
         },
         
-        // 显示自定义数字键盘
-        showKeyboard() {
-            this.showKeyboard = true
+        // 尝试聚焦输入框
+        tryFocusInputs() {
+            console.warn('[cookie-login] trying to focus inputs...')
+            // 尝试聚焦各个输入框
+            var refs = ['inputRef1', 'inputRef2', 'inputRef3']
+            for (var i = 0; i < refs.length; i++) {
+                var ref = this.$refs[refs[i]]
+                if (ref) {
+                    console.warn('[cookie-login] found ref: ' + refs[i] + ', trying to focus...')
+                    // HAAS UI 的 ref 可能直接是 DOM 元素，或者有 focus 方法
+                    try {
+                        if (typeof ref.focus === 'function') {
+                            ref.focus()
+                            console.warn('[cookie-login] called focus() on ' + refs[i])
+                        } else if (ref.$el && typeof ref.$el.focus === 'function') {
+                            ref.$el.focus()
+                            console.warn('[cookie-login] called focus() on ' + refs[i] + '.$el')
+                        }
+                    } catch (e) {
+                        console.warn('[cookie-login] focus error on ' + refs[i] + ': ' + e)
+                    }
+                }
+            }
         },
         
-        // 隐藏自定义数字键盘
-        hideKeyboard() {
-            this.showKeyboard = false
+        // 强制聚焦输入框（测试按钮）
+        forceFocusInput() {
+            console.warn('[cookie-login] forceFocusInput clicked')
+            this.tryFocusInputs()
+            this.cookieStatus = '已尝试强制聚焦，查看日志'
         },
         
-        // 添加数字
-        addDigit(digit) {
-            if (this.computerIp.length >= 15) return // IP 最大长度限制
-            this.computerIp += digit
+        // 测试键盘 API
+        testKeyboardAPI() {
+            console.warn('[cookie-login] testKeyboardAPI clicked')
+            this.cookieStatus = '正在测试键盘 API...'
+            try {
+                var jsapi = $falcon.jsapi
+                console.warn('[cookie-login] === $falcon.jsapi keys: ' + Object.keys(jsapi || {}).join(', '))
+                
+                // 列出所有可能的 API 路径
+                var paths = [
+                    'jsapi.ime',
+                    'jsapi.input', 
+                    'jsapi.softInput',
+                    'jsapi.softKeyboard',
+                    'jsapi.keyboard',
+                    'jsapi.system',
+                    'jsapi.window',
+                    'jsapi.textInput',
+                    'jsapi.editText',
+                    'jsapi.nativeInput',
+                ]
+                
+                for (var i = 0; i < paths.length; i++) {
+                    var path = paths[i]
+                    var obj = this.getNested(jsapi, path)
+                    if (obj) {
+                        console.warn('[cookie-login] FOUND: ' + path + ' = ' + JSON.stringify(Object.keys(obj)))
+                    } else {
+                        console.warn('[cookie-login] NOT FOUND: ' + path)
+                    }
+                }
+                
+                // 尝试 modal 相关
+                if (jsapi.modal) {
+                    console.warn('[cookie-login] modal keys: ' + Object.keys(jsapi.modal))
+                    if (jsapi.modal.input) {
+                        console.warn('[cookie-login] modal.input FOUND!')
+                        try {
+                            jsapi.modal.input({
+                                title: '输入 IP',
+                                placeholder: '192.168.1.100',
+                                confirmText: '确定',
+                                cancelText: '取消'
+                            }).then(function(res) {
+                                console.warn('[cookie-login] modal.input result: ' + JSON.stringify(res))
+                            })
+                        } catch (e) {
+                            console.warn('[cookie-login] modal.input error: ' + e)
+                        }
+                    }
+                    if (jsapi.modal.prompt) {
+                        console.warn('[cookie-login] modal.prompt FOUND!')
+                    }
+                }
+                
+                this.cookieStatus = '已测试，查看日志输出'
+            } catch (e) {
+                console.warn('[cookie-login] testKeyboardAPI error: ' + e)
+                this.cookieStatus = '测试出错: ' + e
+            }
+        },
+        
+        // 获取嵌套对象属性
+        getNested(obj, path) {
+            if (!obj) return null
+            var parts = path.split('.')
+            var current = obj
+            for (var i = 1; i < parts.length; i++) { // 跳过第一个 'jsapi'
+                if (current && current[parts[i]]) {
+                    current = current[parts[i]]
+                } else {
+                    return null
+                }
+            }
+            return current
+        },
+        
+        // 测试 modal.input
+        testModalInput() {
+            console.warn('[cookie-login] testModalInput clicked')
+            try {
+                var jsapi = $falcon.jsapi
+                if (jsapi && jsapi.modal && jsapi.modal.input) {
+                    jsapi.modal.input({
+                        title: '输入电脑 IP',
+                        placeholder: '192.168.1.100',
+                        confirmText: '确定',
+                        cancelText: '取消'
+                    }).then(function(res) {
+                        console.warn('[cookie-login] modal.input result: ' + JSON.stringify(res))
+                        if (res && res.confirm && res.value) {
+                            this.computerIp = res.value
+                            this.cookieStatus = '通过 modal.input 输入: ' + res.value
+                        }
+                    }.bind(this))
+                } else {
+                    this.cookieStatus = 'modal.input 不存在'
+                    console.warn('[cookie-login] modal.input not available')
+                }
+            } catch (e) {
+                console.warn('[cookie-login] testModalInput error: ' + e)
+                this.cookieStatus = '测试出错: ' + e
+            }
+        },
+        
+        onCookieInput(val) {
             this.cookieStatus = ''
+            this.computerIp = val
         },
         
-        // 添加点号
-        addDot() {
-            if (this.computerIp.length >= 15) return
-            // 防止连续输入点号
-            if (this.computerIp.endsWith('.')) return
-            this.computerIp += '.'
-            this.cookieStatus = ''
-        },
-        
-        // 删除最后一位
-        deleteLast() {
-            this.computerIp = this.computerIp.slice(0, -1)
-            this.cookieStatus = ''
-        },
-        
-        // 清空输入
-        clearInput() {
-            this.computerIp = ''
-            this.cookieStatus = ''
-        },
-        
-        // 确定输入
-        confirmInput() {
-            this.hideKeyboard()
+        fetchCookieFromComputer() {
+            var self = this
+            if (!self.computerIp) {
+                self.cookieStatus = '请输入电脑 IP'
+                return
+            }
+            self.cookieStatus = '正在从电脑获取...'
+            auth.fetchCookieFromComputer(self.computerIp).then(function (res) {
+                if (res.code === 0) {
+                    self.cookieStatus = '获取成功！'
+                    try {
+                        var m = $falcon.jsapi && $falcon.jsapi.modal
+                        if (m && typeof m.toast === 'function') {
+                            m.toast({ message: 'Cookie 获取成功', duration: 2000 })
+                        }
+                    } catch (e) {}
+                    setTimeout(function () {
+                        self.goBack()
+                    }, 1000)
+                } else {
+                    self.cookieStatus = '获取失败: ' + (res.message || '未知错误')
+                }
+            }).catch(function (e) {
+                self.cookieStatus = '获取异常: ' + (e && e.message ? e.message : String(e))
+            })
         },
         
         onFocus() {
-            // 兼容旧调用
+            console.warn('[cookie-login] input focused')
         },
         
         onScroll(e) {
-            // 空实现，防止 scroller 报错
         },
         
         onLoadMore() {
-            // 空实现
         }
     }
 }
