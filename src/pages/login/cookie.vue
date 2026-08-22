@@ -204,54 +204,94 @@ export default {
             console.warn('[cookie-login] openKeyboard -> navTo keyboard appid: 8001666679481944')
             var self = this
             
-            // 尝试使用页面名 'keyboard'
-            $falcon.navTo('keyboard', {
-                text: self.computerIp,
-                type: 'ip',
-                inputType: 'ip',
-                hint: '输入电脑 IP',
-                title: '输入电脑 IP'
-            }).then(function(res) {
-                console.warn('[cookie-login] keyboard result: ' + JSON.stringify(res))
-                if (res && (res.text || res.value || (res.data && res.data.text) || res.inputText || res.result)) {
-                    var text = res.text || res.value || (res.data && res.data.text) || res.inputText || res.result
-                    self.computerIp = text.trim()
-                    self.cookieStatus = '已输入: ' + text
-                } else {
-                    self.cookieStatus = '键盘返回: ' + JSON.stringify(res)
+            // 尝试多种参数组合修复黑屏问题
+            var attempts = [
+                // 尝试1: 最简参数
+                function() {
+                    return $falcon.navTo('keyboard', {
+                        text: self.computerIp
+                    })
+                },
+                // 尝试2: 使用 inputText 字段
+                function() {
+                    return $falcon.navTo('keyboard', {
+                        inputText: self.computerIp
+                    })
+                },
+                // 尝试3: 使用 initialValue
+                function() {
+                    return $falcon.navTo('keyboard', {
+                        initialValue: self.computerIp
+                    })
+                },
+                // 尝试4: 使用 value 字段
+                function() {
+                    return $falcon.navTo('keyboard', {
+                        value: self.computerIp
+                    })
+                },
+                // 尝试5: 使用 content 字段
+                function() {
+                    return $falcon.navTo('keyboard', {
+                        content: self.computerIp
+                    })
+                },
+                // 尝试6: 直接用 appid + 简单参数
+                function() {
+                    return $falcon.navTo('8001666679481944', {
+                        text: self.computerIp
+                    })
+                },
+                // 尝试7: appid + inputText
+                function() {
+                    return $falcon.navTo('8001666679481944', {
+                        inputText: self.computerIp
+                    })
+                },
+                // 尝试8: 空参数让键盘自己处理
+                function() {
+                    return $falcon.navTo('keyboard', {})
+                },
+                // 尝试9: 使用 type=text
+                function() {
+                    return $falcon.navTo('keyboard', {
+                        text: self.computerIp,
+                        type: 'text'
+                    })
+                },
+                // 尝试10: 使用 mode
+                function() {
+                    return $falcon.navTo('keyboard', {
+                        text: self.computerIp,
+                        mode: 'text'
+                    })
                 }
-            }).catch(function(e) {
-                console.warn('[cookie-login] navTo keyboard error: ' + e)
-                self.cookieStatus = '打开键盘失败: ' + e
-                // 尝试备用方式：直接用 appid
-                self.tryLegacyKeyboard()
-            })
-        },
-        
-        // 尝试旧版本键盘调用方式
-        tryLegacyKeyboard() {
-            console.warn('[cookie-login] trying legacy keyboard method')
-            var self = this
-            try {
-                // 尝试直接 navTo appid
-                $falcon.navTo('8001666679481944', {
-                    text: self.computerIp,
-                    inputType: 'ip'
-                }).then(function(res) {
-                    console.warn('[cookie-login] legacy keyboard result: ' + JSON.stringify(res))
-                    if (res && (res.text || res.value || (res.data && res.data.text))) {
-                        var text = res.text || res.value || (res.data && res.data.text)
-                        self.computerIp = text.trim()
-                        self.cookieStatus = '已输入: ' + text
-                    }
-                }).catch(function(e) {
-                    console.warn('[cookie-login] legacy keyboard error: ' + e)
-                    self.cookieStatus = '键盘调用失败: ' + e
-                })
-            } catch (e) {
-                console.warn('[cookie-login] legacy keyboard exception: ' + e)
-                self.cookieStatus = '键盘异常: ' + e
+            ]
+            
+            var tryNext = function(index) {
+                if (index >= attempts.length) {
+                    self.cookieStatus = '所有键盘调用方式均失败'
+                    return
+                }
+                console.warn('[cookie-login] trying keyboard method ' + (index + 1))
+                try {
+                    attempts[index]().then(function(res) {
+                        console.warn('[cookie-login] keyboard result: ' + JSON.stringify(res))
+                        if (res && (res.text || res.value || (res.data && res.data.text) || res.inputText || res.result || res.data)) {
+                            var text = res.text || res.value || (res.data && res.data.text) || res.inputText || res.result || res.data
+                            self.computerIp = text.trim()
+                            self.cookieStatus = '已输入: ' + text
+                        } else {
+                            console.warn('[cookie-login] keyboard returned empty, trying next')
+                            tryNext(index + 1)
+                        }
+                    }).catch(function(e) {
+                        console.warn('[cookie-login] keyboard method ' + (index + 1) + ' error: ' + e)
+                        tryNext(index + 1)
+                    })
+                }
             }
+            tryNext(0)
         },
         
         onCookieInput(val) {
