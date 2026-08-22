@@ -13,7 +13,7 @@
                 <div class="section cookie-section">
                     <text class="cookie-tip">电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     
-                    <textarea class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" @focus="onFocus" @click="onFocus" :autofocus="true" :softInputEnable="true" :single-line="true" style="height: 40px;"></textarea>
+                    <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" @focus="onFocus" @click="onFocus" :autofocus="true" :softInputEnable="true" type="text" style="height: 40px;"></input>
                     
                     <text class="cookie-status">{{ cookieStatus }}</text>
                     
@@ -199,42 +199,8 @@ export default {
         },
         
         onFocus() {
-            // 尝试调用系统软键盘 API
-            console.warn('[cookie-login] onFocus triggered')
-            try {
-                // 尝试多种可能的软键盘 API
-                var jsapi = $falcon.jsapi
-                console.warn('[cookie-login] jsapi keys: ' + Object.keys(jsapi || {}).join(', '))
-                if (jsapi) {
-                    // 尝试输入法相关 API
-                    var apis = [
-                        {obj: jsapi.ime, method: 'show', name: 'ime.show'},
-                        {obj: jsapi.ime, method: 'open', name: 'ime.open'},
-                        {obj: jsapi.input, method: 'show', name: 'input.show'},
-                        {obj: jsapi.input, method: 'open', name: 'input.open'},
-                        {obj: jsapi.softInput, method: 'show', name: 'softInput.show'},
-                        {obj: jsapi.softInput, method: 'open', name: 'softInput.open'},
-                        {obj: jsapi.softKeyboard, method: 'show', name: 'softKeyboard.show'},
-                        {obj: jsapi.softKeyboard, method: 'open', name: 'softKeyboard.open'},
-                        {obj: jsapi.keyboard, method: 'show', name: 'keyboard.show'},
-                        {obj: jsapi.keyboard, method: 'open', name: 'keyboard.open'},
-                        {obj: jsapi.system, method: 'showSoftKeyboard', name: 'system.showSoftKeyboard'},
-                        {obj: jsapi.system, method: 'openKeyboard', name: 'system.openKeyboard'},
-                        {obj: jsapi.window, method: 'showKeyboard', name: 'window.showKeyboard'},
-                        {obj: jsapi.window, method: 'openKeyboard', name: 'window.openKeyboard'},
-                    ]
-                    for (var i = 0; i < apis.length; i++) {
-                        var api = apis[i]
-                        if (api.obj && typeof api.obj[api.method] === 'function') {
-                            console.warn('[cookie-login] calling ' + api.name)
-                            api.obj[api.method]()
-                            break
-                        }
-                    }
-                }
-            } catch (e) {
-                console.warn('[cookie-login] focus error: ' + e)
-            }
+            // 输入框获得焦点时的处理（HAAS UI 的 input/textarea 组件内部应自动处理软键盘）
+            console.warn('[cookie-login] input focused')
         },
         
         onScroll(e) {
