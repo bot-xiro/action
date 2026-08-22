@@ -4,7 +4,7 @@
         <div class="topbar">
             <text class="back" @click="goBack">‹</text>
             <div class="search-box-wrapper">
-                <!-- 使用 textarea 调用系统输入法 (有道输入法 appid: 8001666679481944) -->
+                <!-- 方案1: 标准 textarea + softInputEnable (推荐) -->
                 <textarea
                     ref="searchInput"
                     class="search-input"
@@ -20,6 +20,8 @@
                 ></textarea>
             </div>
             <text class="go-btn" @click="doSearch">搜索</text>
+            <!-- 方案4备选: 点击图标跳转有道输入法 App -->
+            <text class="ime-btn" @click="openSystemIME">⌨</text>
         </div>
 
         <!-- 未搜索时：展示搜索历史 -->
@@ -105,6 +107,18 @@
     margin-left: 10px;
     font-size: 18px;
     color: #ffffff;
+}
+
+.ime-btn {
+    margin-left: 8px;
+    font-size: 20px;
+    color: #ffffff;
+    width: 36px;
+    height: 36px;
+    line-height: 36px;
+    text-align: center;
+    background-color: rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
 }
 
 /* ---- 历史区 ---- */
@@ -298,6 +312,15 @@ export default {
         openResult(v) {
             console.log('[search] open: ' + v.bvid)
             $falcon.navTo('detail', { bvid: v.bvid })
+        },
+        // 方案4备选: 通过 navTo 跳转有道输入法 App (appid: 8001666679481944)
+        openSystemIME() {
+            console.warn('[search] openSystemIME: navTo 有道输入法')
+            try {
+                $falcon.navTo('falcon://8001666679481944', {})
+            } catch (e) {
+                console.warn('[search] openSystemIME error: ' + (e && e.message ? e.message : String(e)))
+            }
         },
         // ---- 显示辅助 ----
         stripHtml(s) {
