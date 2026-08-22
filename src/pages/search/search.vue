@@ -3,8 +3,8 @@
         <!-- 顶部：返回 + 输入框 + 搜索按钮 -->
         <div class="topbar">
             <text class="back" @click="goBack">‹</text>
-            <div class="search-box-wrapper" @click="tryFocusInput">
-                <!-- 方案1: 标准 textarea + softInputEnable (推荐) -->
+            <div class="search-box-wrapper" @click="onSearchBoxClick">
+                <!-- 使用框架内置系统键盘服务 (参考 loli tools_keyboard: startTextEdit/textEditFinished) -->
                 <textarea
                     ref="searchInput"
                     class="search-input"
@@ -16,13 +16,10 @@
                     @focus="onFocus"
                     @blur="onBlur"
                     @confirm="doSearch"
-                    @click="tryFocusInput"
                     style="height: 32px;"
                 ></textarea>
             </div>
             <text class="go-btn" @click="doSearch">搜索</text>
-            <!-- 方案4备选: 点击图标跳转有道输入法 App -->
-            <text class="ime-btn" @click="openSystemIME">⌨</text>
         </div>
 
         <!-- 未搜索时：展示搜索历史 -->
@@ -108,18 +105,6 @@
     margin-left: 10px;
     font-size: 18px;
     color: #ffffff;
-}
-
-.ime-btn {
-    margin-left: 8px;
-    font-size: 20px;
-    color: #ffffff;
-    width: 36px;
-    height: 36px;
-    line-height: 36px;
-    text-align: center;
-    background-color: rgba(255, 255, 255, 0.25);
-    border-radius: 6px;
 }
 
 /* ---- 历史区 ---- */
@@ -247,7 +232,9 @@ export default {
             searched: false,
             results: [],
             loading: false,
-            error: ''
+            error: '',
+            // 系统键盘状态
+            sysKbOpened: false
         }
     },
     mounted() {
@@ -259,44 +246,52 @@ export default {
         }).catch(function () {
             self.history = []
         })
-        // 不自动聚焦，等待用户点击（参考 cookie.vue）
-        // 监听输入法返回结果
+        // 监听系统键盘返回事件 (参考 loli tools_keyboard: textEditFinished)
         if (typeof $falcon !== 'undefined' && $falcon.on) {
-            $falcon.on('imeResult', this.onImeResult.bind(this))
-            $falcon.on('inputResult', this.onImeResult.bind(this))
-            $falcon.on('inputMethodResult', this.onImeResult.bind(this))
+            $falcon.on('textEditFinished', this.onTextEditFinished.bind(this))
+            $falcon.on('startTextEdit', this.onStartTextEdit.bind(this))
         }
     },
     methods: {
-        // 程序化聚焦输入框，强制触发系统输入法（完全对齐 cookie.vue 方案）
-        tryFocusInput() {
-            console.warn('[search] tryFocusInput called - blur then focus')
-            var inputRef = this.$refs.searchInput
-            if (inputRef) {
-                console.warn('[search] searchInput ref found, blur then focus')
-                try {
-                    // 先 blur 再 focus，强制触发软键盘
-                    if (typeof inputRef.blur === 'function') {
-                        inputRef.blur()
-                        console.warn('[search] blur() called')
-                    }
-                    // 短暂延迟后 focus
-                    setTimeout(function() {
-                        if (typeof inputRef.focus === 'function') {
-                            inputRef.focus()
-                            console.warn('[search] focus() called successfully after blur')
-                        } else if (inputRef.$el && typeof inputRef.$el.focus === 'function') {
-                            inputRef.$el.focus()
-                            console.warn('[search] $el.focus() called successfully')
-                        } else {
-                            console.warn('[search] no focus method available on ref')
-                        }
-                    }.bind(this), 50)
-                } catch (e) {
-                    console.warn('[search] focus error: ' + e)
+        // 打开系统键盘 (参考 loli tools_keyboard: openSysKeyboard + startTextEdit)
+        openSystemKeyboard() {
+            console.warn('[search] openSystemKeyboard: triggering startTextEdit')
+            this.sysKbOpened = true
+            try {
+                // 触发框架内置系统键盘事件
+                if (typeof $falcon !== 'undefined' && $falcon.trigger) {
+                    $falcon.trigger('startTextEdit', {
+                        placeholder: '搜索视频 / UP主',
+                        defaultText: this.keyword,
+                        maxLength: 30,
+                        type: 'text',
+                        confirmText: '搜索'
+                    })
+                    console.warn('[search] startTextEdit triggered')
                 }
-            } else {
-                console.warn('[search] searchInput ref NOT found')
+            } catch (e) {
+                console.warn('[search] openSystemKeyboard error: ' + (e && e.message ? e.message : String(e)))
+            }
+        },
+        // 系统键盘开始编辑事件
+        onStartTextEdit(data) {
+            console.warn('[search] onStartTextEdit: ' + JSON.stringify(data))
+            this.sysKbOpened = true
+        },
+        // 系统键盘编辑完成事件 (参考 loli: textEditFinished)
+        onTextEditFinished(result) {
+            console.warn('[search] onTextEditFinished received: ' + JSON.stringify(result))
+            this.sysKbOpened = false
+            if (result && (result.text || result.value)) {
+                var text = result.text || result.value
+                this.keyword = text
+                this.doSearch()
+            }
+        },
+        // 点击输入框触发系统键盘
+        onSearchBoxClick() {
+            if (!this.sysKbOpened) {
+                this.openSystemKeyboard()
             }
         },
         onInput(val) {
@@ -304,10 +299,10 @@ export default {
             this.keyword = val
         },
         onFocus() {
-            console.warn('[search] onFocus - system input method (有道输入法) triggered')
+            console.warn('[search] onFocus')
         },
         onBlur() {
-            console.warn('[search] onBlur - system input method hidden')
+            console.warn('[search] onBlur')
         },
         doSearch() {
             if (!this.keyword || !this.keyword.trim()) return
@@ -352,32 +347,6 @@ export default {
             console.log('[search] open: ' + v.bvid)
             $falcon.navTo('detail', { bvid: v.bvid })
         },
-        // 方案4: 通过 navTo 调用有道输入法 (appid: 8001666679481944) - 带回调参数
-        openSystemIME() {
-            console.warn('[search] openSystemIME: navTo 有道输入法 with callback')
-            try {
-                // 尝试多种可能的调用参数
-                var callbackUrl = 'falcon://8001812345678901/ime-result'
-                var params = {
-                    callback: callbackUrl,
-                    returnUrl: callbackUrl,
-                    action: 'input',
-                    type: 'text',
-                    hint: '搜索视频 / UP主'
-                }
-                $falcon.navTo('falcon://8001666679481944', params)
-            } catch (e) {
-                console.warn('[search] openSystemIME error: ' + (e && e.message ? e.message : String(e)))
-            }
-        },
-        // 监听输入法返回结果的全局事件
-        onImeResult(result) {
-            console.warn('[search] onImeResult received: ' + JSON.stringify(result))
-            if (result && result.text) {
-                this.keyword = result.text
-                this.doSearch()
-            }
-        },
         // ---- 显示辅助 ----
         stripHtml(s) {
             // 搜索结果 title 含 <em class="keyword"> 等标签，去除后展示
@@ -395,9 +364,8 @@ export default {
         beforeDestroy() {
             // 清理事件监听
             if (typeof $falcon !== 'undefined' && $falcon.off) {
-                $falcon.off('imeResult', this.onImeResult)
-                $falcon.off('inputResult', this.onImeResult)
-                $falcon.off('inputMethodResult', this.onImeResult)
+                $falcon.off('textEditFinished', this.onTextEditFinished)
+                $falcon.off('startTextEdit', this.onStartTextEdit)
             }
         }
     }
