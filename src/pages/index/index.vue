@@ -7,6 +7,7 @@
                 <text class="topbar-status">{{ statusText }}</text>
                 <text class="topbar-search" @click="openSearch">搜索</text>
                 <text class="topbar-search" @click="openSettings">设置</text>
+                <text class="topbar-search" @click="openIMETest">IME测试</text>
             </div>
         </div>
 
@@ -315,6 +316,10 @@ export default {
         openSettings() {
             console.log('[index] openSettings')
             $falcon.navTo('settings', {})
+        },
+        openIMETest() {
+            console.log('[index] openIMETest')
+            $falcon.navTo('ime-test', {})
         }
     }
 }

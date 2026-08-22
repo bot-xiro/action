@@ -6,7 +6,8 @@
     "search": "pages/search/search.vue",
     "settings": "pages/settings/settings.vue",
     "qr-login": "pages/login/qr.vue",
-    "cookie-login": "pages/login/cookie.vue"
+    "cookie-login": "pages/login/cookie.vue",
+    "ime-test": "pages/ime-test/ime-test.vue"
   },
   "options": {
     "external": ["gstplayer"]
