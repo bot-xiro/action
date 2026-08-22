@@ -31,22 +31,23 @@
 
 <style scoped>
 .page {
+    position: relative;
     flex: 1;
     background-color: #f5f6f7;
     flex-direction: column;
 }
 
 .list {
-    flex: 1;
+    position: absolute;
+    top: 48px;
+    bottom: 0;
+    left: 0;
+    right: 0;
     flex-direction: column;
-    height: 100%;
 }
 
 .list-inner {
-    flex: 1;
     flex-direction: column;
-    min-height: 0;
-    overflow-y: auto;
 }
 
 .topbar {
