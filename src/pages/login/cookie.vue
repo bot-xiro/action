@@ -13,7 +13,7 @@
                 <div class="section cookie-section">
                     <text class="cookie-tip">电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     
-                    <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" autofocus="true" softInputEnable="true" style="height: 40px;"></input>
+                    <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" @click="focusInput" :autofocus="true" :softInputEnable="true" type="text" style="height: 40px;"></input>
                     
                     <text class="cookie-status">{{ cookieStatus }}</text>
                     
@@ -195,6 +195,14 @@ export default {
                 }
             }).catch(function (e) {
                 self.cookieStatus = '获取异常: ' + (e && e.message ? e.message : String(e))
+            })
+        },
+        
+        focusInput() {
+            // 触发输入框聚焦，打开软键盘
+            this.$nextTick(function () {
+                // 在 HAAS UI 中，input 组件的 click 事件通常会自动触发软键盘
+                // 这里可以添加额外的聚焦逻辑
             })
         },
         
