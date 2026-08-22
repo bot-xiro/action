@@ -13,22 +13,13 @@
                 <div class="section cookie-section">
                     <text class="cookie-tip">电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     
-                    <!-- 仅一个输入框：textarea single-line + autofocus + softInputEnable -->
+                    <!-- IP 输入框 - 点击打开系统键盘 miniapp -->
                     <div class="input-wrapper">
                         <text class="input-label">电脑 IP 地址</text>
-                        <textarea 
-                            ref="ipInput"
-                            class="cookie-input" 
-                            v-model="computerIp" 
-                            placeholder="电脑 IP (如 192.168.1.100)" 
-                            @input="onCookieInput"
-                            @focus="onFocus"
-                            @blur="onBlur"
-                            :autofocus="true"
-                            :softInputEnable="true"
-                            :single-line="true"
-                            style="height: 44px;">
-                        </textarea>
+                        <div class="ip-display" @click="openKeyboard">
+                            <text class="ip-text">{{ computerIp || '点击输入电脑 IP' }}</text>
+                            <text class="ip-hint">点击调用系统键盘输入</text>
+                        </div>
                     </div>
                     
                     <text class="cookie-status">{{ cookieStatus }}</text>
@@ -36,12 +27,6 @@
                     <div class="cookie-btns">
                         <text class="cookie-btn cancel" @click="goBack">取消</text>
                         <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
-                    </div>
-                    
-                    <!-- 测试按钮 -->
-                    <div class="test-btns">
-                        <text class="test-btn" @click="testKeyboardAPI">测试键盘 API</text>
-                        <text class="test-btn" @click="testModalInput">测试 modal.input</text>
                     </div>
                 </div>
             </div>
@@ -126,19 +111,30 @@
 .input-label {
     font-size: 12px;
     color: #999999;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
 }
 
-.cookie-input {
+.ip-display {
     width: 100%;
-    height: 44px;
-    font-size: 16px;
-    color: #333333;
+    height: 48px;
+    flex-direction: column;
+    justify-content: center;
+    padding-left: 16px;
+    padding-right: 16px;
     background-color: #fafafa;
     border: 1px solid #e0e0e0;
     border-radius: 8px;
-    padding-left: 12px;
-    padding-right: 12px;
+}
+
+.ip-text {
+    font-size: 18px;
+    color: #333333;
+}
+
+.ip-hint {
+    font-size: 12px;
+    color: #999999;
+    margin-top: 2px;
 }
 
 .cookie-status {
@@ -160,7 +156,7 @@
     flex: 1;
     height: 48px;
     line-height: 48px;
-    text-align: center
+    text-align: center;
     border-radius: 8px;
     font-size: 16px;
 }
@@ -174,26 +170,13 @@
     color: #ffffff;
     background-color: #fb7299;
 }
-
-.test-btns {
-    margin-top: 20px;
-    flex-direction: column;
-    gap: 8px;
-}
-
-.test-btn {
-    height: 40px;
-    line-height: 40px;
-    text-align: center
-    font-size: 14px;
-    color: #ffffff;
-    background-color: #999999;
-    border-radius: 6px;
-}
 </style>
 
 <script>
 import auth from '../../utils/auth.js'
+
+// 系统键盘 miniapp appid
+const KEYBOARD_APPID = '8001666679481944'
 
 export default {
     name: 'cookie-login',
@@ -205,7 +188,6 @@ export default {
     },
     mounted() {
         console.warn('[cookie-login] mounted')
-        // 页面加载后依靠 autofocus 自动聚焦，不再手动调用 focus()
     },
     methods: {
         goBack() {
@@ -217,140 +199,61 @@ export default {
             }
         },
         
-        onCookieInput(val) {
-            this.cookieStatus = ''
-            this.computerIp = val
-        },
-        
-        fetchCookieFromComputer() {
+        // 打开系统键盘 miniapp
+        openKeyboard() {
+            console.warn('[cookie-login] openKeyboard -> navTo keyboard appid: ' + KEYBOARD_APPID)
             var self = this
-            if (!self.computerIp) {
-                self.cookieStatus = '请输入电脑 IP'
-                return
-            }
-            self.cookieStatus = '正在从电脑获取...'
-            auth.fetchCookieFromComputer(self.computerIp).then(function (res) {
-                if (res.code === 0) {
-                    self.cookieStatus = '获取成功！'
-                    try {
-                        var m = $falcon.jsapi && $falcon.jsapi.modal
-                        if (m && typeof m.toast === 'function') {
-                            m.toast({ message: 'Cookie 获取成功', duration: 2000 })
-                        }
-                    } catch (e) {}
-                    setTimeout(function () {
-                        self.goBack()
-                    }, 1000)
+            
+            // 使用 $falcon.navTo 启动系统键盘 miniapp
+            // 传递当前 IP 作为初始文本
+            $falcon.navTo('keyboard', {
+                text: self.computerIp,
+                type: 'ip'  // 提示键盘显示 IP 布局
+            }).then(function(res) {
+                console.warn('[cookie-login] keyboard result: ' + JSON.stringify(res))
+                if (res && res.text) {
+                    self.computerIp = res.text.trim()
+                    self.cookieStatus = '已输入: ' + res.text
+                } else if (res && res.value) {
+                    self.computerIp = res.value.trim()
+                    self.cookieStatus = '已输入: ' + res.value
+                } else if (res && res.data && res.data.text) {
+                    self.computerIp = res.data.text.trim()
+                    self.cookieStatus = '已输入: ' + res.data.text
                 } else {
-                    self.cookieStatus = '获取失败: ' + (res.message || '未知错误')
+                    self.cookieStatus = '键盘返回: ' + JSON.stringify(res)
                 }
-            }).catch(function (e) {
-                self.cookieStatus = '获取异常: ' + (e && e.message ? e.message : String(e))
+            }).catch(function(e) {
+                console.warn('[cookie-login] navTo keyboard error: ' + e)
+                self.cookieStatus = '打开键盘失败: ' + e
+                // 尝试备用方式
+                self.tryLegacyKeyboard()
             })
         },
         
-        // 测试键盘 API
-        testKeyboardAPI() {
-            console.warn('[cookie-login] testKeyboardAPI clicked')
-            this.cookieStatus = '正在测试键盘 API...'
+        // 尝试旧版本键盘调用方式
+        tryLegacyKeyboard() {
+            console.warn('[cookie-login] trying legacy keyboard method')
+            var self = this
             try {
-                var jsapi = $falcon.jsapi
-                console.warn('[cookie-login] === $falcon.jsapi keys: ' + Object.keys(jsapi || {}).join(', '))
-                
-                // 列出所有可能的 API 路径
-                var paths = [
-                    'jsapi.ime',
-                    'jsapi.input', 
-                    'jsapi.softInput',
-                    'jsapi.softKeyboard',
-                    'jsapi.keyboard',
-                    'jsapi.system',
-                    'jsapi.window',
-                    'jsapi.textInput',
-                    'jsapi.editText',
-                    'jsapi.nativeInput',
-                ]
-                
-                for (var i = 0; i < paths.length; i++) {
-                    var path = paths[i]
-                    var obj = this.getNested(jsapi, path)
-                    if (obj) {
-                        console.warn('[cookie-login] FOUND: ' + path + ' = ' + JSON.stringify(Object.keys(obj)))
-                    } else {
-                        console.warn('[cookie-login] NOT FOUND: ' + path)
+                // 尝试直接 navTo appid
+                $falcon.navTo('8001666679481944', {
+                    text: self.computerIp,
+                    inputType: 'ip'
+                }).then(function(res) {
+                    console.warn('[cookie-login] legacy keyboard result: ' + JSON.stringify(res))
+                    if (res && (res.text || res.value || (res.data && res.data.text))) {
+                        var text = res.text || res.value || (res.data && res.data.text)
+                        self.computerIp = text.trim()
+                        self.cookieStatus = '已输入: ' + text
                     }
-                }
-                
-                // 尝试 modal 相关
-                if (jsapi.modal) {
-                    console.warn('[cookie-login] modal keys: ' + Object.keys(jsapi.modal))
-                    if (jsapi.modal.input) {
-                        console.warn('[cookie-login] modal.input FOUND!')
-                        try {
-                            jsapi.modal.input({
-                                title: '输入 IP',
-                                placeholder: '192.168.1.100',
-                                confirmText: '确定',
-                                cancelText: '取消'
-                            }).then(function(res) {
-                                console.warn('[cookie-login] modal.input result: ' + JSON.stringify(res))
-                            })
-                        } catch (e) {
-                            console.warn('[cookie-login] modal.input error: ' + e)
-                        }
-                    }
-                    if (jsapi.modal.prompt) {
-                        console.warn('[cookie-login] modal.prompt FOUND!')
-                    }
-                }
-                
-                this.cookieStatus = '已测试，查看日志输出'
+                }).catch(function(e) {
+                    console.warn('[cookie-login] legacy keyboard error: ' + e)
+                    self.cookieStatus = '键盘调用失败: ' + e
+                })
             } catch (e) {
-                console.warn('[cookie-login] testKeyboardAPI error: ' + e)
-                this.cookieStatus = '测试出错: ' + e
-            }
-        },
-        
-        // 获取嵌套对象属性
-        getNested(obj, path) {
-            if (!obj) return null
-            var parts = path.split('.')
-            var current = obj
-            for (var i = 1; i < parts.length; i++) { // 跳过第一个 'jsapi'
-                if (current && current[parts[i]]) {
-                    current = current[parts[i]]
-                } else {
-                    return null
-                }
-            }
-            return current
-        },
-        
-        // 测试 modal.input
-        testModalInput() {
-            console.warn('[cookie-login] testModalInput clicked')
-            try {
-                var jsapi = $falcon.jsapi
-                if (jsapi && jsapi.modal && jsapi.modal.input) {
-                    jsapi.modal.input({
-                        title: '输入电脑 IP',
-                        placeholder: '192.168.1.100',
-                        confirmText: '确定',
-                        cancelText: '取消'
-                    }).then(function(res) {
-                        console.warn('[cookie-login] modal.input result: ' + JSON.stringify(res))
-                        if (res && res.confirm && res.value) {
-                            this.computerIp = res.value
-                            this.cookieStatus = '通过 modal.input 输入: ' + res.value
-                        }
-                    }.bind(this))
-                } else {
-                    this.cookieStatus = 'modal.input 不存在'
-                    console.warn('[cookie-login] modal.input not available')
-                }
-            } catch (e) {
-                console.warn('[cookie-login] testModalInput error: ' + e)
-                this.cookieStatus = '测试出错: ' + e
+                console.warn('[cookie-login] legacy keyboard exception: ' + e)
+                self.cookieStatus = '键盘异常: ' + e
             }
         },
         
@@ -384,14 +287,6 @@ export default {
             }).catch(function (e) {
                 self.cookieStatus = '获取异常: ' + (e && e.message ? e.message : String(e))
             })
-        },
-        
-        onFocus() {
-            console.warn('[cookie-login] input focused')
-        },
-        
-        onBlur() {
-            console.warn('[cookie-login] input blurred')
         },
         
         onScroll(e) {
