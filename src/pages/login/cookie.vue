@@ -13,7 +13,7 @@
                 <div class="section cookie-section">
                     <text class="cookie-tip">电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     
-                    <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" @click="focusInput" :autofocus="true" :softInputEnable="true" type="text" style="height: 40px;"></input>
+                    <textarea class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" @focus="onFocus" @click="onFocus" :autofocus="true" :softInputEnable="true" :single-line="true" style="height: 40px;"></textarea>
                     
                     <text class="cookie-status">{{ cookieStatus }}</text>
                     
@@ -198,12 +198,31 @@ export default {
             })
         },
         
-        focusInput() {
-            // 触发输入框聚焦，打开软键盘
-            this.$nextTick(function () {
-                // 在 HAAS UI 中，input 组件的 click 事件通常会自动触发软键盘
-                // 这里可以添加额外的聚焦逻辑
-            })
+        onFocus() {
+            // 尝试调用系统软键盘 API
+            console.warn('[cookie-login] onFocus triggered')
+            try {
+                // 尝试多种可能的软键盘 API
+                var jsapi = $falcon.jsapi
+                if (jsapi) {
+                    // 尝试输入法相关 API
+                    if (jsapi.ime && typeof jsapi.ime.show === 'function') {
+                        jsapi.ime.show()
+                        console.warn('[cookie-login] ime.show() called')
+                    } else if (jsapi.input && typeof jsapi.input.show === 'function') {
+                        jsapi.input.show()
+                        console.warn('[cookie-login] input.show() called')
+                    } else if (jsapi.softKeyboard && typeof jsapi.softKeyboard.show === 'function') {
+                        jsapi.softKeyboard.show()
+                        console.warn('[cookie-login] softKeyboard.show() called')
+                    } else if (jsapi.keyboard && typeof jsapi.keyboard.show === 'function') {
+                        jsapi.keyboard.show()
+                        console.warn('[cookie-login] keyboard.show() called')
+                    }
+                }
+            } catch (e) {
+                console.warn('[cookie-login] focus error: ' + e)
+            }
         },
         
         onScroll(e) {
