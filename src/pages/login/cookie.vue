@@ -13,23 +13,22 @@
                 <div class="section cookie-section">
                     <text class="cookie-tip">电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     
-                    <!-- 单个 textarea 输入框 - 原生软键盘支持（HAAS UI 文档标准写法） -->
-                    <div class="input-wrapper">
-                        <text class="input-label">电脑 IP 地址</text>
-                        <textarea 
-                            ref="ipInput"
-                            class="cookie-input" 
-                            v-model="computerIp" 
-                            placeholder="电脑 IP (如 192.168.1.100)" 
-                            @input="onCookieInput"
-                            @focus="onFocus"
-                            @blur="onBlur"
-                            :autofocus="true"
-                            :softInputEnable="true"
-                            :single-line="true"
-                            style="height: 44px;">
-                        </textarea>
-                    </div>
+                    <!-- 单个 textarea 输入框 - 原生软键盘支持 -->
+                    <!-- 直接在 textarea 上处理点击和焦点，不加额外包装 div -->
+                    <textarea 
+                        ref="ipInput"
+                        class="cookie-input" 
+                        v-model="computerIp" 
+                        placeholder="电脑 IP (如 192.168.1.100)" 
+                        @input="onCookieInput"
+                        @focus="onFocus"
+                        @blur="onBlur"
+                        @click="onTextareaClick"
+                        :autofocus="true"
+                        :softInputEnable="true"
+                        :single-line="true"
+                        style="height: 44px;">
+                    </textarea>
                     
                     <text class="cookie-status">{{ cookieStatus }}</text>
                     
@@ -182,8 +181,11 @@ export default {
         }
     },
     mounted() {
-        console.warn('[cookie-login] mounted')
-        // 依靠 autofocus 自动聚焦，不做手动 focus() 调用
+        console.warn('[cookie-login] mounted - starting autofocus')
+        // 页面加载后尝试聚焦输入框
+        this.$nextTick(function() {
+            this.tryFocusInput()
+        })
     },
     methods: {
         goBack() {
@@ -195,7 +197,38 @@ export default {
             }
         },
         
+        // 显式聚焦输入框 - 触发软键盘
+        tryFocusInput() {
+            console.warn('[cookie-login] tryFocusInput called')
+            var inputRef = this.$refs.ipInput
+            if (inputRef) {
+                console.warn('[cookie-login] ipInput ref found, calling focus()')
+                try {
+                    if (typeof inputRef.focus === 'function') {
+                        inputRef.focus()
+                        console.warn('[cookie-login] focus() called successfully')
+                    } else if (inputRef.$el && typeof inputRef.$el.focus === 'function') {
+                        inputRef.$el.focus()
+                        console.warn('[cookie-login] $el.focus() called successfully')
+                    } else {
+                        console.warn('[cookie-login] no focus method available on ref')
+                    }
+                } catch (e) {
+                    console.warn('[cookie-login] focus error: ' + e)
+                }
+            } else {
+                console.warn('[cookie-login] ipInput ref NOT found')
+            }
+        },
+        
+        // 点击输入框时显式聚焦
+        onTextareaClick() {
+            console.warn('[cookie-login] onTextareaClick - manually focusing')
+            this.tryFocusInput()
+        },
+        
         onCookieInput(val) {
+            console.warn('[cookie-login] onCookieInput: ' + val)
             this.cookieStatus = ''
             this.computerIp = val
         },
@@ -228,11 +261,11 @@ export default {
         },
         
         onFocus() {
-            console.warn('[cookie-login] input focused')
+            console.warn('[cookie-login] onFocus - input focused')
         },
         
         onBlur() {
-            console.warn('[cookie-login] input blurred')
+            console.warn('[cookie-login] onBlur - input blurred')
         },
         
         goBack() {
