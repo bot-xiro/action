@@ -12,10 +12,12 @@
                     placeholder="搜索视频 / UP主"
                     :softInputEnable="true"
                     :single-line="true"
+                    :autofocus="true"
                     @input="onInput"
                     @focus="onFocus"
                     @blur="onBlur"
                     @confirm="doSearch"
+                    @click="tryFocusInput"
                     style="height: 32px;"
                 ></textarea>
             </div>
@@ -258,6 +260,11 @@ export default {
         }).catch(function () {
             self.history = []
         })
+        // 页面加载后自动聚焦触发输入法
+        var self2 = this
+        setTimeout(function() {
+            self2.tryFocusInput()
+        }, 100)
     },
     methods: {
         // 程序化聚焦输入框，强制触发系统输入法（参考 cookie.vue 方案）
