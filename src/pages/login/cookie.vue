@@ -15,20 +15,23 @@
                     
                     <!-- 单个 textarea 输入框 - 原生软键盘支持 -->
                     <!-- 直接在 textarea 上处理点击和焦点，不加额外包装 div -->
-                    <textarea 
-                        ref="ipInput"
-                        class="cookie-input" 
-                        v-model="computerIp" 
-                        placeholder="电脑 IP (如 192.168.1.100)" 
-                        @input="onCookieInput"
-                        @focus="onFocus"
-                        @blur="onBlur"
-                        @click="onTextareaClick"
-                        :autofocus="true"
-                        :softInputEnable="true"
-                        :single-line="true"
-                        style="height: 44px;">
-                    </textarea>
+                    <div class="input-container" @click="onContainerClick">
+                        <text class="input-label">电脑 IP 地址</text>
+                        <textarea 
+                            ref="ipInput"
+                            class="cookie-input" 
+                            v-model="computerIp" 
+                            placeholder="电脑 IP (如 192.168.1.100)" 
+                            @input="onCookieInput"
+                            @focus="onFocus"
+                            @blur="onBlur"
+                            @click="onTextareaClick"
+                            :autofocus="true"
+                            :softInputEnable="true"
+                            :single-line="true"
+                            style="height: 48px;">
+                        </textarea>
+                    </div>
                     
                     <text class="cookie-status">{{ cookieStatus }}</text>
                     
@@ -36,6 +39,9 @@
                         <text class="cookie-btn cancel" @click="goBack">取消</text>
                         <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
                     </div>
+                    
+                    <!-- 调试按钮：手动触发键盘 -->
+                    <text class="debug-btn" @click="debugKeyboard">🔧 测试键盘调用</text>
                 </div>
             </div>
         </scroller>
@@ -124,7 +130,7 @@
 
 .cookie-input {
     width: 100%;
-    height: 44px;
+    height: 48px;
     font-size: 16px;
     color: #333333;
     background-color: #fafafa;
@@ -166,6 +172,18 @@
 .cookie-btn.confirm {
     color: #ffffff;
     background-color: #fb7299;
+}
+
+/* 调试按钮 */
+.debug-btn {
+    height: 40px;
+    line-height: 40px;
+    text-align: center;
+    font-size: 14px;
+    color: #ffffff;
+    background-color: #666666;
+    border-radius: 6px;
+    margin-top: 20px;
 }
 </style>
 
@@ -225,6 +243,13 @@ export default {
         onTextareaClick() {
             console.warn('[cookie-login] onTextareaClick - manually focusing')
             this.tryFocusInput()
+        },
+        
+        // 调试按钮：手动触发键盘
+        debugKeyboard() {
+            console.warn('[cookie-login] debugKeyboard clicked')
+            this.tryFocusInput()
+            this.cookieStatus = '已尝试调用 focus()，查看日志'
         },
         
         onCookieInput(val) {
