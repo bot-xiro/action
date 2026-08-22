@@ -15,7 +15,7 @@
                     <text class="section-title">账号</text>
 
                     <!-- 未登录：显示登录选项 -->
-                    <div class="option" v-if="!loggedIn" @click="openQRModal">
+                    <div class="option" v-if="!loggedIn" @click="navToQRLogin">
                         <div class="option-left">
                             <text class="option-name">扫码登录</text>
                             <text class="option-desc">使用哔哩哔哩 APP 扫码登录</text>
@@ -23,7 +23,7 @@
                         <text class="option-badge">去登录</text>
                     </div>
 
-                    <div class="option" v-if="!loggedIn" @click="openCookieModal">
+                    <div class="option" v-if="!loggedIn" @click="navToCookieLogin">
                         <div class="option-left">
                             <text class="option-name">Cookie 登录</text>
                             <text class="option-desc">从电脑同步 Cookie（方式2）</text>
@@ -90,35 +90,6 @@
                 </div>
             </div>
         </scroller>
-
-        <!-- 统一的模态框：根据 modalMode 显示不同内容 -->
-        <div v-if="modalVisible" class="modal-overlay" @click.self="closeModal">
-            <div class="modal-box" @click.stop>
-                <!-- 二维码登录模式 -->
-                <div v-if="modalMode === 'qr'">
-                    <text class="modal-title" @click.stop>扫码登录 Bilibili</text>
-                    <div class="qr-container" style="width: 160px; height: 160px;">
-                        <image v-if="qrCodeUrl" :src="qrCodeUrl" class="qr-image" mode="aspectFit" style="width: 150px; height: 150px;"></image>
-                        <text v-else class="qr-loading" @click.stop>生成二维码中...</text>
-                    </div>
-                    <text class="qr-tip" @click.stop>请使用哔哩哔哩 APP 扫码登录</text>
-                    <text class="qr-status" @click.stop>{{ qrStatus }}</text>
-                    <text class="modal-close" @click="closeModal">取消</text>
-                </div>
-
-                <!-- Cookie 登录模式 -->
-                <div v-else-if="modalMode === 'cookie'">
-                    <text class="modal-title" @click.stop>Cookie 登录</text>
-                    <text class="cookie-tip" @click.stop>电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
-                    <input class="cookie-input" v-model="computerIp" placeholder="电脑 IP (如 192.168.1.100)" @input="onCookieInput" autofocus="true" softInputEnable="true" style="height: 40px;"></input>
-                    <text class="cookie-status" @click.stop>{{ cookieStatus }}</text>
-                    <div class="cookie-btns">
-                        <text class="cookie-btn cancel" @click="closeModal">取消</text>
-                        <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
 </template>
 
@@ -243,195 +214,6 @@
     color: #aaaaaa;
     margin-top: 4px;
 }
-
-/* 统一模态框样式 */
-.modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 960px;
-    height: 266px;
-    background-color: rgba(0, 0, 0, 0.7);
-    align-items: center;
-    justify-content: center;
-    z-index: 100;
-}
-
-.qr-image {
-    width: 150px;
-    height: 150px;
-}
-
-.cookie-input {
-    width: 100%;
-    height: 80px;
-    background-color: #fafafa;
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: #eeeeee;
-    padding: 10px;
-    font-size: 14px;
-    color: #333333;
-    margin-bottom: 10px;
-}
-
-input.cookie-input {
-    width: 100%;
-    height: 40px;
-    background-color: #fafafa;
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: #eeeeee;
-    padding: 10px;
-    font-size: 14px;
-    color: #333333;
-}
-
-.modal-box {
-    width: 320px;
-    max-height: 280px;
-    background-color: #ffffff;
-    border-radius: 12px;
-    padding: 20px;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
-.modal-content {
-    width: 100%;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-}
-
-.modal-title {
-    font-size: 22px;
-    color: #222222;
-    font-weight: bold;
-    margin-bottom: 12px;
-}
-
-.qr-container {
-    width: 160px;
-    height: 160px;
-    background-color: #fafafa;
-    border-radius: 8px;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 10px;
-}
-
-.qr-image {
-    width: 150px;
-    height: 150px;
-}
-
-.cookie-input {
-    width: 100%;
-    height: 80px;
-    background-color: #fafafa;
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: #eeeeee;
-    padding: 10px;
-    font-size: 14px;
-    color: #333333;
-    margin-bottom: 10px;
-}
-
-input.cookie-input {
-    width: 100%;
-    height: 40px;
-    background-color: #fafafa;
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: #eeeeee;
-    padding: 10px;
-    font-size: 14px;
-    color: #333333;
-}
-
-.qr-loading {
-    font-size: 18px;
-    color: #999999;
-}
-
-.qr-tip {
-    font-size: 16px;
-    color: #888888;
-    margin-bottom: 8px;
-}
-
-.qr-status {
-    font-size: 16px;
-    color: #fb7299;
-    margin-bottom: 16px;
-}
-
-.modal-close {
-    font-size: 18px;
-    color: #fb7299;
-    padding: 8px 24px;
-    border-radius: 20px;
-    background-color: rgba(251, 114, 153, 0.1);
-}
-
-/* Cookie 登录弹窗 */
-.cookie-tip {
-    font-size: 14px;
-    color: #888888;
-    margin-bottom: 12px;
-    width: 100%;
-    text-align: left;
-}
-
-.cookie-input {
-    width: 100%;
-    height: 80px;
-    background-color: #fafafa;
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: #eeeeee;
-    padding: 10px;
-    font-size: 14px;
-    color: #333333;
-    margin-bottom: 10px;
-}
-
-.cookie-status {
-    font-size: 14px;
-    color: #fb7299;
-    margin-bottom: 12px;
-    width: 100%;
-    text-align: center;
-}
-
-.cookie-btns {
-    width: 100%;
-    flex-direction: row;
-    justify-content: space-between;
-}
-
-.cookie-btn {
-    width: 48%;
-    text-align: center;
-    padding: 10px 0;
-    font-size: 16px;
-    border-radius: 8px;
-}
-
-.cookie-btn.cancel {
-    color: #888888;
-    background-color: #f0f0f0;
-}
-
-.cookie-btn.confirm {
-    color: #ffffff;
-    background-color: #fb7299;
-}
 </style>
 
 <script>
@@ -444,19 +226,7 @@ export default {
         return {
             mode: settings.DEFAULT_MODE,
             loggedIn: false,
-            userInfo: {},
-            // 统一的模态框状态
-            modalVisible: false,
-            modalMode: '',  // 'qr' | 'cookie'
-            // 二维码登录相关
-            qrCodeUrl: '',
-            qrCodeKey: '',
-            qrStatus: '',
-            qrPollTimer: null,
-            // Cookie 登录相关
-            cookieInput: '',
-            cookieStatus: '',
-            computerIp: '192.168.1.100'
+            userInfo: {}
         }
     },
     mounted() {
@@ -471,9 +241,6 @@ export default {
         
         // 检查登录状态
         this.checkLoginStatus()
-    },
-    beforeDestroy() {
-        this.stopQrPolling()
     },
     methods: {
         goBack() {
@@ -523,169 +290,16 @@ export default {
             })
         },
         
-        // 打开二维码登录模态框
-        openQRModal() {
-            var self = this
-            this.modalMode = 'qr'
-            this.modalVisible = true
-            this.qrStatus = '正在生成二维码...'
-            
-            auth.generateQrCode().then(function (res) {
-                if (res && res.code === 0 && res.data) {
-                    var loginUrl = res.data.url
-                    self.qrCodeKey = res.data.qrcode_key
-                    // 使用在线二维码生成服务生成二维码图片（B站返回的是登录页面URL，非直接图片）
-                    self.qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=' + encodeURIComponent(loginUrl)
-                    self.qrStatus = '请使用哔哩哔哩 APP 扫码'
-                    self.startQrPolling()
-                } else {
-                    self.qrStatus = '生成失败: ' + (res && res.message ? res.message : '未知错误')
-                    console.warn('[settings] generateQrCode failed: ' + JSON.stringify(res))
-                }
-            }).catch(function (e) {
-                self.qrStatus = '生成异常: ' + (e && e.message ? e.message : String(e))
-            })
+        // 导航到二维码登录页面
+        navToQRLogin() {
+            console.log('[settings] navToQRLogin')
+            $falcon.navTo('qr-login', {})
         },
         
-        startQrPolling() {
-            var self = this
-            if (!self.qrCodeKey) return
-            
-            var poll = function () {
-                if (!self.modalVisible || self.modalMode !== 'qr' || !self.qrCodeKey) return
-                
-                auth.pollQrCode(self.qrCodeKey).then(function (res) {
-                    if (!self.modalVisible || self.modalMode !== 'qr') return
-                    
-                    if (res && res.code === 0) {
-                        if (res.data && res.data.url) {
-                            // 登录成功
-                            self.qrStatus = '登录成功！'
-                            // 解析 cookie 并保存
-                            try {
-                                var u = new URL(res.data.url)
-                                var cookie = ''
-                                for (var _i = 0, _a = u.searchParams.entries(); _i < _a.length; _i++) {
-                                    var _b = _a[_i], k = _b[0], v = _b[1]
-                                    if (k === 'SESSDATA' || k === 'bili_jct' || k === 'DedeUserID' || k === 'DedeUserID__ckMd5' || k === 'sid') {
-                                        cookie += k + '=' + v + '; '
-                                    }
-                                }
-                                if (cookie) {
-                                    auth.setCookie(cookie).then(function () {
-                                        console.warn('[settings] cookie saved')
-                                    })
-                                }
-                            } catch (e) {
-                                console.warn('[settings] parse cookie error: ' + e)
-                            }
-                            
-                            self.stopQrPolling()
-                            self.closeModal()
-                            self.checkLoginStatus()
-                            
-                            try {
-                                var m = $falcon.jsapi && $falcon.jsapi.modal
-                                if (m && typeof m.toast === 'function') {
-                                    m.toast({ message: '登录成功', duration: 2000 })
-                                }
-                            } catch (e) {}
-                        } else if (res.code === 86038) {
-                            self.qrStatus = '等待扫码...'
-                            self.qrPollTimer = setTimeout(poll, 2000)
-                        } else if (res.code === 86090) {
-                            self.qrStatus = '已扫码，等待确认...'
-                            self.qrPollTimer = setTimeout(poll, 2000)
-                        } else if (res.code === 86101) {
-                            self.qrStatus = '二维码已过期，请重试'
-                            self.stopQrPolling()
-                        } else {
-                            self.qrStatus = '状态: ' + (res.message || res.code)
-                            self.qrPollTimer = setTimeout(poll, 3000)
-                        }
-                    } else {
-                        self.qrStatus = '轮询失败: ' + (res && res.message ? res.message : '网络错误')
-                        self.qrPollTimer = setTimeout(poll, 5000)
-                    }
-                }).catch(function (e) {
-                    self.qrStatus = '轮询异常: ' + (e && e.message ? e.message : String(e))
-                    self.qrPollTimer = setTimeout(poll, 5000)
-                })
-            }
-            poll()
-        },
-        
-        stopQrPolling() {
-            if (this.qrPollTimer) {
-                clearTimeout(this.qrPollTimer)
-                this.qrPollTimer = null
-            }
-        },
-        
-        // 打开 Cookie 登录模态框
-        openCookieModal() {
-            this.modalMode = 'cookie'
-            this.modalVisible = true
-            this.cookieInput = ''
-            this.cookieStatus = ''
-        },
-        
-        closeModal() {
-            this.stopQrPolling()
-            this.modalVisible = false
-            this.modalMode = ''
-            this.qrCodeUrl = ''
-            this.qrCodeKey = ''
-            this.qrStatus = ''
-            this.cookieInput = ''
-            this.cookieStatus = ''
-        },
-        
-        onCookieInput() {
-            this.cookieStatus = ''
-        },
-        
-        confirmCookieLogin() {
-            var self = this
-            var cookieStr = this.cookieInput.trim()
-            if (!cookieStr) {
-                this.cookieStatus = '请粘贴 Cookie'
-                return
-            }
-            // 简单验证：必须包含 SESSDATA 或 bili_jct
-            if (cookieStr.indexOf('SESSDATA') === -1 && cookieStr.indexOf('bili_jct') === -1) {
-                this.cookieStatus = 'Cookie 无效：缺少 SESSDATA 或 bili_jct'
-                return
-            }
-            this.cookieStatus = '验证中...'
-            auth.setCookie(cookieStr).then(function () {
-                self.cookieStatus = '保存成功，验证中...'
-                self.closeModal()
-                self.checkLoginStatus()
-            }).catch(function (e) {
-                self.cookieStatus = '保存失败: ' + (e && e.message ? e.message : String(e))
-            })
-        },
-        
-        // 从电脑同步 Cookie
-        fetchCookieFromComputer() {
-            var self = this
-            if (!self.computerIp) {
-                self.cookieStatus = '请输入电脑 IP'
-                return
-            }
-            self.cookieStatus = '正在从电脑获取...'
-            auth.fetchCookieFromComputer(self.computerIp).then(function (res) {
-                if (res.code === 0) {
-                    self.cookieStatus = '获取成功！'
-                    setTimeout(function () {
-                        self.closeModal()
-                        self.checkLoginStatus()
-                    }, 1000)
-                } else {
-                    self.cookieStatus = '获取失败: ' + (res.message || '未知错误')
-                }
-            })
+        // 导航到 Cookie 登录页面
+        navToCookieLogin() {
+            console.log('[settings] navToCookieLogin')
+            $falcon.navTo('cookie-login', {})
         },
         
         onLogout() {

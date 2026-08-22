@@ -4,7 +4,9 @@
     "detail": "pages/detail/detail.vue",
     "player": "pages/player/player.vue",
     "search": "pages/search/search.vue",
-    "settings": "pages/settings/settings.vue"
+    "settings": "pages/settings/settings.vue",
+    "qr-login": "pages/login/qr.vue",
+    "cookie-login": "pages/login/cookie.vue"
   },
   "options": {
     "external": ["gstplayer"]
