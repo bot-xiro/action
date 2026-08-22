@@ -3,8 +3,8 @@
         <!-- 顶部：返回 + 输入框 + 搜索按钮 -->
         <div class="topbar">
             <text class="back" @click="goBack">‹</text>
-            <div class="search-box-wrapper" @click="onSearchBoxClick">
-                <!-- 使用框架内置系统键盘服务 (参考 loli tools_keyboard: startTextEdit/textEditFinished) -->
+            <div class="search-box-wrapper" @click="openSystemIME">
+                <!-- 点击触发 navTo 启动有道输入法 App (appid: 8001666679481944) -->
                 <textarea
                     ref="searchInput"
                     class="search-input"
@@ -174,48 +174,48 @@
 .r-cover {
     width: 90px;
     height: 50px;
-    background-color: #e0e0e0;
+    background-color: #e0e0e0.
     margin-left: 3px;
-    border-radius: 4px;
+    border-radius: 4px.
 }
 
 .r-info {
     flex: 1;
     margin-left: 8px;
-    margin-right: 8px;
-    flex-direction: column;
-    justify-content: center;
+    margin-right: 8px.
+    flex-direction: column.
+    justify-content: center.
 }
 
 .r-title {
     font-size: 15px;
-    color: #333333;
-    lines: 1;
+    color: #333333.
+    lines: 1.
 }
 
 .r-meta {
-    margin-top: 3px;
-    font-size: 12px;
-    color: #999999;
+    margin-top: 3px.
+    font-size: 12px.
+    color: #999999.
 }
 
 /* ---- 通用 ---- */
 .center {
-    flex: 1;
-    align-items: center;
-    justify-content: center;
+    flex: 1.
+    align-items: center.
+    justify-content: center.
 }
 
 .hint {
-    font-size: 16px;
-    color: #999999;
+    font-size: 16px.
+    color: #999999.
 }
 
 .retry {
-    margin-top: 10px;
-    font-size: 16px;
-    color: #fb7299;
-    text-decoration: underline;
+    margin-top: 10px.
+    font-size: 16px.
+    color: #fb7299.
+    text-decoration: underline.
 }
 </style>
 
@@ -233,8 +233,8 @@ export default {
             results: [],
             loading: false,
             error: '',
-            // 系统键盘状态
-            sysKbOpened: false
+            // 等待输入法回调的标志
+            waitingForIME: false
         }
     },
     mounted() {
@@ -246,52 +246,56 @@ export default {
         }).catch(function () {
             self.history = []
         })
-        // 监听系统键盘返回事件 (参考 loli tools_keyboard: textEditFinished)
-        if (typeof $falcon !== 'undefined' && $falcon.on) {
-            $falcon.on('textEditFinished', this.onTextEditFinished.bind(this))
-            $falcon.on('startTextEdit', this.onStartTextEdit.bind(this))
-        }
     },
     methods: {
-        // 打开系统键盘 (参考 loli tools_keyboard: openSysKeyboard + startTextEdit)
-        openSystemKeyboard() {
-            console.warn('[search] openSystemKeyboard: triggering startTextEdit')
-            this.sysKbOpened = true
+        // 打开有道输入法 App (appid: 8001666679481944) - 使用 navTo 回调机制
+        openSystemIME() {
+            if (this.waitingForIME) {
+                console.warn('[search] already waiting for IME, ignoring')
+                return
+            }
+            console.warn('[search] openSystemIME: navTo 有道输入法 (8001666679481944)')
+            this.waitingForIME = true
             try {
-                // 触发框架内置系统键盘事件
-                if (typeof $falcon !== 'undefined' && $falcon.trigger) {
-                    $falcon.trigger('startTextEdit', {
-                        placeholder: '搜索视频 / UP主',
-                        defaultText: this.keyword,
-                        maxLength: 30,
-                        type: 'text',
-                        confirmText: '搜索'
-                    })
-                    console.warn('[search] startTextEdit triggered')
+                // 使用 navTo 调用有道输入法，带回调参数
+                // 回调地址：falcon://当前appid/ime-callback
+                var callbackUrl = 'falcon://8001812345678901/ime-callback'
+                var params = {
+                    // 标准回调参数
+                    callback: callbackUrl,
+                    returnUrl: callbackUrl,
+                    // 输入法相关参数
+                    action: 'input',
+                    type: 'text',
+                    hint: '搜索视频 / UP主',
+                    defaultText: this.keyword,
+                    maxLength: 30,
+                    confirmText: '搜索'
                 }
+                var ret = $falcon.navTo('falcon://8001666679481944', params)
+                console.warn('[search] navTo ret: ' + JSON.stringify(ret))
             } catch (e) {
-                console.warn('[search] openSystemKeyboard error: ' + (e && e.message ? e.message : String(e)))
+                console.warn('[search] openSystemIME error: ' + (e && e.message ? e.message : String(e)))
+                this.waitingForIME = false
             }
         },
-        // 系统键盘开始编辑事件
-        onStartTextEdit(data) {
-            console.warn('[search] onStartTextEdit: ' + JSON.stringify(data))
-            this.sysKbOpened = true
-        },
-        // 系统键盘编辑完成事件 (参考 loli: textEditFinished)
-        onTextEditFinished(result) {
-            console.warn('[search] onTextEditFinished received: ' + JSON.stringify(result))
-            this.sysKbOpened = false
-            if (result && (result.text || result.value)) {
-                var text = result.text || result.value
+        // 处理 navTo 回调 - 页面被重新激活时调用
+        onNewOptions(options) {
+            console.warn('[search] onNewOptions received: ' + JSON.stringify(options))
+            this.waitingForIME = false
+            if (options && (options.text || options.value || options.result)) {
+                var text = options.text || options.value || options.result
                 this.keyword = text
                 this.doSearch()
             }
         },
-        // 点击输入框触发系统键盘
-        onSearchBoxClick() {
-            if (!this.sysKbOpened) {
-                this.openSystemKeyboard()
+        // 兼容：onLoad 也可能接收回调参数
+        onLoad(options) {
+            console.warn('[search] onLoad received: ' + JSON.stringify(options))
+            if (options && (options.text || options.value || options.result)) {
+                var text = options.text || options.value || options.result
+                this.keyword = text
+                this.doSearch()
             }
         },
         onInput(val) {
@@ -312,13 +316,11 @@ export default {
             this.error = ''
             api.searchVideo(kw, 1)
                 .then(data => {
-                    // 兼容两种返回结构：data.result 为数组，或缺省时 data.result.video
                     var result = (data && data.result) || (data && data.video) || []
                     var list = Array.isArray(result) ? result : (Array.isArray(result.video) ? result.video : [])
                     this.results = list
                     this.loading = false
                     this.searched = true
-                    // 写历史（异步，不阻塞结果展示）
                     var self = this
                     storage.addHistory(kw).then(function (list) {
                         self.history = Array.isArray(list) ? list : []
@@ -347,26 +349,24 @@ export default {
             console.log('[search] open: ' + v.bvid)
             $falcon.navTo('detail', { bvid: v.bvid })
         },
+        goBack() {
+            try {
+                this.$page.finish()
+            } catch (e) {
+                console.warn('[search] finish error: ' + (e ? e.message : e))
+            }
+        },
         // ---- 显示辅助 ----
         stripHtml(s) {
-            // 搜索结果 title 含 <em class="keyword"> 等标签，去除后展示
             return String(s || '').replace(/<[^>]*>/g, '')
         },
         fmtPlay(play) {
-            // play 可能是数字（16334）或带万（1.2万）
             var v = play
             if (typeof v === 'number') {
                 if (v >= 10000) return (v / 10000).toFixed(1) + '万'
                 return String(v)
             }
             return String(v == null ? '' : v)
-        },
-        beforeDestroy() {
-            // 清理事件监听
-            if (typeof $falcon !== 'undefined' && $falcon.off) {
-                $falcon.off('textEditFinished', this.onTextEditFinished)
-                $falcon.off('startTextEdit', this.onStartTextEdit)
-            }
         }
     }
 }
