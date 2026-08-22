@@ -3,9 +3,21 @@
         <!-- 顶部：返回 + 输入框 + 搜索按钮 -->
         <div class="topbar">
             <text class="back" @click="goBack">‹</text>
-            <div class="search-box" @click="openKeyboard">
-                <text v-if="!keyword" class="placeholder">搜索视频 / UP主</text>
-                <text v-else class="keyword-text">{{ keyword }}</text>
+            <div class="search-box-wrapper">
+                <!-- 使用 textarea 调用系统输入法 (有道输入法 appid: 8001666679481944) -->
+                <textarea
+                    ref="searchInput"
+                    class="search-input"
+                    v-model="keyword"
+                    placeholder="搜索视频 / UP主"
+                    :softInputEnable="true"
+                    :single-line="true"
+                    @input="onInput"
+                    @focus="onFocus"
+                    @blur="onBlur"
+                    @confirm="doSearch"
+                    style="height: 32px;"
+                ></textarea>
             </div>
             <text class="go-btn" @click="doSearch">搜索</text>
         </div>
@@ -44,11 +56,6 @@
                 </div>
             </scroller>
         </div>
-
-        <!-- 软键盘弹层（点击输入框弹出） -->
-        <div v-if="keyboardShow" class="kbd-layer" @click="noop">
-            <soft-keyboard :variant="variant" @input="onChar" @backspace="onBack" @clear="clearKeyword" @variant="toggleVariant" @search="doSearch"></soft-keyboard>
-        </div>
     </div>
 </template>
 
@@ -76,24 +83,21 @@
     padding-right: 12px;
 }
 
-.search-box {
+.search-box-wrapper {
     flex: 1;
     height: 32px;
     background-color: #ffffff;
     border-radius: 16px;
-    justify-content: center;
     padding-left: 12px;
     padding-right: 12px;
 }
 
-.placeholder {
-    font-size: 16px;
-    color: #999999;
-}
-
-.keyword-text {
+.search-input {
+    flex: 1;
+    height: 32px;
     font-size: 16px;
     color: #333333;
+    background-color: transparent;
     lines: 1;
 }
 
@@ -195,14 +199,6 @@
     color: #999999;
 }
 
-/* ---- 软键盘弹层 ---- */
-.kbd-layer {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-}
-
 /* ---- 通用 ---- */
 .center {
     flex: 1;
@@ -226,13 +222,9 @@
 <script>
 import api from '../../utils/api.js'
 import storage from '../../utils/storage.js'
-import softKeyboard from '../../components/SoftKeyboard.vue'
 
 export default {
     name: 'search',
-    components: {
-        softKeyboard
-    },
     data() {
         return {
             keyword: '',
@@ -240,45 +232,34 @@ export default {
             searched: false,
             results: [],
             loading: false,
-            error: '',
-            keyboardShow: false,
-            variant: 0
+            error: ''
         }
     },
     mounted() {
-        this.history = ''
+        this.history = []
         // storage JSAPI 为异步（Promise），读取后回填
         var self = this
         storage.getHistory().then(function (list) {
-            self.history = Array.isArray(list) ? list : ''
+            self.history = Array.isArray(list) ? list : []
         }).catch(function () {
-            self.history = ''
+            self.history = []
         })
     },
     methods: {
-        noop() { },
-        openKeyboard() {
-            this.keyboardShow = true
+        onInput(val) {
+            console.warn('[search] onInput: ' + val)
+            this.keyword = val
         },
-        onChar(c) {
-            // 输入字符：追加到关键字（限制 30 字）
-            if (this.keyword.length >= 30) return
-            this.keyword = this.keyword + c
+        onFocus() {
+            console.warn('[search] onFocus - system input method (有道输入法) triggered')
         },
-        onBack() {
-            this.keyword = this.keyword.substring(0, this.keyword.length - 1)
-        },
-        clearInput() {
-            this.keyword = ''
-        },
-        toggleVariant() {
-            this.variant = this.variant === 0 ? 1 : 0
+        onBlur() {
+            console.warn('[search] onBlur - system input method hidden')
         },
         doSearch() {
             if (!this.keyword || !this.keyword.trim()) return
             var kw = this.keyword.trim()
             this.searched = true
-            this.keyboardShow = false   // 搜索即收起键盘
             this.loading = true
             this.error = ''
             api.searchVideo(kw, 1)
@@ -292,7 +273,7 @@ export default {
                     // 写历史（异步，不阻塞结果展示）
                     var self = this
                     storage.addHistory(kw).then(function (list) {
-                        self.history = Array.isArray(list) ? list : ''
+                        self.history = Array.isArray(list) ? list : []
                     }).catch(function () { })
                     console.warn('[search] done kw=' + kw + ' hits=' + this.results.length)
                 })
@@ -309,9 +290,9 @@ export default {
         clearHistory() {
             var self = this
             storage.clearHistory().then(function () {
-                self.history = ''
+                self.history = []
             }).catch(function () {
-                self.history = ''
+                self.history = []
             })
         },
         openResult(v) {
