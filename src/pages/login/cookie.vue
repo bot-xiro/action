@@ -13,15 +13,17 @@
                 <div class="section cookie-section">
                     <text class="cookie-tip">电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     
-                    <!-- 尝试多种输入框写法 -->
+                    <!-- 写法1: textarea single-line + softInputEnable="true" + autofocus="true" -->
                     <div class="input-wrapper">
-                        <!-- 写法1: textarea single-line -->
+                        <text class="input-label">方式1: textarea (single-line)</text>
                         <textarea 
-                            ref="inputRef1"
+                            ref="textareaRef"
                             class="cookie-input" 
                             v-model="computerIp" 
                             placeholder="电脑 IP (如 192.168.1.100)" 
-                            @input="onCookieInput" 
+                            @input="onCookieInput"
+                            @focus="onFocus"
+                            @blur="onBlur"
                             :autofocus="true"
                             :softInputEnable="true"
                             :single-line="true"
@@ -29,14 +31,17 @@
                         </textarea>
                     </div>
                     
-                    <div class="input-wrapper" style="margin-top: 12px;">
-                        <!-- 写法2: input type=text -->
+                    <!-- 写法2: input type=text + softInputEnable="true" + autofocus="true" -->
+                    <div class="input-wrapper" style="margin-top: 16px;">
+                        <text class="input-label">方式2: input type=text</text>
                         <input 
-                            ref="inputRef2"
+                            ref="inputRef"
                             class="cookie-input" 
                             v-model="computerIp" 
                             placeholder="电脑 IP (如 192.168.1.100)" 
-                            @input="onCookieInput" 
+                            @input="onCookieInput"
+                            @focus="onFocus"
+                            @blur="onBlur"
                             :autofocus="true"
                             :softInputEnable="true"
                             type="text"
@@ -44,17 +49,20 @@
                         </input>
                     </div>
                     
-                    <div class="input-wrapper" style="margin-top: 12px;">
-                        <!-- 写法3: textarea without single-line -->
+                    <!-- 写法3: textarea 多行 + softInputEnable="true" + autofocus="true" -->
+                    <div class="input-wrapper" style="margin-top: 16px;">
+                        <text class="input-label">方式3: textarea 多行</text>
                         <textarea 
-                            ref="inputRef3"
+                            ref="textareaRef2"
                             class="cookie-input" 
                             v-model="computerIp" 
                             placeholder="电脑 IP (如 192.168.1.100)" 
-                            @input="onCookieInput" 
+                            @input="onCookieInput"
+                            @focus="onFocus"
+                            @blur="onBlur"
                             :autofocus="true"
                             :softInputEnable="true"
-                            style="height: 40px;">
+                            style="height: 60px;">
                         </textarea>
                     </div>
                     
@@ -65,10 +73,10 @@
                         <text class="cookie-btn confirm" @click="fetchCookieFromComputer">从电脑获取</text>
                     </div>
                     
-                    <!-- 测试按钮：尝试各种键盘 API -->
+                    <!-- 测试按钮 -->
                     <div class="test-btns">
                         <text class="test-btn" @click="testKeyboardAPI">测试键盘 API</text>
-                        <text class="test-btn" @click="forceFocusInput">强制聚焦输入框</text>
+                        <text class="test-btn" @click="forceFocusAll">强制聚焦所有输入框</text>
                         <text class="test-btn" @click="testModalInput">测试 modal.input</text>
                     </div>
                 </div>
@@ -148,7 +156,14 @@
 }
 
 .input-wrapper {
-    margin-bottom: 12px;
+    flex-direction: column;
+    margin-bottom: 16px;
+}
+
+.input-label {
+    font-size: 12px;
+    color: #999999;
+    margin-bottom: 4px;
 }
 
 .cookie-input {
@@ -168,12 +183,14 @@
     color: #fb7299;
     margin-bottom: 16px;
     min-height: 20px;
+    margin-top: 16px;
 }
 
 .cookie-btns {
     flex-direction: row;
     justify-content: space-between;
     gap: 12px;
+    margin-top: 16px;
 }
 
 .cookie-btn {
@@ -196,7 +213,7 @@
 }
 
 .test-btns {
-    margin-top: 16px;
+    margin-top: 20px;
     flex-direction: column;
     gap: 8px;
 }
@@ -272,34 +289,31 @@ export default {
             })
         },
         
-        // 尝试聚焦输入框
+        // 页面加载时尝试聚焦
         tryFocusInputs() {
             console.warn('[cookie-login] trying to focus inputs...')
-            // 尝试聚焦各个输入框
-            var refs = ['inputRef1', 'inputRef2', 'inputRef3']
+            var refs = ['textareaRef', 'inputRef', 'textareaRef2']
             for (var i = 0; i < refs.length; i++) {
                 var ref = this.$refs[refs[i]]
                 if (ref) {
                     console.warn('[cookie-login] found ref: ' + refs[i] + ', trying to focus...')
-                    // HAAS UI 的 ref 可能直接是 DOM 元素，或者有 focus 方法
                     try {
                         if (typeof ref.focus === 'function') {
                             ref.focus()
                             console.warn('[cookie-login] called focus() on ' + refs[i])
-                        } else if (ref.$el && typeof ref.$el.focus === 'function') {
-                            ref.$el.focus()
-                            console.warn('[cookie-login] called focus() on ' + refs[i] + '.$el')
                         }
                     } catch (e) {
                         console.warn('[cookie-login] focus error on ' + refs[i] + ': ' + e)
                     }
+                } else {
+                    console.warn('[cookie-login] ref not found: ' + refs[i])
                 }
             }
         },
         
-        // 强制聚焦输入框（测试按钮）
-        forceFocusInput() {
-            console.warn('[cookie-login] forceFocusInput clicked')
+        // 强制聚焦所有输入框
+        forceFocusAll() {
+            console.warn('[cookie-login] forceFocusAll clicked')
             this.tryFocusInputs()
             this.cookieStatus = '已尝试强制聚焦，查看日志'
         },
@@ -443,6 +457,10 @@ export default {
         
         onFocus() {
             console.warn('[cookie-login] input focused')
+        },
+        
+        onBlur() {
+            console.warn('[cookie-login] input blurred')
         },
         
         onScroll(e) {
