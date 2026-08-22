@@ -291,31 +291,29 @@ export default {
         
         // 页面加载时尝试聚焦
         tryFocusInputs() {
-            console.warn('[cookie-login] trying to focus inputs...')
-            var refs = ['textareaRef', 'inputRef', 'textareaRef2']
-            for (var i = 0; i < refs.length; i++) {
-                var ref = this.$refs[refs[i]]
-                if (ref) {
-                    console.warn('[cookie-login] found ref: ' + refs[i] + ', trying to focus...')
-                    try {
-                        if (typeof ref.focus === 'function') {
-                            ref.focus()
-                            console.warn('[cookie-login] called focus() on ' + refs[i])
-                        }
-                    } catch (e) {
-                        console.warn('[cookie-login] focus error on ' + refs[i] + ': ' + e)
+            console.warn('[cookie-login] trying to focus first input...')
+            // 只聚焦第一个输入框，避免焦点快速切换导致键盘隐藏
+            var ref = this.$refs.textareaRef
+            if (ref) {
+                console.warn('[cookie-login] found textareaRef, trying to focus...')
+                try {
+                    if (typeof ref.focus === 'function') {
+                        ref.focus()
+                        console.warn('[cookie-login] called focus() on textareaRef')
                     }
-                } else {
-                    console.warn('[cookie-login] ref not found: ' + refs[i])
+                } catch (e) {
+                    console.warn('[cookie-login] focus error on textareaRef: ' + e)
                 }
+            } else {
+                console.warn('[cookie-login] textareaRef not found')
             }
         },
         
-        // 强制聚焦所有输入框
+        // 强制聚焦第一个输入框
         forceFocusAll() {
             console.warn('[cookie-login] forceFocusAll clicked')
             this.tryFocusInputs()
-            this.cookieStatus = '已尝试强制聚焦，查看日志'
+            this.cookieStatus = '已尝试强制聚焦第一个输入框，查看日志'
         },
         
         // 测试键盘 API
