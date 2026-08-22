@@ -3,7 +3,7 @@
         <!-- 顶部：返回 + 输入框 + 搜索按钮 -->
         <div class="topbar">
             <text class="back" @click="goBack">‹</text>
-            <div class="search-box-wrapper">
+            <div class="search-box-wrapper" @click="tryFocusInput">
                 <!-- 方案1: 标准 textarea + softInputEnable (推荐) -->
                 <textarea
                     ref="searchInput"
@@ -260,6 +260,29 @@ export default {
         })
     },
     methods: {
+        // 程序化聚焦输入框，强制触发系统输入法（参考 cookie.vue 方案）
+        tryFocusInput() {
+            console.warn('[search] tryFocusInput: blur then focus to trigger IME')
+            var inputRef = this.$refs.searchInput
+            if (inputRef) {
+                try {
+                    if (typeof inputRef.blur === 'function') {
+                        inputRef.blur()
+                    }
+                    setTimeout(function() {
+                        if (typeof inputRef.focus === 'function') {
+                            inputRef.focus()
+                            console.warn('[search] focus() called successfully')
+                        } else if (inputRef.$el && typeof inputRef.$el.focus === 'function') {
+                            inputRef.$el.focus()
+                            console.warn('[search] $el.focus() called successfully')
+                        }
+                    }.bind(this), 50)
+                } catch (e) {
+                    console.warn('[search] focus error: ' + e)
+                }
+            }
+        },
         onInput(val) {
             console.warn('[search] onInput: ' + val)
             this.keyword = val
