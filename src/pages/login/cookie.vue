@@ -14,7 +14,7 @@
                     <text class="cookie-tip">电脑同步服务：请在电脑上运行同步服务，输入电脑 IP 点击下方按钮自动获取 Cookie</text>
                     
                     <!-- 单个 textarea 输入框 - 原生软键盘支持 -->
-                    <!-- 直接在 textarea 上处理点击和焦点，不加额外包装 div -->
+                    <!-- 移除 autofocus，只在用户点击时聚焦 -->
                     <div class="input-container" @click="onContainerClick">
                         <text class="input-label">电脑 IP 地址</text>
                         <textarea 
@@ -26,7 +26,6 @@
                             @focus="onFocus"
                             @blur="onBlur"
                             @click="onTextareaClick"
-                            :autofocus="true"
                             :softInputEnable="true"
                             :single-line="true"
                             style="height: 48px;">
@@ -199,11 +198,8 @@ export default {
         }
     },
     mounted() {
-        console.warn('[cookie-login] mounted - starting autofocus')
-        // 页面加载后尝试聚焦输入框
-        this.$nextTick(function() {
-            this.tryFocusInput()
-        })
+        console.warn('[cookie-login] mounted - NOT autofocusing, waiting for user click')
+        // 不再自动聚焦，等待用户点击
     },
     methods: {
         goBack() {
@@ -217,20 +213,28 @@ export default {
         
         // 显式聚焦输入框 - 触发软键盘
         tryFocusInput() {
-            console.warn('[cookie-login] tryFocusInput called')
+            console.warn('[cookie-login] tryFocusInput called - blur first then focus')
             var inputRef = this.$refs.ipInput
             if (inputRef) {
-                console.warn('[cookie-login] ipInput ref found, calling focus()')
+                console.warn('[cookie-login] ipInput ref found, blur then focus')
                 try {
-                    if (typeof inputRef.focus === 'function') {
-                        inputRef.focus()
-                        console.warn('[cookie-login] focus() called successfully')
-                    } else if (inputRef.$el && typeof inputRef.$el.focus === 'function') {
-                        inputRef.$el.focus()
-                        console.warn('[cookie-login] $el.focus() called successfully')
-                    } else {
-                        console.warn('[cookie-login] no focus method available on ref')
+                    // 先 blur 再 focus，强制触发软键盘
+                    if (typeof inputRef.blur === 'function') {
+                        inputRef.blur()
+                        console.warn('[cookie-login] blur() called')
                     }
+                    // 短暂延迟后 focus
+                    setTimeout(function() {
+                        if (typeof inputRef.focus === 'function') {
+                            inputRef.focus()
+                            console.warn('[cookie-login] focus() called successfully after blur')
+                        } else if (inputRef.$el && typeof inputRef.$el.focus === 'function') {
+                            inputRef.$el.focus()
+                            console.warn('[cookie-login] $el.focus() called successfully')
+                        } else {
+                            console.warn('[cookie-login] no focus method available on ref')
+                        }
+                    }.bind(this), 50)
                 } catch (e) {
                     console.warn('[cookie-login] focus error: ' + e)
                 }
@@ -247,9 +251,59 @@ export default {
         
         // 调试按钮：手动触发键盘
         debugKeyboard() {
-            console.warn('[cookie-login] debugKeyboard clicked')
+            console.warn('[cookie-login] debugKeyboard clicked - blur then focus')
             this.tryFocusInput()
-            this.cookieStatus = '已尝试调用 focus()，查看日志'
+            this.cookieStatus = '已尝试 blur+focus 调用，查看日志'
+        },
+        
+        onCookieInput(val) {
+            console.warn('[cookie-login] onCookieInput: ' + val)
+            this.cookieStatus = ''
+            this.computerIp = val
+        },
+        
+        fetchCookieFromComputer() {
+            var self = this
+            if (!self.computerIp) {
+                self.cookieStatus = '请输入电脑 IP'
+                return
+            }
+            self.cookieStatus = '正在从电脑获取...'
+            auth.fetchCookieFromComputer(self.computerIp).then(function (res) {
+                if (res.code === 0) {
+                    self.cookieStatus = '获取成功！'
+                    try {
+                        var m = $falcon.jsapi && $falcon.jsapi.modal
+                        if (m && typeof m.toast === 'function') {
+                            m.toast({ message: 'Cookie 获取成功', duration: 2000 })
+                        }
+                    } catch (e) {}
+                    setTimeout(function () {
+                        self.goBack()
+                    }, 1000)
+                } else {
+                    self.cookieStatus = '获取失败: ' + (res.message || '未知错误')
+                }
+            }).catch(function (e) {
+                self.cookieStatus = '获取异常: ' + (e && e.message ? e.message : String(e))
+            })
+        },
+        
+        onFocus() {
+            console.warn('[cookie-login] onFocus - input focused')
+        },
+        
+        onBlur() {
+            console.warn('[cookie-login] onBlur - input blurred')
+        },
+        
+        goBack() {
+            console.log('[cookie-login] goBack')
+            try {
+                this.$page.finish()
+            } catch (e) {
+                console.warn('[cookie-login] finish error: ' + (e ? e.message : e))
+            }
         },
         
         onCookieInput(val) {
