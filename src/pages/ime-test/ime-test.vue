@@ -89,6 +89,17 @@
             </div>
 
             <div class="section">
+                <text class="section-title">方案6: 存储检查 (输入法完成后点击检查)</text>
+                <div class="btn-row">
+                    <text class="btn" @click="checkAllStorage">检查所有存储</text>
+                    <text class="btn" @click="startPollingCheck">开始轮询检查</text>
+                    <text class="btn" @click="stopPollingCheck">停止轮询</text>
+                </div>
+                <text class="log">轮询状态: {{ pollingStatus }}</text>
+                <text class="log">检查到内容: {{ checkedContent }}</text>
+            </div>
+
+            <div class="section">
                 <text class="section-title">回调事件监听</text>
                 <div class="btn-row">
                     <text class="btn" @click="testEventListeners">测试事件监听</text>
@@ -224,7 +235,10 @@ export default {
             navResult: '',
             logs: [],
             clipboardContent: '',
-            clipboardPolling: null
+            clipboardPolling: null,
+            pollingCheck: null,
+            pollingStatus: '未开始',
+            checkedContent: ''
         }
     },
     mounted() {
@@ -497,6 +511,115 @@ export default {
                 clearInterval(this.clipboardPolling)
                 this.clipboardPolling = null
                 this.addLog('[ime-test] 剪贴板监听已停止')
+            }
+        },
+
+        // 存储检查方案
+        checkAllStorage() {
+            var self = this
+            self.addLog('[ime-test] 开始检查所有存储...')
+            var found = false
+            
+            // 检查 localStorage
+            try {
+                var keys = Object.keys(localStorage)
+                for (var i = 0; i < keys.length; i++) {
+                    var key = keys[i]
+                    var val = localStorage.getItem(key)
+                    if (val && val.length > 0) {
+                        self.addLog('[ime-test] localStorage[' + key + ']: ' + val.substring(0, 50))
+                        if (!self.checkedContent) self.checkedContent = val
+                        found = true
+                    }
+                }
+            } catch(e) {
+                self.addLog('[ime-test] localStorage 检查失败: ' + (e && e.message ? e.message : String(e)))
+            }
+
+            // 检查 sessionStorage
+            try {
+                var keys = Object.keys(sessionStorage)
+                for (var i = 0; i < keys.length; i++) {
+                    var key = keys[i]
+                    var val = sessionStorage.getItem(key)
+                    if (val && val.length > 0) {
+                        self.addLog('[ime-test] sessionStorage[' + key + ']: ' + val.substring(0, 50))
+                        if (!self.checkedContent) self.checkedContent = val
+                        found = true
+                    }
+                }
+            } catch(e) {
+                self.addLog('[ime-test] sessionStorage 检查失败: ' + (e && e.message ? e.message : String(e)))
+            }
+
+            // 检查 cookie
+            try {
+                var cookies = document.cookie.split(';')
+                for (var i = 0; i < cookies.length; i++) {
+                    var cookie = cookies[i].trim()
+                    if (cookie.length > 0) {
+                        self.addLog('[ime-test] cookie: ' + cookie.substring(0, 50))
+                        found = true
+                    }
+                }
+            } catch(e) {
+                self.addLog('[ime-test] cookie 检查失败: ' + (e && e.message ? e.message : String(e)))
+            }
+
+            if (!found) {
+                self.addLog('[ime-test] 未在任何存储中发现新内容')
+            } else {
+                self.checkedContent = '发现内容，请查看日志'
+            }
+        },
+
+        startPollingCheck() {
+            var self = this
+            if (this.pollingCheck) {
+                self.addLog('[ime-test] 轮询已在进行中')
+                return
+            }
+            self.pollingStatus = '轮询中...'
+            self.addLog('[ime-test] 开始轮询检查 (每2秒)...')
+            this.pollingCheck = setInterval(function() {
+                try {
+                    // 检查 localStorage 变化
+                    var keys = Object.keys(localStorage)
+                    for (var i = 0; i < keys.length; i++) {
+                        var key = keys[i]
+                        var val = localStorage.getItem(key)
+                        if (val && val.length > 0 && val.length > 2) {
+                            self.addLog('[ime-test] 轮询发现 localStorage[' + key + ']: ' + val.substring(0, 50))
+                            self.checkedContent = val
+                            self.stopPollingCheck()
+                            return
+                        }
+                    }
+                    // 检查 sessionStorage
+                    var sKeys = Object.keys(sessionStorage)
+                    for (var i = 0; i < sKeys.length; i++) {
+                        var key = sKeys[i]
+                        var val = sessionStorage.getItem(key)
+                        if (val && val.length > 0 && val.length > 2) {
+                            self.addLog('[ime-test] 轮询发现 sessionStorage[' + key + ']: ' + val.substring(0, 50))
+                            self.checkedContent = val
+                            self.stopPollingCheck()
+                            return
+                        }
+                    }
+                } catch(e) {
+                    // ignore errors
+                }
+            }.bind(this), 2000)
+            this.pollingStatus = '轮询中... (每2秒)'
+            this.addLog('[ime-test] 轮询检查已启动 (每2秒)')
+        },
+        stopPollingCheck() {
+            if (this.pollingCheck) {
+                clearInterval(this.pollingCheck)
+                this.pollingCheck = null
+                this.pollingStatus = '已停止'
+                this.addLog('[ime-test] 轮询检查已停止')
             }
         },
 
