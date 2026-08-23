@@ -79,6 +79,16 @@
             </div>
 
             <div class="section">
+                <text class="section-title">方案5: 剪贴板监听 (输入法复制后自动填入)</text>
+                <div class="btn-row">
+                    <text class="btn" @click="startClipboardMonitor">开始监听剪贴板</text>
+                    <text class="btn" @click="stopClipboardMonitor">停止监听</text>
+                </div>
+                <text class="log">剪贴板内容: {{ clipboardContent }}</text>
+                <text class="log" style="color: #fb7299;">说明: 在输入法输入完成后点击"复制"，内容会自动填入下方</text>
+            </div>
+
+            <div class="section">
                 <text class="section-title">回调事件监听</text>
                 <div class="btn-row">
                     <text class="btn" @click="testEventListeners">测试事件监听</text>
@@ -212,7 +222,9 @@ export default {
             input3: '',
             status3: '待测试',
             navResult: '',
-            logs: []
+            logs: [],
+            clipboardContent: '',
+            clipboardPolling: null
         }
     },
     mounted() {
@@ -455,6 +467,39 @@ export default {
             this.addLog('[ime-test] 测试事件监听已注册')
         },
 
+        // 剪贴板监听方案
+        startClipboardMonitor() {
+            var self = this
+            self.addLog('[ime-test] 开始监听剪贴板...')
+            self.clipboardPolling = setInterval(function() {
+                try {
+                    // 尝试读取剪贴板内容
+                    if (typeof $falcon !== 'undefined' && $falcon.getClipboardData) {
+                        $falcon.getClipboardData().then(function(data) {
+                            if (data && data !== self.clipboardContent) {
+                                self.clipboardContent = data
+                                self.addLog('[ime-test] 剪贴板变化: ' + data.substring(0, 50))
+                                // 自动填入到方案1的输入框
+                                self.input1 = data
+                            }
+                        }).catch(function(e) {
+                            self.addLog('[ime-test] 读取剪贴板失败: ' + (e && e.message ? e.message : String(e)))
+                        })
+                    }
+                } catch(e) {
+                    // ignore errors in setInterval
+                }
+            }.bind(self), 1000)
+            self.addLog('[ime-test] 剪贴板监听已启动 (每秒检查)')
+        },
+        stopClipboardMonitor() {
+            if (this.clipboardPolling) {
+                clearInterval(this.clipboardPolling)
+                this.clipboardPolling = null
+                this.addLog('[ime-test] 剪贴板监听已停止')
+            }
+        },
+
         addLog(msg) {
             var time = new Date().toLocaleTimeString()
             this.logs.unshift('[' + time + '] ' + msg)
@@ -465,6 +510,25 @@ export default {
         },
         goBack() {
             this.$page.finish()
+        }
+    },
+    beforeDestroy() {
+        // 清理剪贴板监听
+        if (this.clipboardPolling) {
+            clearInterval(this.clipboardPolling)
+        }
+        // 清理输入法回调事件监听
+        if (typeof $falcon !== 'undefined' && $falcon.off) {
+            $falcon.off('confirm', this.onImeConfirm)
+            $falcon.off('finish', this.onImeFinish)
+            $falcon.off('returnClicked', this.onImeCancel)
+            $falcon.off('finishApp', this.onImeCancel)
+            $falcon.off('search_keyInput_confirm', this.onImeConfirm)
+            $falcon.off('confirmAndReturn', this.onImeConfirm)
+            $falcon.off('cancelAndReturn', this.onImeCancel)
+            $falcon.off('textEditFinished', this.onImeResult)
+            $falcon.off('imeResult', this.onImeResult)
+            $falcon.off('inputResult', this.onImeResult)
         }
     }
 }
