@@ -7,7 +7,8 @@
     "settings": "pages/settings/settings.vue",
     "qr-login": "pages/login/qr.vue",
     "cookie-login": "pages/login/cookie.vue",
-    "ime-test": "pages/ime-test/ime-test.vue"
+    "ime-test": "pages/ime-test/ime-test.vue",
+    "system-keyboard-test": "pages/system-keyboard-test/system-keyboard-test.vue"
   },
   "options": {
     "external": ["gstplayer"]

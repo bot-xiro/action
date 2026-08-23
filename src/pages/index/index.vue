@@ -8,6 +8,7 @@
                 <text class="topbar-search" @click="openSearch">搜索</text>
                 <text class="topbar-search" @click="openSettings">设置</text>
                 <text class="topbar-search" @click="openIMETest">IME测试</text>
+                <text class="topbar-search" @click="openKeyboardTest">键盘测试</text>
             </div>
         </div>
 
@@ -320,6 +321,10 @@ export default {
         openIMETest() {
             console.log('[index] openIMETest')
             $falcon.navTo('ime-test', {})
+        },
+        openKeyboardTest() {
+            console.log('[index] openKeyboardTest')
+            $falcon.navTo('system-keyboard-test', {})
         }
     }
 }
