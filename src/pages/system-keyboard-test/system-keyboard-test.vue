@@ -255,11 +255,43 @@ export default {
             self.addLog('[keyboard] startTextEdit cfg: ' + cfg)
             
             try {
-                // 核心调用：global.startTextEdit() 必须传字符串
-                var uuid = global.startTextEdit(cfg)
-                self.uuid = uuid
-                self.addLog('[keyboard] startTextEdit returned uuid: ' + uuid)
-                self.status = '键盘已打开，UUID: ' + uuid
+                // 尝试多种方式访问 global.startTextEdit
+                var uuid = null
+                // 尝试 1: globalThis.startTextEdit
+                if (typeof globalThis !== 'undefined' && typeof globalThis.startTextEdit === 'function') {
+                    uuid = globalThis.startTextEdit(cfg)
+                    self.addLog('[keyboard] 使用 globalThis.startTextEdit()')
+                }
+                // 尝试 2: global.startTextEdit (如果可用)
+                else if (typeof global !== 'undefined' && typeof global.startTextEdit === 'function') {
+                    uuid = global.startTextEdit(cfg)
+                    self.addLog('[keyboard] 使用 global.startTextEdit()')
+                }
+                // 尝试 3: this.$global
+                else if (self.$global && typeof self.$global.startTextEdit === 'function') {
+                    uuid = self.$global.startTextEdit(cfg)
+                    self.addLog('[keyboard] 使用 this.$global.startTextEdit()')
+                }
+                // 尝试 4: $falcon.global
+                else if (typeof $falcon !== 'undefined' && $falcon.global && typeof $falcon.global.startTextEdit === 'function') {
+                    uuid = $falcon.global.startTextEdit(cfg)
+                    self.addLog('[keyboard] 使用 $falcon.global.startTextEdit()')
+                }
+                // 尝试 5: 直接调用 (如果在全局作用域)
+                else if (typeof startTextEdit === 'function') {
+                    uuid = startTextEdit(cfg)
+                    self.addLog('[keyboard] 使用直接 startTextEdit()')
+                }
+                else {
+                    self.addLog('[keyboard] 无法找到 startTextEdit 函数')
+                    self.addLog('[keyboard] 可用全局对象: globalThis=' + (typeof globalThis !== 'undefined') + ', global=' + (typeof global !== 'undefined') + ', this.$global=' + (typeof self.$global !== 'undefined') + ', $falcon.global=' + (typeof $falcon !== 'undefined' && $falcon.global) + ', startTextEdit=' + (typeof startTextEdit !== 'undefined'))
+                }
+                
+                if (uuid) {
+                    self.uuid = uuid
+                    self.addLog('[keyboard] startTextEdit returned uuid: ' + uuid)
+                    self.status = '键盘已打开，UUID: ' + uuid
+                }
             } catch (e) {
                 self.addLog('[keyboard] startTextEdit error: ' + (e && e.message ? e.message : String(e)))
             }
@@ -290,8 +322,39 @@ export default {
             if (this.uuid) {
                 self.addLog('[keyboard] 调用 closeTextEdit, uuid: ' + self.uuid)
                 try {
-                    global.closeTextEdit(self.uuid)
-                    self.addLog('[keyboard] closeTextEdit called')
+                    var success = false
+                    // 尝试多种方式关闭
+                    if (typeof globalThis !== 'undefined' && typeof globalThis.closeTextEdit === 'function') {
+                        globalThis.closeTextEdit(self.uuid)
+                        success = true
+                        self.addLog('[keyboard] 使用 globalThis.closeTextEdit()')
+                    }
+                    else if (typeof global !== 'undefined' && typeof global.closeTextEdit === 'function') {
+                        global.closeTextEdit(self.uuid)
+                        success = true
+                        self.addLog('[keyboard] 使用 global.closeTextEdit()')
+                    }
+                    else if (self.$global && typeof self.$global.closeTextEdit === 'function') {
+                        self.$global.closeTextEdit(self.uuid)
+                        success = true
+                        self.addLog('[keyboard] 使用 this.$global.closeTextEdit()')
+                    }
+                    else if (typeof $falcon !== 'undefined' && $falcon.global && typeof $falcon.global.closeTextEdit === 'function') {
+                        $falcon.global.closeTextEdit(self.uuid)
+                        success = true
+                        self.addLog('[keyboard] 使用 $falcon.global.closeTextEdit()')
+                    }
+                    else if (typeof closeTextEdit === 'function') {
+                        closeTextEdit(self.uuid)
+                        success = true
+                        self.addLog('[keyboard] 使用直接 closeTextEdit()')
+                    }
+                    
+                    if (success) {
+                        self.addLog('[keyboard] closeTextEdit called successfully')
+                    } else {
+                        self.addLog('[keyboard] 无法找到 closeTextEdit 函数')
+                    }
                 } catch (e) {
                     self.addLog('[keyboard] closeTextEdit error: ' + (e && e.message ? e.message : String(e)))
                 }
