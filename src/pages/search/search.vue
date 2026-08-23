@@ -290,11 +290,14 @@ export default {
             }, 30000) // 30秒超时自动重置
             
             try {
-                // 使用 navTo 调用有道输入法，带回调参数
-                var callbackUrl = 'falcon://8001812345678901/ime-callback'
-                var params = {
-                    callback: callbackUrl,
-                    returnUrl: callbackUrl,
+                // 尝试多种 callback URL 格式
+                var callbackUrls = [
+                    'falcon://8001812345678901/ime-callback',
+                    'falcon://8001812345678901?callback=ime-callback',
+                    'falcon://8001812345678901/return',
+                    'falcon://8001812345678901/result'
+                ]
+                var paramsBase = {
                     action: 'input',
                     type: 'text',
                     hint: '搜索视频 / UP主',
@@ -303,14 +306,37 @@ export default {
                     confirmText: '搜索',
                     search_keyInput_confirm: true
                 }
-                console.warn('[search] navTo params: ' + JSON.stringify(params))
-                var ret = $falcon.navTo('falcon://8001666679481944', params)
-                console.warn('[search] navTo ret: ' + JSON.stringify(ret))
-                if (ret && ret.ret !== 0) {
-                    console.warn('[search] navTo failed with ret: ' + JSON.stringify(ret))
-                    this.waitingForIME = false
-                    if (this.imeTimeout) clearTimeout(this.imeTimeout)
+                var self = this
+                var tryNextUrl = function(index) {
+                    if (index >= callbackUrls.length) {
+                        console.warn('[search] all callback URLs tried, navTo failed')
+                        self.waitingForIME = false
+                        if (self.imeTimeout) clearTimeout(self.imeTimeout)
+                        return
+                    }
+                    var callbackUrl = callbackUrls[index]
+                    var params = Object.assign({}, paramsBase, {
+                        callback: callbackUrl,
+                        returnUrl: callbackUrl
+                    })
+                    console.warn('[search] navTo try url[' + index + ']: ' + callbackUrl)
+                    console.warn('[search] navTo params: ' + JSON.stringify(params))
+                    try {
+                        var ret = $falcon.navTo('falcon://8001666679481944', params)
+                        console.warn('[search] navTo ret[' + index + ']: ' + JSON.stringify(ret))
+                        if (ret && ret.ret === 0) {
+                            console.warn('[search] navTo success with url[' + index + ']')
+                            return
+                        } else {
+                            console.warn('[search] navTo failed with url[' + index + ']: ' + JSON.stringify(ret))
+                            tryNextUrl(index + 1)
+                        }
+                    } catch (e) {
+                        console.warn('[search] navTo error with url[' + index + ']: ' + (e && e.message ? e.message : String(e)))
+                        tryNextUrl(index + 1)
+                    }
                 }
+                tryNextUrl(0)
             } catch (e) {
                 console.warn('[search] openSystemIME error: ' + (e && e.message ? e.message : String(e)))
                 this.waitingForIME = false
