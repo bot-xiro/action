@@ -1,10 +1,9 @@
 <template>
     <div class="page">
-        <!-- 顶部：返回 + 输入框 + 搜索按钮 -->
+        <!-- 顶部：返回 + 输入框 + 搜索按钮 + 输入法按钮 -->
         <div class="topbar">
             <text class="back" @click="goBack">‹</text>
-            <div class="search-box-wrapper" @click="openSystemIME">
-                <!-- 点击触发 navTo 启动有道输入法 App (appid: 8001666679481944) -->
+            <div class="search-box-wrapper">
                 <textarea
                     ref="searchInput"
                     class="search-input"
@@ -20,6 +19,8 @@
                 ></textarea>
             </div>
             <text class="go-btn" @click="doSearch">搜索</text>
+            <!-- 单独按钮启动有道输入法 (appid: 8001666679481944) -->
+            <text class="ime-btn" @click="openSystemIME">⌨</text>
         </div>
 
         <!-- 未搜索时：展示搜索历史 -->
@@ -107,6 +108,18 @@
     color: #ffffff;
 }
 
+.ime-btn {
+    margin-left: 8px;
+    font-size: 20px;
+    color: #ffffff;
+    width: 36px;
+    height: 36px;
+    line-height: 36px;
+    text-align: center;
+    background-color: rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
+}
+
 /* ---- 历史区 ---- */
 .history-wrap {
     flex: 1;
@@ -174,48 +187,48 @@
 .r-cover {
     width: 90px;
     height: 50px;
-    background-color: #e0e0e0.
+    background-color: #e0e0e0;
     margin-left: 3px;
-    border-radius: 4px.
+    border-radius: 4px;
 }
 
 .r-info {
     flex: 1;
     margin-left: 8px;
-    margin-right: 8px.
-    flex-direction: column.
-    justify-content: center.
+    margin-right: 8px;
+    flex-direction: column;
+    justify-content: center;
 }
 
 .r-title {
     font-size: 15px;
-    color: #333333.
-    lines: 1.
+    color: #333333;
+    lines: 1;
 }
 
 .r-meta {
-    margin-top: 3px.
-    font-size: 12px.
-    color: #999999.
+    margin-top: 3px;
+    font-size: 12px;
+    color: #999999;
 }
 
 /* ---- 通用 ---- */
 .center {
-    flex: 1.
-    align-items: center.
-    justify-content: center.
+    flex: 1;
+    align-items: center;
+    justify-content: center;
 }
 
 .hint {
-    font-size: 16px.
-    color: #999999.
+    font-size: 16px;
+    color: #999999;
 }
 
 .retry {
-    margin-top: 10px.
-    font-size: 16px.
-    color: #fb7299.
-    text-decoration: underline.
+    margin-top: 10px;
+    font-size: 16px;
+    color: #fb7299;
+    text-decoration: underline;
 }
 </style>
 
@@ -246,6 +259,14 @@ export default {
         }).catch(function () {
             self.history = []
         })
+        // 监听输入法回调事件 (参考 loli tools_keyboard: confirmAndReturn/cancelAndReturn/textEditFinished)
+        if (typeof $falcon !== 'undefined' && $falcon.on) {
+            $falcon.on('textEditFinished', this.onImeResult.bind(this))
+            $falcon.on('confirmAndReturn', this.onImeResult.bind(this))
+            $falcon.on('cancelAndReturn', this.onImeResult.bind(this))
+            $falcon.on('imeResult', this.onImeResult.bind(this))
+            $falcon.on('inputResult', this.onImeResult.bind(this))
+        }
     },
     methods: {
         // 打开有道输入法 App (appid: 8001666679481944) - 使用 navTo 回调机制
@@ -308,6 +329,16 @@ export default {
         onBlur() {
             console.warn('[search] onBlur')
         },
+        // 处理输入法回调 (参考 loli: confirmAndReturn/cancelAndReturn/textEditFinished)
+        onImeResult(result) {
+            console.warn('[search] onImeResult received: ' + JSON.stringify(result))
+            this.waitingForIME = false
+            if (result && (result.text || result.value || result.content)) {
+                var text = result.text || result.value || result.content
+                this.keyword = text
+                this.doSearch()
+            }
+        },
         doSearch() {
             if (!this.keyword || !this.keyword.trim()) return
             var kw = this.keyword.trim()
@@ -367,6 +398,16 @@ export default {
                 return String(v)
             }
             return String(v == null ? '' : v)
+        },
+        beforeDestroy() {
+            // 清理输入法回调事件监听
+            if (typeof $falcon !== 'undefined' && $falcon.off) {
+                $falcon.off('textEditFinished', this.onImeResult)
+                $falcon.off('confirmAndReturn', this.onImeResult)
+                $falcon.off('cancelAndReturn', this.onImeResult)
+                $falcon.off('imeResult', this.onImeResult)
+                $falcon.off('inputResult', this.onImeResult)
+            }
         }
     }
 }
