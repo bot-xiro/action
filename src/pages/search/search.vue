@@ -278,6 +278,7 @@ export default {
     methods: {
         // 打开有道输入法 App (appid: 8001666679481944) - 使用 navTo 回调机制
         openSystemIME() {
+            console.warn('[search] >>> openSystemIME CLICKED <<<')
             if (this.waitingForIME) {
                 console.warn('[search] already waiting for IME, ignoring')
                 return
@@ -293,37 +294,27 @@ export default {
             }, 30000) // 30秒超时自动重置
             
             try {
-                // 尝试多种回调 URL 格式 (按优先级尝试)
-                var callbackUrls = [
-                    'falcon://8001812345678901/ime-callback',
-                    'falcon://8001812345678901?callback=ime-callback',
-                    'falcon://8001812345678901/return'
-                ]
-                
-                // 依次尝试不同的回调 URL 格式
-                var self = this
-                var tryNextCallback = function(index) {
-                    if (index >= callbackUrls.length) {
-                        console.warn('[search] all callback URLs tried')
-                        return
-                    }
-                    var callbackUrl = callbackUrls[index]
-                    var params = {
-                        callback: callbackUrl,
-                        returnUrl: callbackUrl,
-                        action: 'input',
-                        type: 'text',
-                        hint: '搜索视频 / UP主',
-                        defaultText: self.keyword,
-                        maxLength: 30,
-                        confirmText: '搜索',
-                        search_keyInput_confirm: true
-                    }
-                    var ret = $falcon.navTo('falcon://8001666679481944', params)
-                    console.warn('[search] navTo ret (url ' + index + '): ' + JSON.stringify(ret))
-                    // 如果 navTo 成功但回调超时，可能需要尝试下一个
+                // 使用简单的回调 URL 格式
+                var callbackUrl = 'falcon://8001812345678901/ime-callback'
+                var params = {
+                    callback: callbackUrl,
+                    returnUrl: callbackUrl,
+                    action: 'input',
+                    type: 'text',
+                    hint: '搜索视频 / UP主',
+                    defaultText: this.keyword,
+                    maxLength: 30,
+                    confirmText: '搜索',
+                    search_keyInput_confirm: true
                 }
-                tryNextCallback(0)
+                console.warn('[search] navTo params: ' + JSON.stringify(params))
+                var ret = $falcon.navTo('falcon://8001666679481944', params)
+                console.warn('[search] navTo ret: ' + JSON.stringify(ret))
+                if (ret && ret.ret !== 0) {
+                    console.warn('[search] navTo failed with ret: ' + JSON.stringify(ret))
+                    this.waitingForIME = false
+                    if (this.imeTimeout) clearTimeout(this.imeTimeout)
+                }
             } catch (e) {
                 console.warn('[search] openSystemIME error: ' + (e && e.message ? e.message : String(e)))
                 this.waitingForIME = false
