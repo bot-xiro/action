@@ -278,7 +278,11 @@ export default {
     methods: {
         // 打开有道输入法 App (appid: 8001666679481944) - 使用 navTo 回调机制
         openSystemIME() {
+            // 多种日志方式确保输出
+            console.log('[search] >>> openSystemIME CLICKED <<<')
             console.warn('[search] >>> openSystemIME CLICKED <<<')
+            console.error('[search] >>> openSystemIME CLICKED <<<')
+            
             if (this.waitingForIME) {
                 console.warn('[search] already waiting for IME, ignoring')
                 return
