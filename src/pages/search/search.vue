@@ -247,7 +247,9 @@ export default {
             loading: false,
             error: '',
             // 等待输入法回调的标志
-            waitingForIME: false
+            waitingForIME: false,
+            // 超时定时器
+            imeTimeout: null
         }
     },
     mounted() {
@@ -282,30 +284,62 @@ export default {
             }
             console.warn('[search] openSystemIME: navTo 有道输入法 (8001666679481944)')
             this.waitingForIME = true
+            
+            // 超时自动重置 (防止按钮永久锁死)
+            if (this.imeTimeout) clearTimeout(this.imeTimeout)
+            this.imeTimeout = setTimeout(() => {
+                console.warn('[search] IME timeout, auto reset waitingForIME')
+                this.waitingForIME = false
+            }, 30000) // 30秒超时自动重置
+            
             try {
-                // 使用 navTo 调用有道输入法，带回调参数 (反编译确认的参数格式)
-                // 回调地址：falcon://当前appid/ime-callback
-                var callbackUrl = 'falcon://8001812345678901/ime-callback'
-                var params = {
-                    // 标准回调参数 (反编译确认)
-                    callback: callbackUrl,
-                    returnUrl: callbackUrl,
-                    // 输入法相关参数 (反编译确认: action/type/hint/defaultText/maxLength/confirmText)
-                    action: 'input',
-                    type: 'text',
-                    hint: '搜索视频 / UP主',
-                    defaultText: this.keyword,
-                    maxLength: 30,
-                    confirmText: '搜索',
-                    // 额外参数 (反编译可能支持)
-                    search_keyInput_confirm: true
+                // 尝试多种回调 URL 格式 (按优先级尝试)
+                var callbackUrls = [
+                    'falcon://8001812345678901/ime-callback',
+                    'falcon://8001812345678901?callback=ime-callback',
+                    'falcon://8001812345678901/return'
+                ]
+                
+                // 依次尝试不同的回调 URL 格式
+                var self = this
+                var tryNextCallback = function(index) {
+                    if (index >= callbackUrls.length) {
+                        console.warn('[search] all callback URLs tried')
+                        return
+                    }
+                    var callbackUrl = callbackUrls[index]
+                    var params = {
+                        callback: callbackUrl,
+                        returnUrl: callbackUrl,
+                        action: 'input',
+                        type: 'text',
+                        hint: '搜索视频 / UP主',
+                        defaultText: self.keyword,
+                        maxLength: 30,
+                        confirmText: '搜索',
+                        search_keyInput_confirm: true
+                    }
+                    var ret = $falcon.navTo('falcon://8001666679481944', params)
+                    console.warn('[search] navTo ret (url ' + index + '): ' + JSON.stringify(ret))
+                    // 如果 navTo 成功但回调超时，可能需要尝试下一个
                 }
-                var ret = $falcon.navTo('falcon://8001666679481944', params)
-                console.warn('[search] navTo ret: ' + JSON.stringify(ret))
+                tryNextCallback(0)
             } catch (e) {
                 console.warn('[search] openSystemIME error: ' + (e && e.message ? e.message : String(e)))
                 this.waitingForIME = false
+                if (this.imeTimeout) clearTimeout(this.imeTimeout)
             }
+        },
+        
+        // 失焦时重置等待状态 (防止按钮永久锁死)
+        onBlur() {
+            console.warn('[search] onBlur - reset waitingForIME')
+            this.waitingForIME = false
+            if (this.imeTimeout) clearTimeout(this.imeTimeout)
+        },
+        
+        onFocus() {
+            console.warn('[search] onFocus')
         },
         // 处理 navTo 回调 - 页面被重新激活时调用
         onNewOptions(options) {
@@ -444,6 +478,8 @@ export default {
             return String(v == null ? '' : v)
         },
         beforeDestroy() {
+            // 清理超时定时器
+            if (this.imeTimeout) clearTimeout(this.imeTimeout)
             // 清理输入法回调事件监听 (反编译确认的所有事件)
             if (typeof $falcon !== 'undefined' && $falcon.off) {
                 $falcon.off('confirm', this.onImeConfirm)
