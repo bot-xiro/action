@@ -20,7 +20,7 @@
             </div>
             <text class="go-btn" @click="doSearch">搜索</text>
             <!-- 显式键盘按钮：点击调用有道输入法 App (appid: 8001666679481944) -->
-            <text class="ime-btn" @click="openSystemIME">⌨</text>
+            <text class="ime-btn" @click="openSystemIME">键盘</text>
         </div>
 
         <!-- 未搜索时：展示搜索历史 -->
@@ -106,6 +106,18 @@
     margin-left: 10px;
     font-size: 18px;
     color: #ffffff;
+}
+
+.ime-btn {
+    margin-left: 8px;
+    font-size: 16px;
+    color: #ffffff;
+    width: 60px;
+    height: 36px;
+    line-height: 36px;
+    text-align: center;
+    background-color: rgba(255, 255, 255, 0.25);
+    border-radius: 6px;
 }
 
 /* ---- 历史区 ---- */
