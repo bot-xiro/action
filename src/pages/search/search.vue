@@ -1,9 +1,10 @@
 <template>
     <div class="page">
-        <!-- 顶部：返回 + 输入框 + 搜索按钮 + 输入法按钮 -->
+        <!-- 顶部：返回 + 输入框 + 搜索按钮 -->
         <div class="topbar">
             <text class="back" @click="goBack">‹</text>
-            <div class="search-box-wrapper">
+            <div class="search-box-wrapper" @click="focusInput">
+                <!-- 标准 textarea + softInputEnable=true (系统自动管理输入法) -->
                 <textarea
                     ref="searchInput"
                     class="search-input"
@@ -19,11 +20,7 @@
                 ></textarea>
             </div>
             <text class="go-btn" @click="doSearch">搜索</text>
-            <!-- 单独按钮启动有道输入法 (appid: 8001666679481944) -->
-            <text class="ime-btn" @click="openSystemIME">⌨</text>
         </div>
-        <!-- 调试信息显示 -->
-        <text class="debug-info" v-if="clickDebug">{{ clickDebug }}</text>
 
         <!-- 未搜索时：展示搜索历史 -->
         <div v-if="!searched" class="history-wrap">
@@ -108,30 +105,6 @@
     margin-left: 10px;
     font-size: 18px;
     color: #ffffff;
-}
-
-.ime-btn {
-    margin-left: 8px;
-    font-size: 20px;
-    color: #ffffff;
-    width: 36px;
-    height: 36px;
-    line-height: 36px;
-    text-align: center;
-    background-color: rgba(255, 255, 255, 0.25);
-    border-radius: 6px;
-}
-
-.debug-info {
-    margin-top: 8px;
-    margin-left: 12px;
-    margin-right: 12px;
-    font-size: 11px;
-    color: #ff6600;
-    background-color: #fff8e1;
-    padding: 6px;
-    border-radius: 4px;
-    border: 1px solid #ffcc00;
 }
 
 /* ---- 历史区 ---- */
@@ -259,13 +232,7 @@ export default {
             searched: false,
             results: [],
             loading: false,
-            error: '',
-            // 等待输入法回调的标志
-            waitingForIME: false,
-            // 超时定时器
-            imeTimeout: null,
-            // 点击调试信息 (UI 显示)
-            clickDebug: ''
+            error: ''
         }
     },
     mounted() {
@@ -277,105 +244,30 @@ export default {
         }).catch(function () {
             self.history = []
         })
-        // 监听有道输入法回调事件 (反编译确认: onLoad/onNewOptions + confirm/finish/returnClicked/finishApp/search_keyInput_confirm)
-        if (typeof $falcon !== 'undefined' && $falcon.on) {
-            $falcon.on('confirm', this.onImeConfirm.bind(this))
-            $falcon.on('finish', this.onImeFinish.bind(this))
-            $falcon.on('returnClicked', this.onImeCancel.bind(this))
-            $falcon.on('finishApp', this.onImeCancel.bind(this))
-            $falcon.on('search_keyInput_confirm', this.onImeConfirm.bind(this))
-            $falcon.on('confirmAndReturn', this.onImeConfirm.bind(this))
-            $falcon.on('cancelAndReturn', this.onImeCancel.bind(this))
-            $falcon.on('textEditFinished', this.onImeResult.bind(this))
-            $falcon.on('imeResult', this.onImeResult.bind(this))
-            $falcon.on('inputResult', this.onImeResult.bind(this))
-        }
     },
     methods: {
-        // 打开有道输入法 App (appid: 8001666679481944) - 使用 navTo 回调机制
-        openSystemIME() {
-            // 多种日志方式 + UI 状态确保可见
-            var self = this
-            self.clickDebug = '[search] >>> openSystemIME CLICKED <<< ' + new Date().toLocaleTimeString()
-            console.log('[search] >>> openSystemIME CLICKED <<<')
-            console.warn('[search] >>> openSystemIME CLICKED <<<')
-            console.error('[search] >>> openSystemIME CLICKED <<<')
-            
-            if (this.waitingForIME) {
-                console.warn('[search] already waiting for IME, ignoring')
-                self.clickDebug = '[search] already waiting, ignored'
-                return
-            }
-            console.warn('[search] openSystemIME: navTo 有道输入法 (8001666679481944)')
-            this.waitingForIME = true
-            self.clickDebug = '[search] navTo called...'
-            
-            // 超时自动重置 (防止按钮永久锁死)
-            if (this.imeTimeout) clearTimeout(this.imeTimeout)
-            this.imeTimeout = setTimeout(() => {
-                console.warn('[search] IME timeout, auto reset waitingForIME')
-                self.waitingForIME = false
-                self.clickDebug = '[search] timeout reset'
-            }, 30000) // 30秒超时自动重置
-            
-            try {
-                // 使用简单的回调 URL 格式
-                var callbackUrl = 'falcon://8001812345678901/ime-callback'
-                var params = {
-                    callback: callbackUrl,
-                    returnUrl: callbackUrl,
-                    action: 'input',
-                    type: 'text',
-                    hint: '搜索视频 / UP主',
-                    defaultText: self.keyword,
-                    maxLength: 30,
-                    confirmText: '搜索',
-                    search_keyInput_confirm: true
+        // 点击输入框区域时强制聚焦触发系统输入法 (参考 cookie.vue 方案)
+        focusInput() {
+            console.warn('[search] focusInput: triggering system keyboard')
+            var inputRef = this.$refs.searchInput
+            if (inputRef) {
+                try {
+                    // 先 blur 再 focus，强制触发系统软键盘
+                    if (typeof inputRef.blur === 'function') {
+                        inputRef.blur()
+                    }
+                    setTimeout(function() {
+                        if (typeof inputRef.focus === 'function') {
+                            inputRef.focus()
+                            console.warn('[search] focus() called successfully')
+                        } else if (inputRef.$el && typeof inputRef.$el.focus === 'function') {
+                            inputRef.$el.focus()
+                            console.warn('[search] $el.focus() called successfully')
+                        }
+                    }.bind(this), 50)
+                } catch (e) {
+                    console.warn('[search] focus error: ' + e)
                 }
-                console.warn('[search] navTo params: ' + JSON.stringify(params))
-                var ret = $falcon.navTo('falcon://8001666679481944', params)
-                console.warn('[search] navTo ret: ' + JSON.stringify(ret))
-                self.clickDebug = '[search] navTo ret: ' + JSON.stringify(ret)
-                if (ret && ret.ret !== 0) {
-                    console.warn('[search] navTo failed with ret: ' + JSON.stringify(ret))
-                    self.waitingForIME = false
-                    if (self.imeTimeout) clearTimeout(self.imeTimeout)
-                }
-            } catch (e) {
-                console.warn('[search] openSystemIME error: ' + (e && e.message ? e.message : String(e)))
-                self.waitingForIME = false
-                self.clickDebug = '[search] error: ' + (e && e.message ? e.message : String(e))
-                if (self.imeTimeout) clearTimeout(self.imeTimeout)
-            }
-        },
-        
-        // 失焦时重置等待状态 (防止按钮永久锁死)
-        onBlur() {
-            console.warn('[search] onBlur - reset waitingForIME')
-            this.waitingForIME = false
-            if (this.imeTimeout) clearTimeout(this.imeTimeout)
-        },
-        
-        onFocus() {
-            console.warn('[search] onFocus')
-        },
-        // 处理 navTo 回调 - 页面被重新激活时调用
-        onNewOptions(options) {
-            console.warn('[search] onNewOptions received: ' + JSON.stringify(options))
-            this.waitingForIME = false
-            if (options && (options.text || options.value || options.result)) {
-                var text = options.text || options.value || options.result
-                this.keyword = text
-                this.doSearch()
-            }
-        },
-        // 兼容：onLoad 也可能接收回调参数
-        onLoad(options) {
-            console.warn('[search] onLoad received: ' + JSON.stringify(options))
-            if (options && (options.text || options.value || options.result)) {
-                var text = options.text || options.value || options.result
-                this.keyword = text
-                this.doSearch()
             }
         },
         onInput(val) {
@@ -383,57 +275,10 @@ export default {
             this.keyword = val
         },
         onFocus() {
-            console.warn('[search] onFocus')
+            console.warn('[search] onFocus - system keyboard triggered')
         },
         onBlur() {
-            console.warn('[search] onBlur')
-        },
-        // 有道输入法回调: 确认/完成/搜索键 (反编译确认: confirm/finish/search_keyInput_confirm)
-        onImeConfirm(result) {
-            console.warn('[search] onImeConfirm received: ' + JSON.stringify(result))
-            this.waitingForIME = false
-            // 支持多种参数格式: text/value/result/confirm/data
-            var text = ''
-            if (result) {
-                text = result.text || result.value || result.result || result.data || ''
-                // 处理 confirm 字段: 如果 confirm=true 且有 text，视为确认输入
-                if (result.confirm === true && result.text) {
-                    text = result.text
-                }
-            }
-            if (text) {
-                this.keyword = text
-                this.doSearch()
-            }
-        },
-        // 有道输入法回调: 完成/取消/返回 (反编译确认: finish/returnClicked/finishApp/cancelAndReturn)
-        onImeFinish(result) {
-            console.warn('[search] onImeFinish received: ' + JSON.stringify(result))
-            this.waitingForIME = false
-            var text = ''
-            if (result) {
-                text = result.text || result.value || result.result || result.data || ''
-            }
-            if (text) {
-                this.keyword = text
-                this.doSearch()
-            }
-        },
-        // 有道输入法回调: 取消/返回键 (反编译确认: returnClicked/finishApp/cancelAndReturn)
-        onImeCancel(result) {
-            console.warn('[search] onImeCancel received: ' + JSON.stringify(result))
-            this.waitingForIME = false
-            // 取消时不自动搜索，仅重置状态
-        },
-        // 兼容旧事件格式
-        onImeResult(result) {
-            console.warn('[search] onImeResult received: ' + JSON.stringify(result))
-            this.waitingForIME = false
-            if (result && (result.text || result.value || result.content)) {
-                var text = result.text || result.value || result.content
-                this.keyword = text
-                this.doSearch()
-            }
+            console.warn('[search] onBlur - system keyboard hidden')
         },
         doSearch() {
             if (!this.keyword || !this.keyword.trim()) return
@@ -494,23 +339,6 @@ export default {
                 return String(v)
             }
             return String(v == null ? '' : v)
-        },
-        beforeDestroy() {
-            // 清理超时定时器
-            if (this.imeTimeout) clearTimeout(this.imeTimeout)
-            // 清理输入法回调事件监听 (反编译确认的所有事件)
-            if (typeof $falcon !== 'undefined' && $falcon.off) {
-                $falcon.off('confirm', this.onImeConfirm)
-                $falcon.off('finish', this.onImeFinish)
-                $falcon.off('returnClicked', this.onImeCancel)
-                $falcon.off('finishApp', this.onImeCancel)
-                $falcon.off('search_keyInput_confirm', this.onImeConfirm)
-                $falcon.off('confirmAndReturn', this.onImeConfirm)
-                $falcon.off('cancelAndReturn', this.onImeCancel)
-                $falcon.off('textEditFinished', this.onImeResult)
-                $falcon.off('imeResult', this.onImeResult)
-                $falcon.off('inputResult', this.onImeResult)
-            }
         }
     }
 }
