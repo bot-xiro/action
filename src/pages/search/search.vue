@@ -22,6 +22,8 @@
             <!-- 单独按钮启动有道输入法 (appid: 8001666679481944) -->
             <text class="ime-btn" @click="openSystemIME">⌨</text>
         </div>
+        <!-- 调试信息显示 -->
+        <text class="debug-info" v-if="clickDebug">{{ clickDebug }}</text>
 
         <!-- 未搜索时：展示搜索历史 -->
         <div v-if="!searched" class="history-wrap">
@@ -118,6 +120,18 @@
     text-align: center;
     background-color: rgba(255, 255, 255, 0.25);
     border-radius: 6px;
+}
+
+.debug-info {
+    margin-top: 8px;
+    margin-left: 12px;
+    margin-right: 12px;
+    font-size: 11px;
+    color: #ff6600;
+    background-color: #fff8e1;
+    padding: 6px;
+    border-radius: 4px;
+    border: 1px solid #ffcc00;
 }
 
 /* ---- 历史区 ---- */
@@ -249,7 +263,9 @@ export default {
             // 等待输入法回调的标志
             waitingForIME: false,
             // 超时定时器
-            imeTimeout: null
+            imeTimeout: null,
+            // 点击调试信息 (UI 显示)
+            clickDebug: ''
         }
     },
     mounted() {
@@ -278,23 +294,28 @@ export default {
     methods: {
         // 打开有道输入法 App (appid: 8001666679481944) - 使用 navTo 回调机制
         openSystemIME() {
-            // 多种日志方式确保输出
+            // 多种日志方式 + UI 状态确保可见
+            var self = this
+            self.clickDebug = '[search] >>> openSystemIME CLICKED <<< ' + new Date().toLocaleTimeString()
             console.log('[search] >>> openSystemIME CLICKED <<<')
             console.warn('[search] >>> openSystemIME CLICKED <<<')
             console.error('[search] >>> openSystemIME CLICKED <<<')
             
             if (this.waitingForIME) {
                 console.warn('[search] already waiting for IME, ignoring')
+                self.clickDebug = '[search] already waiting, ignored'
                 return
             }
             console.warn('[search] openSystemIME: navTo 有道输入法 (8001666679481944)')
             this.waitingForIME = true
+            self.clickDebug = '[search] navTo called...'
             
             // 超时自动重置 (防止按钮永久锁死)
             if (this.imeTimeout) clearTimeout(this.imeTimeout)
             this.imeTimeout = setTimeout(() => {
                 console.warn('[search] IME timeout, auto reset waitingForIME')
-                this.waitingForIME = false
+                self.waitingForIME = false
+                self.clickDebug = '[search] timeout reset'
             }, 30000) // 30秒超时自动重置
             
             try {
@@ -306,7 +327,7 @@ export default {
                     action: 'input',
                     type: 'text',
                     hint: '搜索视频 / UP主',
-                    defaultText: this.keyword,
+                    defaultText: self.keyword,
                     maxLength: 30,
                     confirmText: '搜索',
                     search_keyInput_confirm: true
@@ -314,15 +335,17 @@ export default {
                 console.warn('[search] navTo params: ' + JSON.stringify(params))
                 var ret = $falcon.navTo('falcon://8001666679481944', params)
                 console.warn('[search] navTo ret: ' + JSON.stringify(ret))
+                self.clickDebug = '[search] navTo ret: ' + JSON.stringify(ret)
                 if (ret && ret.ret !== 0) {
                     console.warn('[search] navTo failed with ret: ' + JSON.stringify(ret))
-                    this.waitingForIME = false
-                    if (this.imeTimeout) clearTimeout(this.imeTimeout)
+                    self.waitingForIME = false
+                    if (self.imeTimeout) clearTimeout(self.imeTimeout)
                 }
             } catch (e) {
                 console.warn('[search] openSystemIME error: ' + (e && e.message ? e.message : String(e)))
-                this.waitingForIME = false
-                if (this.imeTimeout) clearTimeout(this.imeTimeout)
+                self.waitingForIME = false
+                self.clickDebug = '[search] error: ' + (e && e.message ? e.message : String(e))
+                if (self.imeTimeout) clearTimeout(self.imeTimeout)
             }
         },
         
