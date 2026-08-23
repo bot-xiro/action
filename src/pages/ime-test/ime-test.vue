@@ -7,13 +7,13 @@
 
         <scroller class="content" scroll-direction="vertical" :show-scrollbar="false">
             <div class="section">
-                <text class="section-title">方案1: textarea + softInputEnable=true</text>
+                <text class="section-title">方案1: textarea + softInputEnable=true (系统软键盘)</text>
                 <div class="input-box">
                     <textarea
                         ref="textarea1"
                         class="test-input"
                         v-model="input1"
-                        placeholder="点击这里测试 textarea"
+                        placeholder="点击这里测试系统软键盘"
                         :softInputEnable="true"
                         :single-line="true"
                         @input="onInput1"
@@ -71,11 +71,18 @@
             </div>
 
             <div class="section">
-                <text class="section-title">方案4: 通过 $falcon.navTo 跳转系统输入法app</text>
+                <text class="section-title">方案4: 调用有道输入法 App (8001666679481944)</text>
                 <div class="btn-row">
-                    <text class="btn" @click="navToInputMethod">跳转有道输入法 (8001666679481944)</text>
+                    <text class="btn" @click="openSystemIME">调用有道输入法</text>
                 </div>
-                <text class="log">{{ navResult }}</text>
+                <text class="log">navTo结果: {{ navResult }}</text>
+            </div>
+
+            <div class="section">
+                <text class="section-title">回调事件监听</text>
+                <div class="btn-row">
+                    <text class="btn" @click="testEventListeners">测试事件监听</text>
+                </div>
             </div>
 
             <div class="section">
@@ -208,6 +215,21 @@ export default {
             logs: []
         }
     },
+    mounted() {
+        // 监听有道输入法回调事件 (反编译确认: confirm/finish/returnClicked/finishApp/search_keyInput_confirm)
+        if (typeof $falcon !== 'undefined' && $falcon.on) {
+            $falcon.on('confirm', this.onImeConfirm.bind(this))
+            $falcon.on('finish', this.onImeFinish.bind(this))
+            $falcon.on('returnClicked', this.onImeCancel.bind(this))
+            $falcon.on('finishApp', this.onImeCancel.bind(this))
+            $falcon.on('search_keyInput_confirm', this.onImeConfirm.bind(this))
+            $falcon.on('confirmAndReturn', this.onImeConfirm.bind(this))
+            $falcon.on('cancelAndReturn', this.onImeCancel.bind(this))
+            $falcon.on('textEditFinished', this.onImeResult.bind(this))
+            $falcon.on('imeResult', this.onImeResult.bind(this))
+            $falcon.on('inputResult', this.onImeResult.bind(this))
+        }
+    },
     methods: {
         addLog(msg) {
             var time = new Date().toLocaleTimeString()
@@ -227,7 +249,7 @@ export default {
             this.addLog('textarea1 input: ' + val)
         },
         onFocus1() {
-            this.status1 = 'focused - 输入法应已弹出'
+            this.status1 = 'focused - 系统软键盘触发'
             this.addLog('textarea1 focus - 系统输入法触发')
         },
         onBlur1() {
@@ -290,17 +312,159 @@ export default {
             }
         },
 
-        // 方案4
-        navToInputMethod() {
+        // 方案4: 调用有道输入法 App
+        openSystemIME() {
             var self = this
-            try {
-                $falcon.navTo('falcon://8001666679481944', {})
-                this.navResult = 'navTo 调用成功，ret=0'
-                this.addLog('navTo 有道输入法 (8001666679481944) 成功')
-            } catch (e) {
-                this.navResult = 'navTo 失败: ' + (e && e.message ? e.message : String(e))
-                this.addLog('navTo 失败: ' + (e && e.message ? e.message : String(e)))
+            console.warn('[ime-test] >>> openSystemIME CLICKED <<<')
+            this.addLog('[ime-test] >>> openSystemIME CLICKED <<<')
+            
+            // 尝试多种 callback URL 格式
+            var callbackUrls = [
+                'falcon://8001812345678901/ime-callback',
+                'falcon://8001812345678901?callback=ime-callback',
+                'falcon://8001812345678901/return',
+                'falcon://8001812345678901/result'
+            ]
+            var paramsBase = {
+                action: 'input',
+                type: 'text',
+                hint: '测试输入法',
+                defaultText: '',
+                maxLength: 30,
+                confirmText: '确认',
+                search_keyInput_confirm: true
             }
+            var self = this
+            var tryNextUrl = function(index) {
+                if (index >= callbackUrls.length) {
+                    self.addLog('[ime-test] all callback URLs tried, navTo failed')
+                    return
+                }
+                var callbackUrl = callbackUrls[index]
+                var params = Object.assign({}, paramsBase, {
+                    callback: callbackUrl,
+                    returnUrl: callbackUrl
+                })
+                self.addLog('[ime-test] navTo try url[' + index + ']: ' + callbackUrl)
+                self.addLog('[ime-test] navTo params: ' + JSON.stringify(params))
+                try {
+                    var ret = $falcon.navTo('falcon://8001666679481944', params)
+                    self.addLog('[ime-test] navTo ret[' + index + ']: ' + JSON.stringify(ret))
+                    if (ret && ret.ret === 0) {
+                        self.addLog('[ime-test] navTo success with url[' + index + ']')
+                        return
+                    } else {
+                        self.addLog('[ime-test] navTo failed with url[' + index + ']: ' + JSON.stringify(ret))
+                        tryNextUrl(index + 1)
+                    }
+                } catch (e) {
+                    self.addLog('[ime-test] navTo error with url[' + index + ']: ' + (e && e.message ? e.message : String(e)))
+                    tryNextUrl(index + 1)
+                }
+            }
+            tryNextUrl(0)
+        },
+
+        // 处理 navTo 回调 - 页面被重新激活时调用
+        onNewOptions(options) {
+            this.addLog('[ime-test] onNewOptions received: ' + JSON.stringify(options))
+            if (options && (options.text || options.value || options.result || options.content)) {
+                var text = options.text || options.value || options.result || options.content
+                this.addLog('[ime-test] onNewOptions got text: ' + text)
+            }
+        },
+        // 兼容：onLoad 也可能接收回调参数
+        onLoad(options) {
+            this.addLog('[ime-test] onLoad received: ' + JSON.stringify(options))
+            if (options && (options.text || options.value || options.result || options.content)) {
+                var text = options.text || options.value || options.result || options.content
+                this.addLog('[ime-test] onLoad got text: ' + text)
+            }
+        },
+
+        // 有道输入法回调事件
+        onImeConfirm(result) {
+            this.addLog('[ime-test] onImeConfirm received: ' + JSON.stringify(result))
+            if (result && (result.text || result.value || result.result || options.content)) {
+                var text = result.text || result.value || result.result || options.content || ''
+                if (text) {
+                    this.addLog('[ime-test] onImeConfirm got text: ' + text)
+                }
+            }
+        },
+        onImeFinish(result) {
+            this.addLog('[ime-test] onImeFinish received: ' + JSON.stringify(result))
+            if (result && (result.text || result.value || result.result || result.content)) {
+                var text = result.text || result.value || result.result || options.content || ''
+                if (text) {
+                    this.addLog('[ime-test] onImeFinish got text: ' + text)
+                }
+            }
+        },
+        onImeCancel(result) {
+            this.addLog('[ime-test] onImeCancel received: ' + JSON.stringify(result))
+        },
+        onImeResult(result) {
+            this.addLog('[ime-test] onImeResult received: ' + JSON.stringify(result))
+            if (result && (result.text || result.value || result.content)) {
+                var text = result.text || result.value || result.content
+                if (text) {
+                    this.addLog('[ime-test] onImeResult got text: ' + text)
+                }
+            }
+        },
+
+        // 方案3
+        onInput3(val) {
+            this.input3 = val
+            this.addLog('textarea3 input: ' + val)
+        },
+        onFocus3() {
+            this.status3 = 'focused'
+            this.addLog('textarea3 focus')
+        },
+        onBlur3() {
+            this.status3 = 'blurred'
+            this.addLog('textarea3 blur')
+        },
+        focusTextarea3() {
+            var ref = this.$refs.textarea3
+            if (ref) {
+                if (typeof ref.focus === 'function') {
+                    ref.focus()
+                    this.addLog('手动调用 textarea3.focus()')
+                } else if (ref.$el && typeof ref.$el.focus === 'function') {
+                    ref.$el.focus()
+                    this.addLog('手动调用 textarea3.$el.focus()')
+                } else {
+                    this.addLog('textarea3 无 focus 方法')
+                }
+            } else {
+                this.addLog('textarea3 ref 不存在')
+            }
+        },
+        blurTextarea3() {
+            var ref = this.$refs.textarea3
+            if (ref && typeof ref.blur === 'function') {
+                ref.blur()
+                this.addLog('手动调用 textarea3.blur()')
+            }
+        },
+
+        testEventListeners() {
+            this.addLog('[ime-test] 测试事件监听已注册')
+        },
+
+        addLog(msg) {
+            var time = new Date().toLocaleTimeString()
+            this.logs.unshift('[' + time + '] ' + msg)
+            if (this.logs.length > 50) this.logs.pop()
+        },
+        clearLogs() {
+            this.logs = []
+        },
+        goBack() {
+            this.$page.finish()
         }
     }
 }
