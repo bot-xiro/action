@@ -1,10 +1,10 @@
 <template>
     <div class="page">
-        <!-- 顶部：返回 + 输入框 + 搜索按钮 -->
+        <!-- 顶部：返回 + 输入框 + 搜索按钮 + 键盘按钮 -->
         <div class="topbar">
             <text class="back" @click="goBack">‹</text>
             <div class="search-box-wrapper" @click="focusInput">
-                <!-- 标准 textarea + softInputEnable=true (系统自动管理输入法) -->
+                <!-- 标准 textarea + softInputEnable=true (系统自动管理输入法，有道输入法) -->
                 <textarea
                     ref="searchInput"
                     class="search-input"
@@ -20,6 +20,8 @@
                 ></textarea>
             </div>
             <text class="go-btn" @click="doSearch">搜索</text>
+            <!-- 显式键盘按钮：点击触发系统输入法 (有道输入法 appid: 8001666679481944) -->
+            <text class="ime-btn" @click="focusInput">⌨</text>
         </div>
 
         <!-- 未搜索时：展示搜索历史 -->
