@@ -347,48 +347,47 @@ export default {
         onNewOptions(options) {
             console.warn('[search] onNewOptions received: ' + JSON.stringify(options))
             this.waitingForIME = false
-            if (options && (options.text || options.value || options.result)) {
-                var text = options.text || options.value || options.result
-                this.keyword = text
-                this.doSearch()
+            if (options) {
+                var text = options.text || options.value || options.result || options.content || ''
+                if (text) {
+                    this.keyword = text
+                    this.doSearch()
+                }
             }
         },
         // 兼容：onLoad 也可能接收回调参数
         onLoad(options) {
             console.warn('[search] onLoad received: ' + JSON.stringify(options))
-            if (options && (options.text || options.value || options.result)) {
-                var text = options.text || options.value || options.result
-                this.keyword = text
-                this.doSearch()
+            if (options) {
+                var text = options.text || options.value || options.result || options.content || ''
+                if (text) {
+                    this.keyword = text
+                    this.doSearch()
+                }
             }
         },
         // 有道输入法回调: 确认/完成/搜索键 (反编译确认: confirm/finish/search_keyInput_confirm)
         onImeConfirm(result) {
             console.warn('[search] onImeConfirm received: ' + JSON.stringify(result))
             this.waitingForIME = false
-            var text = ''
             if (result) {
-                text = result.text || result.value || result.result || result.data || ''
-                if (result.confirm === true && result.text) {
-                    text = result.text
+                var text = result.text || result.value || result.result || result.data || result.content || ''
+                if (text) {
+                    this.keyword = text
+                    this.doSearch()
                 }
-            }
-            if (text) {
-                this.keyword = text
-                this.doSearch()
             }
         },
         // 有道输入法回调: 完成/取消/返回 (反编译确认: finish/returnClicked/finishApp/cancelAndReturn)
         onImeFinish(result) {
             console.warn('[search] onImeFinish received: ' + JSON.stringify(result))
             this.waitingForIME = false
-            var text = ''
             if (result) {
-                text = result.text || result.value || result.result || result.data || ''
-            }
-            if (text) {
-                this.keyword = text
-                this.doSearch()
+                var text = result.text || result.value || result.result || result.data || result.content || ''
+                if (text) {
+                    this.keyword = text
+                    this.doSearch()
+                }
             }
         },
         // 有道输入法回调: 取消/返回键 (反编译确认: returnClicked/finishApp/cancelAndReturn)
