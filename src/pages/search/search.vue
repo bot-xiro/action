@@ -4,7 +4,6 @@
         <div class="topbar">
             <text class="back" @click="goBack">‹</text>
             <div class="search-box-wrapper" @click="focusInput">
-                <!-- 标准 textarea + softInputEnable=true (系统自动管理输入法，有道输入法) -->
                 <textarea
                     ref="searchInput"
                     class="search-input"
@@ -20,8 +19,8 @@
                 ></textarea>
             </div>
             <text class="go-btn" @click="doSearch">搜索</text>
-            <!-- 显式键盘按钮：点击触发系统输入法 (有道输入法 appid: 8001666679481944) -->
-            <text class="ime-btn" @click="focusInput">⌨</text>
+            <!-- 显式键盘按钮：点击调用有道输入法 App (appid: 8001666679481944) -->
+            <text class="ime-btn" @click="openSystemIME">⌨</text>
         </div>
 
         <!-- 未搜索时：展示搜索历史 -->
@@ -246,30 +245,127 @@ export default {
         }).catch(function () {
             self.history = []
         })
+        // 监听有道输入法回调事件 (反编译确认: confirm/finish/returnClicked/finishApp/search_keyInput_confirm)
+        if (typeof $falcon !== 'undefined' && $falcon.on) {
+            $falcon.on('confirm', this.onImeConfirm.bind(this))
+            $falcon.on('finish', this.onImeFinish.bind(this))
+            $falcon.on('returnClicked', this.onImeCancel.bind(this))
+            $falcon.on('finishApp', this.onImeCancel.bind(this))
+            $falcon.on('search_keyInput_confirm', this.onImeConfirm.bind(this))
+            $falcon.on('confirmAndReturn', this.onImeConfirm.bind(this))
+            $falcon.on('cancelAndReturn', this.onImeCancel.bind(this))
+            $falcon.on('textEditFinished', this.onImeResult.bind(this))
+            $falcon.on('imeResult', this.onImeResult.bind(this))
+            $falcon.on('inputResult', this.onImeResult.bind(this))
+        }
     },
     methods: {
-        // 点击输入框区域时强制聚焦触发系统输入法 (参考 cookie.vue 方案)
-        focusInput() {
-            console.warn('[search] focusInput: triggering system keyboard')
-            var inputRef = this.$refs.searchInput
-            if (inputRef) {
-                try {
-                    // 先 blur 再 focus，强制触发系统软键盘
-                    if (typeof inputRef.blur === 'function') {
-                        inputRef.blur()
-                    }
-                    setTimeout(function() {
-                        if (typeof inputRef.focus === 'function') {
-                            inputRef.focus()
-                            console.warn('[search] focus() called successfully')
-                        } else if (inputRef.$el && typeof inputRef.$el.focus === 'function') {
-                            inputRef.$el.focus()
-                            console.warn('[search] $el.focus() called successfully')
-                        }
-                    }.bind(this), 50)
-                } catch (e) {
-                    console.warn('[search] focus error: ' + e)
+        // 打开有道输入法 App (appid: 8001666679481944) - 使用 navTo 回调机制
+        openSystemIME() {
+            console.warn('[search] >>> openSystemIME CLICKED <<<')
+            if (this.waitingForIME) {
+                console.warn('[search] already waiting for IME, ignoring')
+                return
+            }
+            console.warn('[search] openSystemIME: navTo 有道输入法 (8001666679481944)')
+            this.waitingForIME = true
+            
+            // 超时自动重置 (防止按钮永久锁死)
+            if (this.imeTimeout) clearTimeout(this.imeTimeout)
+            this.imeTimeout = setTimeout(() => {
+                console.warn('[search] IME timeout, auto reset waitingForIME')
+                this.waitingForIME = false
+            }, 30000) // 30秒超时自动重置
+            
+            try {
+                // 使用 navTo 调用有道输入法，带回调参数
+                var callbackUrl = 'falcon://8001812345678901/ime-callback'
+                var params = {
+                    callback: callbackUrl,
+                    returnUrl: callbackUrl,
+                    action: 'input',
+                    type: 'text',
+                    hint: '搜索视频 / UP主',
+                    defaultText: this.keyword,
+                    maxLength: 30,
+                    confirmText: '搜索',
+                    search_keyInput_confirm: true
                 }
+                console.warn('[search] navTo params: ' + JSON.stringify(params))
+                var ret = $falcon.navTo('falcon://8001666679481944', params)
+                console.warn('[search] navTo ret: ' + JSON.stringify(ret))
+                if (ret && ret.ret !== 0) {
+                    console.warn('[search] navTo failed with ret: ' + JSON.stringify(ret))
+                    this.waitingForIME = false
+                    if (this.imeTimeout) clearTimeout(this.imeTimeout)
+                }
+            } catch (e) {
+                console.warn('[search] openSystemIME error: ' + (e && e.message ? e.message : String(e)))
+                this.waitingForIME = false
+                if (this.imeTimeout) clearTimeout(this.imeTimeout)
+            }
+        },
+        // 处理 navTo 回调 - 页面被重新激活时调用
+        onNewOptions(options) {
+            console.warn('[search] onNewOptions received: ' + JSON.stringify(options))
+            this.waitingForIME = false
+            if (options && (options.text || options.value || options.result)) {
+                var text = options.text || options.value || options.result
+                this.keyword = text
+                this.doSearch()
+            }
+        },
+        // 兼容：onLoad 也可能接收回调参数
+        onLoad(options) {
+            console.warn('[search] onLoad received: ' + JSON.stringify(options))
+            if (options && (options.text || options.value || options.result)) {
+                var text = options.text || options.value || options.result
+                this.keyword = text
+                this.doSearch()
+            }
+        },
+        // 有道输入法回调: 确认/完成/搜索键 (反编译确认: confirm/finish/search_keyInput_confirm)
+        onImeConfirm(result) {
+            console.warn('[search] onImeConfirm received: ' + JSON.stringify(result))
+            this.waitingForIME = false
+            var text = ''
+            if (result) {
+                text = result.text || result.value || result.result || result.data || ''
+                if (result.confirm === true && result.text) {
+                    text = result.text
+                }
+            }
+            if (text) {
+                this.keyword = text
+                this.doSearch()
+            }
+        },
+        // 有道输入法回调: 完成/取消/返回 (反编译确认: finish/returnClicked/finishApp/cancelAndReturn)
+        onImeFinish(result) {
+            console.warn('[search] onImeFinish received: ' + JSON.stringify(result))
+            this.waitingForIME = false
+            var text = ''
+            if (result) {
+                text = result.text || result.value || result.result || result.data || ''
+            }
+            if (text) {
+                this.keyword = text
+                this.doSearch()
+            }
+        },
+        // 有道输入法回调: 取消/返回键 (反编译确认: returnClicked/finishApp/cancelAndReturn)
+        onImeCancel(result) {
+            console.warn('[search] onImeCancel received: ' + JSON.stringify(result))
+            this.waitingForIME = false
+        },
+        // 兼容旧事件格式
+        onImeResult(result) {
+            console.warn('[search] onImeResult received: ' + JSON.stringify(result))
+            this.waitingForIME = false
+            if (result && (result.text || result.value || result.content)) {
+                var text = result.text || result.value || result.content
+                this.keyword = text
+                this.doSearch()
             }
         },
         onInput(val) {
@@ -341,6 +437,23 @@ export default {
                 return String(v)
             }
             return String(v == null ? '' : v)
+        },
+        beforeDestroy() {
+            // 清理输入法回调事件监听
+            if (typeof $falcon !== 'undefined' && $falcon.off) {
+                $falcon.off('confirm', this.onImeConfirm)
+                $falcon.off('finish', this.onImeFinish)
+                $falcon.off('returnClicked', this.onImeCancel)
+                $falcon.off('finishApp', this.onImeCancel)
+                $falcon.off('search_keyInput_confirm', this.onImeConfirm)
+                $falcon.off('confirmAndReturn', this.onImeConfirm)
+                $falcon.off('cancelAndReturn', this.onImeCancel)
+                $falcon.off('textEditFinished', this.onImeResult)
+                $falcon.off('imeResult', this.onImeResult)
+                $falcon.off('inputResult', this.onImeResult)
+            }
+            // 清理超时定时器
+            if (this.imeTimeout) clearTimeout(this.imeTimeout)
         }
     }
 }
