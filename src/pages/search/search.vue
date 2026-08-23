@@ -259,11 +259,16 @@ export default {
         }).catch(function () {
             self.history = []
         })
-        // 监听输入法回调事件 (参考 loli tools_keyboard: confirmAndReturn/cancelAndReturn/textEditFinished)
+        // 监听有道输入法回调事件 (反编译确认: onLoad/onNewOptions + confirm/finish/returnClicked/finishApp/search_keyInput_confirm)
         if (typeof $falcon !== 'undefined' && $falcon.on) {
+            $falcon.on('confirm', this.onImeConfirm.bind(this))
+            $falcon.on('finish', this.onImeFinish.bind(this))
+            $falcon.on('returnClicked', this.onImeCancel.bind(this))
+            $falcon.on('finishApp', this.onImeCancel.bind(this))
+            $falcon.on('search_keyInput_confirm', this.onImeConfirm.bind(this))
+            $falcon.on('confirmAndReturn', this.onImeConfirm.bind(this))
+            $falcon.on('cancelAndReturn', this.onImeCancel.bind(this))
             $falcon.on('textEditFinished', this.onImeResult.bind(this))
-            $falcon.on('confirmAndReturn', this.onImeResult.bind(this))
-            $falcon.on('cancelAndReturn', this.onImeResult.bind(this))
             $falcon.on('imeResult', this.onImeResult.bind(this))
             $falcon.on('inputResult', this.onImeResult.bind(this))
         }
@@ -278,20 +283,22 @@ export default {
             console.warn('[search] openSystemIME: navTo 有道输入法 (8001666679481944)')
             this.waitingForIME = true
             try {
-                // 使用 navTo 调用有道输入法，带回调参数
+                // 使用 navTo 调用有道输入法，带回调参数 (反编译确认的参数格式)
                 // 回调地址：falcon://当前appid/ime-callback
                 var callbackUrl = 'falcon://8001812345678901/ime-callback'
                 var params = {
-                    // 标准回调参数
+                    // 标准回调参数 (反编译确认)
                     callback: callbackUrl,
                     returnUrl: callbackUrl,
-                    // 输入法相关参数
+                    // 输入法相关参数 (反编译确认: action/type/hint/defaultText/maxLength/confirmText)
                     action: 'input',
                     type: 'text',
                     hint: '搜索视频 / UP主',
                     defaultText: this.keyword,
                     maxLength: 30,
-                    confirmText: '搜索'
+                    confirmText: '搜索',
+                    // 额外参数 (反编译可能支持)
+                    search_keyInput_confirm: true
                 }
                 var ret = $falcon.navTo('falcon://8001666679481944', params)
                 console.warn('[search] navTo ret: ' + JSON.stringify(ret))
@@ -329,7 +336,44 @@ export default {
         onBlur() {
             console.warn('[search] onBlur')
         },
-        // 处理输入法回调 (参考 loli: confirmAndReturn/cancelAndReturn/textEditFinished)
+        // 有道输入法回调: 确认/完成/搜索键 (反编译确认: confirm/finish/search_keyInput_confirm)
+        onImeConfirm(result) {
+            console.warn('[search] onImeConfirm received: ' + JSON.stringify(result))
+            this.waitingForIME = false
+            // 支持多种参数格式: text/value/result/confirm/data
+            var text = ''
+            if (result) {
+                text = result.text || result.value || result.result || result.data || ''
+                // 处理 confirm 字段: 如果 confirm=true 且有 text，视为确认输入
+                if (result.confirm === true && result.text) {
+                    text = result.text
+                }
+            }
+            if (text) {
+                this.keyword = text
+                this.doSearch()
+            }
+        },
+        // 有道输入法回调: 完成/取消/返回 (反编译确认: finish/returnClicked/finishApp/cancelAndReturn)
+        onImeFinish(result) {
+            console.warn('[search] onImeFinish received: ' + JSON.stringify(result))
+            this.waitingForIME = false
+            var text = ''
+            if (result) {
+                text = result.text || result.value || result.result || result.data || ''
+            }
+            if (text) {
+                this.keyword = text
+                this.doSearch()
+            }
+        },
+        // 有道输入法回调: 取消/返回键 (反编译确认: returnClicked/finishApp/cancelAndReturn)
+        onImeCancel(result) {
+            console.warn('[search] onImeCancel received: ' + JSON.stringify(result))
+            this.waitingForIME = false
+            // 取消时不自动搜索，仅重置状态
+        },
+        // 兼容旧事件格式
         onImeResult(result) {
             console.warn('[search] onImeResult received: ' + JSON.stringify(result))
             this.waitingForIME = false
@@ -400,11 +444,16 @@ export default {
             return String(v == null ? '' : v)
         },
         beforeDestroy() {
-            // 清理输入法回调事件监听
+            // 清理输入法回调事件监听 (反编译确认的所有事件)
             if (typeof $falcon !== 'undefined' && $falcon.off) {
+                $falcon.off('confirm', this.onImeConfirm)
+                $falcon.off('finish', this.onImeFinish)
+                $falcon.off('returnClicked', this.onImeCancel)
+                $falcon.off('finishApp', this.onImeCancel)
+                $falcon.off('search_keyInput_confirm', this.onImeConfirm)
+                $falcon.off('confirmAndReturn', this.onImeConfirm)
+                $falcon.off('cancelAndReturn', this.onImeCancel)
                 $falcon.off('textEditFinished', this.onImeResult)
-                $falcon.off('confirmAndReturn', this.onImeResult)
-                $falcon.off('cancelAndReturn', this.onImeResult)
                 $falcon.off('imeResult', this.onImeResult)
                 $falcon.off('inputResult', this.onImeResult)
             }
