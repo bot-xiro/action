@@ -1,4 +1,12 @@
-// 系统输入法封装 v3 (崩溃修复版)
+// 系统输入法封装 v4 (修复回调把会话 UUID 当成输入文本)
+// v4 修复: 输入 "1" 却得到 "54e4674818254ed8a842fe75fe9a6807" 的 bug.
+//   该串是去掉横线的 UUID, 说明 textEditFinished 信号的第一个回调参数是
+//   会话 UUID (或被当作文本兜底). v3 的 extractText 会把任意不可解析字符串
+//   (__raw) 当文本, 于是 UUID 被当作用户输入. v4:
+//   - finish 收集全部回调参数, 逐个解析, 优先使用携带文本键的参数
+//   - 裸字符串与 uuid 字段做 UUID 归一化比对 (忽略横线/大小写),
+//     匹配 UUID 的内容永不当作文本
+//   - uuid 过滤同样使用归一化比较, 不再因横线差异失效
 // 设备确认: Global 模块含 startTextEdit/closeTextEdit, 用户实测键盘能弹出.
 // 回调通道存在两种可能 (历史探索证据):
 //   1. Global 实例信号: manager.textEditFinished.on(handler)
@@ -40,6 +48,17 @@ function asObject(payload) {
     try { d = JSON.parse(d) } catch (e) { return { __raw: d } }
   }
   return d
+}
+
+// UUID 归一化: 去横线 + 小写. startTextEdit 返回带横线的 UUID,
+// 而回调里出现的常是不带横线的 32 位 hex, 不统一就比对不上.
+function normalizeUuid(s) {
+  return typeof s === 'string' ? s.replace(/-/g, '').toLowerCase() : ''
+}
+
+function looksLikeUuid(s) {
+  return typeof s === 'string' &&
+    /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i.test(s)
 }
 
 function extractText(d) {
@@ -97,25 +116,65 @@ export function createIME() {
     }
   }
 
-  function finish(payloadRaw) {
+  function finish() {
     // 顶层兜底: 回调里任何异常都必须消化在这里,
     // 一旦逃回原生信号派发器就是整个 miniapp 进程崩溃 (用户看到的闪退)
     try {
       // 无等待中的会话则忽略 (防重复回调)
       if (resolver === null) return
 
-      const d = asObject(payloadRaw)
-      debug('回调原始数据: ' + safeStringify(d).substring(0, 300))
+      // 信号可能携带多个参数 (例如 会话UUID 与 结果JSON 分两个参数下发),
+      // v3 只读第一个参数导致 UUID 被当作文本. 这里收集全部参数逐个解析.
+      const args = []
+      for (let i = 0; i < arguments.length; i++) args.push(arguments[i])
+      debug('回调共 ' + args.length + ' 个参数')
 
-      // UUID 过滤: 仅当两边都有值且不匹配时才忽略
-      const cbUuid = d && typeof d === 'object' && typeof d.uuid === 'string' ? d.uuid : null
-      if (currentUuid && cbUuid && cbUuid !== currentUuid) {
+      const myUuid = normalizeUuid(currentUuid)
+      let cbUuid = null
+      let text = ''
+      let hasTextKey = false
+      let confirmed = null
+
+      for (let i = 0; i < args.length; i++) {
+        const d = asObject(args[i])
+        debug('参数[' + i + ']: ' + safeStringify(d).substring(0, 300))
+        if (d === null || d === undefined) continue
+
+        // 收集 UUID: 对象 uuid 字段, 或 UUID 形态的裸串/字段值
+        if (typeof d === 'object') {
+          if (typeof d.uuid === 'string' && cbUuid === null) cbUuid = d.uuid
+        }
+        if (cbUuid === null && looksLikeUuid(typeof d === 'string' ? d : d.__raw)) {
+          cbUuid = normalizeUuid(typeof d === 'string' ? d : d.__raw)
+        }
+
+        // 文本: 对象带明确文本键优先 (hasTextKey 标记),
+        // 裸串仅在肯定不是 UUID 时才允许当作文本
+        if (typeof d === 'object' && !Array.isArray(d)) {
+          const t = extractText(d)
+          const keyed = typeof d.value === 'string' || typeof d.text === 'string' ||
+            typeof d.content === 'string' || typeof d.result === 'string' ||
+            typeof d.inputText === 'string'
+          if (t !== '' && normalizeUuid(t) !== myUuid) {
+            if (keyed || !hasTextKey) {
+              text = t
+              hasTextKey = hasTextKey || keyed
+            }
+          }
+          const c = extractConfirmed(d)
+          if (c !== null) confirmed = c
+        } else if (typeof d === 'string' && text === '' &&
+                   normalizeUuid(d) !== myUuid && !looksLikeUuid(d)) {
+          text = d
+        }
+      }
+
+      // UUID 过滤: 归一化后比较, 仅当两边都有值且不匹配时才忽略
+      if (myUuid && cbUuid && normalizeUuid(cbUuid) !== myUuid) {
         debug('uuid 不匹配, 忽略: ' + cbUuid)
         return
       }
 
-      const text = extractText(d)
-      let confirmed = extractConfirmed(d)
       // 无明确确认标志时, 有文本视为确认
       if (confirmed === null) confirmed = text !== ''
       debug('解析: confirmed=' + confirmed + ' text=' + text)
