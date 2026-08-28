@@ -84,6 +84,7 @@ export default {
         this.status = videos.length > 0 ? '' : ''
       } catch (err) {
         if (gen !== this.generation) return
+        console.log('[bili] search error: ' + (err && err.message ? err.message : err))
         this.status = err && err.message ? err.message : String(err)
         this.results = []
         this.searched = true

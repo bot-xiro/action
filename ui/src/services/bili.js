@@ -120,6 +120,15 @@ export async function searchVideos(keyword, page) {
     throw new Error('网络请求失败: ' + (e && e.message ? e.message : e))
   }
 
+  // 诊断: 记录返回值形态 (设备日志 tag console().log)
+  try {
+    let desc
+    if (isBinary(res)) desc = 'Binary(len=' + (res.byteLength || res.length) + ')'
+    else if (res && typeof res === 'object') desc = 'keys=[' + Object.keys(res).join(',') + ']'
+    else desc = 'typeof=' + typeof res + ' value=' + String(res).substring(0, 120)
+    console.log('[bili] response ' + desc)
+  } catch (e) { console.log('[bili] response 检查异常: ' + e) }
+
   const body = parseBody(unwrapResponse(res))
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
