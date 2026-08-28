@@ -145,3 +145,63 @@ export async function searchVideos(keyword, page) {
   }
   return videos
 }
+
+// QuickJS 20200705 不保证 Date.prototype.toISOString, 手工格式化
+function formatDate(epochSec) {
+  if (!epochSec) return ''
+  const dt = new Date(epochSec * 1000)
+  function pad(n) { return n < 10 ? '0' + n : '' + n }
+  return dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(dt.getDate())
+}
+
+function formatDuration(sec) {
+  const s = Math.max(0, Number(sec) || 0)
+  const m = Math.floor(s / 60)
+  const r = Math.floor(s % 60)
+  return m + ':' + (r < 10 ? '0' : '') + r
+}
+
+/**
+ * 获取视频详情
+ * @param {string} bvid
+ * @returns {Promise<{bvid,aid,title,pic,desc,author,duration,pubdateText,playText,danmakuText,likeText,coinText,favText,shareText}>}
+ */
+export async function getVideoDetail(bvid) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  const url = 'https://api.bilibili.com/x/web-interface/view?bvid=' + encodeURIComponent(bvid)
+
+  let res
+  try {
+    res = await httpGet(url, { 'User-Agent': UA, 'Referer': REFERER }, 15)
+  } catch (e) {
+    throw new Error('网络请求失败: ' + (e && e.message ? e.message : e))
+  }
+
+  const body = parseBody(unwrapResponse(res))
+  if (body.code !== 0 || !body.data) {
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    if (body.code === -404) throw new Error('视频不存在或已删除')
+    throw new Error(body.message || ('接口错误 code=' + body.code))
+  }
+
+  const d = body.data
+  const st = d.stat || {}
+  let pic = d.pic || ''
+  if (pic.indexOf('//') === 0) pic = 'https:' + pic
+  return {
+    bvid: d.bvid || bvid,
+    aid: d.aid || 0,
+    title: d.title || '',
+    pic: pic,
+    desc: d.desc || '',
+    author: (d.owner && d.owner.name) || '',
+    duration: formatDuration(d.duration),
+    pubdateText: formatDate(d.pubdate),
+    playText: formatPlay(st.view),
+    danmakuText: formatPlay(st.danmaku),
+    likeText: formatPlay(st.like),
+    coinText: formatPlay(st.coin),
+    favText: formatPlay(st.favorite),
+    shareText: formatPlay(st.share)
+  }
+}
