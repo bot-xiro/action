@@ -358,10 +358,9 @@ function formatPlay(n) {
  */
 export async function searchVideos(keyword, page) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
-  const kw = encodeURIComponent(keyword)
-  const url = 'https://api.bilibili.com/x/web-interface/search/type'
-    + '?search_type=video&keyword=' + kw
-    + '&page=' + (page || 1) + '&pagesize=20'
+  // 搜索接口已强制 wbi 签名 (真机实测不带签直接返回风控 HTML 页)
+  const url = 'https://api.bilibili.com/x/web-interface/search/type?'
+    + (await wbiQuery({ search_type: 'video', keyword: keyword, page: page || 1, pagesize: 20 }))
 
   const body = await getJson(url, REFERER_SEARCH)
   if (body.code !== 0) {
