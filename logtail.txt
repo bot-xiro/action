@@ -1,0 +1,346 @@
+n miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:36:51 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:36:51 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:36:52 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [updateCurrentSystemTime] YSystemInfoAdapterPrivate::updateCurrentSystemTime = Timer out
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [onSystemTimeChange] ::onSystemTimeChange()
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:53 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:54 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:36:55 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:36:56 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:36:56 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:36:57 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [updateCurrentSystemTime] YSystemInfoAdapterPrivate::updateCurrentSystemTime = Timer out
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [onSystemTimeChange] ::onSystemTimeChange()
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:36
+Aug 28 10:36:58 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:36
+Aug 28 10:36:59 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:00 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:01 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:37:01 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:02 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:02 Melon_pro-3562 local7.warn miniapp[971]: 971:547753463840 run qjs_gc tag=Auto GC
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [updateCurrentSystemTime] YSystemInfoAdapterPrivate::updateCurrentSystemTime = Timer out
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [onSystemTimeChange] ::onSystemTimeChange()
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:03 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:04 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:05 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:06 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:37:06 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:07 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [updateCurrentSystemTime] YSystemInfoAdapterPrivate::updateCurrentSystemTime = Timer out
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [onSystemTimeChange] ::onSystemTimeChange()
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:08 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:09 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:10 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:11 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:37:11 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:12 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [updateCurrentSystemTime] YSystemInfoAdapterPrivate::updateCurrentSystemTime = Timer out
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [onSystemTimeChange] ::onSystemTimeChange()
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:13 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:14 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:547753463840 (console().warn.0): history: history upload start!
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:547753463840 (console().warn.1): __WARN
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:547753463840 [YSettingManagerModule] [load] envJson.dump()===>{"ShowOnceAppUpdatePoint":true,"accent":"uk","accentEnabled":true,"aireadingGuide":false,"aitutorGuide":false,"appInitTime":1764938513907,"articleGuide":f
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:547753463840 [JSHistoryProxy] [startUploadHistory] startUploadHistory
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:547753463840 [YHistoryModule] [startUploadHistory] isLogin: 1, UploadItemstampEnd: 0
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:547488263424 [YFirstDictParser] [doExec]     ++++ execSELECT count(*) as count FROM table_history WHERE uploaded = 0;: SELECT count(*) as count FROM table_history WHERE uploaded = 0; ++++
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:547488263424 [YFirstDictParser] [parseQueryResult] parse query result ----> {"code":0,"query":"SELECT count(*) as count FROM table_history WHERE uploaded = 0;","data":[["0"]],"header":["count"]}
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:547488263424 [YHistoryModule] [handleQueryNotUploadedItemsCnt] no history items to upload 
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:547488263424 [YHistoryModule] [handleUploadedState] upload result:1
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:547753463840 (console().warn.0): history: history upload end!
+Aug 28 10:37:15 Melon_pro-3562 local7.warn miniapp[971]: 971:547753463840 (console().warn.1): __WARN
+Aug 28 10:37:16 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:37:16 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:17 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [updateCurrentSystemTime] YSystemInfoAdapterPrivate::updateCurrentSystemTime = Timer out
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [onSystemTimeChange] ::onSystemTimeChange()
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:18 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:19 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:20 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:21 Melon_pro-3562 local7.warn SoundRecord[1339]: 1339:548100803712 [YWifiAdapterPrivate] [onNetworkListChanged] #notifyWifiList onNetworkListChanged
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [onNetworkListChanged] #notifyWifiList onNetworkListChanged
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [onNetworkListChanged] notifyWifiList event:wifi
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [onNetworkListChanged] notifyWifiList list:[     {         "ssid": "602",         "qual": "-55",         "privacy": "1",         "conn": "1",         "history_connected": "1"     },
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [onNetworkListChanged] notifyWifiList array13
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: 602
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: 602 ssidBuf: 602
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: 702
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: 702 ssidBuf: 702
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: HUAWEI-凌霄-G21Q4M
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: HUAWEI-\xe5\x87\x8c\xe9\x9c\x84-G21Q4M ssidBuf: HUAWEI-凌霄-G21Q4M
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: TP-LINK_11DF
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: TP-LINK_11DF ssidBuf: TP-LINK_11DF
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: @pgj
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: @pgj ssidBuf: @pgj
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: 502
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: 502 ssidBuf: 502
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: CMCC-kv4c
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: CMCC-kv4c ssidBuf: CMCC-kv4c
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: CYDJL
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: CYDJL ssidBuf: CYDJL
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: ZTE-C7usAR
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: ZTE-C7usAR ssidBuf: ZTE-C7usAR
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: ChinaNet-iTV-RE9E
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: ChinaNet-iTV-RE9E ssidBuf: ChinaNet-iTV-RE9E
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: 701
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: 701 ssidBuf: 701
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: 没有账号
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: \xe6\xb2\xa1\xe6\x9c\x89\xe8\xb4\xa6\xe5\x8f\xb7 ssidBuf: 没有账号
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid str_decode is-->: 柚子
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [convertEncodeIfUtf8] ssid isUtf8: \xe6\x9f\x9a\xe5\xad\x90 ssidBuf: 柚子
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiAdapterPrivate] [onNetworkListChanged] out end:[{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YWifiModulModule] [onWifiListChanged] ::onWifiListChanged()
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 onWifiListChanged, wifiList:[{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":"0"},{"ssid":"HUAWEI-凌�
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YUserCenterManager] [onWifiListChanged] wifiList=[{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":"0"
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 [YOtaModule] [onWifiListChanged] [{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":"0"},{"ssid":"HUAWEI
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 onWifiListChanged, wifiList:[{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":"0"},{"ssid":"HUAWEI-凌�
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 onWifiListChanged, wifiList:[{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":"0"},{"ssid":"HUAWEI-凌�
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 onWifiListChanged, wifiList:[{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":"0"},{"ssid":"HUAWEI-凌�
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 onWifiListChanged, wifiList:[{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":"0"},{"ssid":"HUAWEI-凌�
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 onWifiListChanged, wifiList:[{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":"0"},{"ssid":"HUAWEI-凌�
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 onWifiListChanged, wifiList:[{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":"0"},{"ssid":"HUAWEI-凌�
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 onWifiListChanged, wifiList:[{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":"0"},{"ssid":"HUAWEI-凌�
+Aug 28 10:37:21 Melon_pro-3562 local7.warn miniapp[971]: 971:547538988288 onWifiListChanged, wifiList:[{"ssid":"602","qual":"-55","privacy":"1","conn":"1","history_connected":"1"},{"ssid":"702","qual":"-66","privacy":"1","conn":"0","history_connected":"0"},{"ssid":"HUAWEI-凌�
+Aug 28 10:37:22 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [updateCurrentSystemTime] YSystemInfoAdapterPrivate::updateCurrentSystemTime = Timer out
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [onSystemTimeChange] ::onSystemTimeChange()
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:23 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:24 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:25 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:26 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:37:26 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:27 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [updateCurrentSystemTime] YSystemInfoAdapterPrivate::updateCurrentSystemTime = Timer out
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [onSystemTimeChange] ::onSystemTimeChange()
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:28 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:29 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:30 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:31 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:37:31 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:32 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:32 Melon_pro-3562 local7.warn miniapp[971]: 971:547753463840 run qjs_gc tag=Auto GC
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [updateCurrentSystemTime] YSystemInfoAdapterPrivate::updateCurrentSystemTime = Timer out
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [onSystemTimeChange] ::onSystemTimeChange()
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:33 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:34 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:35 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:36 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:37:36 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:37 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [updateCurrentSystemTime] YSystemInfoAdapterPrivate::updateCurrentSystemTime = Timer out
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [onSystemTimeChange] ::onSystemTimeChange()
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:38 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:39 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:40 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:41 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:37:41 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:42 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [updateCurrentSystemTime] YSystemInfoAdapterPrivate::updateCurrentSystemTime = Timer out
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [onSystemTimeChange] ::onSystemTimeChange()
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoModulePrivate] [getCurrentSystemTime] getCurrentSystemTime YSystemInfoModulePrivate
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [YSystemInfoAdapterPrivate] [getCurrentSystemTime] YSystemInfoAdapterPrivate::getCurrentSystemTime m_strCurrentSystemTime10:37
+Aug 28 10:37:43 Melon_pro-3562 local7.warn miniapp[971]: 971:547396316416 [JSystemInfoProxy] [onSystemTimeChange] JSystemInfoProxy::strCurrentSystemTimeInfo==10:37
+Aug 28 10:37:44 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:45 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1
+Aug 28 10:37:46 Melon_pro-3562 local7.warn miniapp[971]: 971:546442112256 [YWebSocketPP] [startPing] wss://hardware-push-server.youdao.com/device_socket/0472E34A9FC44699863985F7170B2E85
+Aug 28 10:37:46 Melon_pro-3562 local7.warn miniapp[971]: 971:546459020544 [YSoundRecordInterface] [speechResultMonitor] speechResultMonitor start1

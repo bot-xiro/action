@@ -10,6 +10,7 @@
     </div>
 
     <text v-if="status !== ''" class="status">{{ status }}</text>
+    <text v-if="debugLog !== ''" class="debug">{{ debugLog }}</text>
 
     <scroller class="results" scroll-direction="vertical" :show-scrollbar="true">
       <div v-for="item in results" :key="item.bvid" class="item" @click="openVideo(item)">
@@ -37,6 +38,7 @@ export default {
       placeholder: '点击输入搜索内容',
       status: '',
       results: [],
+      debugLog: '',
       searched: false,
       loading: false,
       generation: 0
@@ -44,6 +46,9 @@ export default {
   },
   mounted() {
     this.ime = createIME()
+    this.ime.onDebug((msg) => {
+      this.debugLog = msg
+    })
   },
   methods: {
     async openKeyboard() {
@@ -155,6 +160,11 @@ export default {
   margin-left: 24px;
   margin-top: 8px;
   height: 32px;
+}
+.debug {
+  font-size: 18px;
+  color: #666666;
+  margin-left: 24px;
 }
 .results {
   width: 960px;

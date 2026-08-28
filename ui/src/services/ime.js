@@ -1,14 +1,10 @@
-// 系统输入法封装
-// 设备已验证: /etc/miniapp/jsapis/libjsapi_export.so 导出 JSGlobalProxy,
-// 包含 startTextEdit / closeTextEdit / clearTextEditContent /
-// textEditFinished 信号, 系统输入法为系统 mini-app (appid 8001666679481944).
-//
-// 状态机 (来自 skill falcon-runtime.md):
-// 1. 复用单例 Global 实例, 保存 textEditFinished handler
-// 2. 打开前关闭旧 UUID, startTextEdit 同步返回 UUID
-// 3. 回调先校验 UUID, 仅 editConfirmed === true 写回文本
-// 4. 返回值兼容 string / {value} / {text}
-// 5. destroy 时先 off handler, 再关闭残留会话
+// 系统输入法封装 v2
+// 设备确认: Global 模块含 startTextEdit/closeTextEdit, 用户实测键盘能弹出.
+// 回调通道存在两种可能 (历史探索证据):
+//   1. Global 实例信号: manager.textEditFinished.on(handler)
+//   2. 全局事件: $falcon.on('textEditFinished', handler), 事件包装 {type, timestamp, data}
+// 两种都订阅. 回调数据兼容: 字符串 / {data} 包装 / {value|text|content|result} /
+// 确认标志 editConfirmed|confirm|confirmed|ok
 import globalModule from 'global'
 
 let manager = null
@@ -19,104 +15,139 @@ function getManager() {
   return manager
 }
 
-function normalizeText(value) {
-  if (value && typeof value === 'object') {
-    if (typeof value.value === 'string') return value.value
-    if (typeof value.text === 'string') return value.text
+function asObject(payload) {
+  let d = payload
+  // FalconEvent 包装
+  if (d && typeof d === 'object' && (d.type === 'textEditFinished' || (d.data !== undefined && d.timestamp !== undefined))) {
+    d = d.data
   }
-  return typeof value === 'string' ? value : ''
+  if (typeof d === 'string') {
+    try { d = JSON.parse(d) } catch (e) { return { __raw: d } }
+  }
+  return d
 }
 
-/**
- * 创建一个输入法会话管理器.
- * 每个页面一个实例, 页面 onUnload 时必须调用 destroy().
- */
+function extractText(d) {
+  if (typeof d === 'string') return d
+  if (!d || typeof d !== 'object') return ''
+  const keys = ['value', 'text', 'content', 'result', 'inputText']
+  for (let i = 0; i < keys.length; i++) {
+    if (typeof d[keys[i]] === 'string') return d[keys[i]]
+  }
+  if (typeof d.__raw === 'string') return d.__raw
+  return ''
+}
+
+function extractConfirmed(d) {
+  if (!d || typeof d !== 'object') return null
+  const trueKeys = ['editConfirmed', 'confirm', 'confirmed', 'ok', 'confirmedResult']
+  for (let i = 0; i < trueKeys.length; i++) {
+    if (d[trueKeys[i]] === true) return true
+    if (d[trueKeys[i]] === false) return false
+  }
+  return null
+}
+
 export function createIME() {
   let currentUuid = null
   let resolver = null
-  let handler = null
   let destroyed = false
+  let debugCb = null
+
+  function debug(msg) {
+    console.log('[ime]', msg)
+    if (debugCb) { try { debugCb(msg) } catch (e) {} }
+  }
+
+  function finish(payloadRaw) {
+    const d = asObject(payloadRaw)
+    debug('回调原始数据: ' + JSON.stringify(payloadRaw).substring(0, 300))
+
+    // UUID 过滤: 仅当两边都有值且不匹配时才忽略
+    const cbUuid = d && typeof d === 'object' && typeof d.uuid === 'string' ? d.uuid : null
+    if (currentUuid && cbUuid && cbUuid !== currentUuid) {
+      debug('uuid 不匹配, 忽略: ' + cbUuid)
+      return
+    }
+
+    const text = extractText(d)
+    let confirmed = extractConfirmed(d)
+    // 无明确确认标志时, 有文本视为确认
+    if (confirmed === null) confirmed = text !== ''
+    debug('解析: confirmed=' + confirmed + ' text=' + text)
+
+    const r = resolver
+    cleanup()
+    if (r) r(confirmed ? text : null)
+  }
 
   function cleanup() {
     if (currentUuid !== null) {
-      try { getManager().closeTextEdit(currentUuid) } catch (e) { console.log('closeTextEdit err', e) }
+      try { getManager().closeTextEdit(currentUuid) } catch (e) {}
       currentUuid = null
     }
     resolver = null
   }
 
   return {
-    /**
-     * 打开系统输入法.
-     * @param {Object} config { text, placeholder, maxlength }
-     * @returns {Promise<string|null>} 确认返回文本, 取消返回 null
-     */
+    /** 调试: 传入 (msg)=>void 接收内部日志 */
+    onDebug(cb) { debugCb = cb },
+
     open(config) {
       return new Promise((resolve, reject) => {
         const g = getManager()
-        // 关闭旧会话
         cleanup()
 
-        handler = function (event) {
-          let data = event
-          if (typeof event === 'string') {
-            try { data = JSON.parse(event) } catch (e) { data = null }
-          }
-          if (!data || typeof data !== 'object') return
-          // 只处理当前 UUID 的回调
-          if (currentUuid !== null && data.uuid && data.uuid !== currentUuid) return
+        try { g.textEditFinished.on(finish) } catch (e) { debug('signal订阅失败: ' + e) }
+        try { $falcon.on('textEditFinished', finish) } catch (e) { debug('event订阅失败: ' + e) }
 
-          const confirmed = data.editConfirmed === true
-          const text = normalizeText(data)
-          const r = resolver
-          cleanup()
-          if (r) {
-            if (confirmed) r(text)
-            else r(null)
-          }
-        }
-        g.textEditFinished.on(handler)
+        resolver = resolve
 
-        resolver = function (v) {
-          resolve(v)
-        }
-
-        const cfg = {
+        const cfg = Object.assign({
           text: config.text || '',
           placeholder: config.placeholder || '',
+          placeholderColor: '#878A99',
           maxlength: config.maxlength || 64,
-          inputType: 'EnUSPreferred',
+          maxLength: config.maxlength || 64,
+          inputType: 'ZhCNPreferred',
           autofocus: true,
           showCursor: true,
           cursorColor: '#fb7299',
           cursorSize: 2,
+          cursorIndex: 0,
+          enterButtonText: '搜索',
+          confirmText: '搜索',
+          shouldCloseOnConfirm: true,
+          closeButtonVisible: true,
+          returnButtonVisible: true,
+          micInputVisible: false,
           multiLinesEditVisible: false,
-          enterButtonText: '搜索'
-        }
+          action: 'input',
+          type: 'text'
+        }, config || {})
+
         try {
-          // startTextEdit 同步返回 UUID
           currentUuid = g.startTextEdit(JSON.stringify(cfg))
+          debug('startTextEdit uuid=' + currentUuid)
+          if (!currentUuid) {
+            throw new Error('startTextEdit 未返回 uuid')
+          }
         } catch (e) {
           cleanup()
-          if (handler) { try { g.textEditFinished.off(handler) } catch (e2) {} }
+          try { g.textEditFinished.off(finish) } catch (e2) {}
+          try { $falcon.off('textEditFinished', finish) } catch (e2) {}
           reject(e)
         }
       })
     },
 
-    /** 关闭当前会话 (幂等) */
-    close() {
-      cleanup()
-    },
+    close() { cleanup() },
 
-    /** 页面销毁时调用: 先 off, 再关闭残留会话 */
     destroy() {
       if (destroyed) return
       destroyed = true
-      if (handler) {
-        try { getManager().textEditFinished.off(handler) } catch (e) {}
-        handler = null
-      }
+      try { getManager().textEditFinished.off(finish) } catch (e) {}
+      try { $falcon.off('textEditFinished', finish) } catch (e) {}
       cleanup()
     }
   }
