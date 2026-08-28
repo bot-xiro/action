@@ -100,20 +100,32 @@ function sleep(ms) {
   return new Promise(function (resolve) { setTimeout(resolve, ms) })
 }
 
-// 带有限重试的 GET-JSON: 设备网络偶发抖动 (真机观察到间歇性
-// "网络请求失败"), 传输层错误最多重试 3 次, 退避 800/1600ms;
-// 已拿到响应后的业务错误 (HTTP 状态 / 解析失败) 也按同一路径重试,
-// 单次 15s 收发不变, 最坏 15*3s 才报失败
+// getJson: 所有 JSON 请求的唯一入口. 传输层抖动最多重试 3 次
+// (退避 800/1600ms); 限流类错误 (-352/-412/HTTP412/过于频繁) 直接抛出
 function safeJson(v) {
   try { return JSON.stringify(v) } catch (e) { return String(v) }
+}
+
+// 全局限流: bilibili 对设备 IP 的请求频率敏感 (真机出现 -352/-412/过于频繁),
+// 相邻请求至少间隔 700ms; 识别到限流时立即抛出, 绝不重试以免加剧封禁
+let lastRequestAt = 0
+
+function isRateLimitError(e) {
+  const m = e && e.message ? e.message : ''
+  return m.indexOf('频繁') !== -1 || m.indexOf('风控') !== -1
 }
 
 async function getJson(url) {
   let lastErr = null
   for (let attempt = 1; attempt <= 3; attempt++) {
+    // 节流: 与上一次请求至少间隔 700ms
+    const waitMs = lastRequestAt + 700 - Date.now()
+    if (waitMs > 0) await sleep(waitMs)
+
     let res
     try {
       res = await httpGet(url, { 'User-Agent': UA, 'Referer': REFERER }, 15)
+      lastRequestAt = Date.now()
     } catch (e) {
       lastErr = e
       console.log('[bili] 第' + attempt + '次传输失败: ' + (e && e.message ? e.message : safeJson(e)))
@@ -121,8 +133,17 @@ async function getJson(url) {
       continue
     }
     try {
-      return parseBody(unwrapResponse(res))
+      const body = parseBody(unwrapResponse(res))
+      // 业务码限流: 不重试
+      if (body && (body.code === -352 || body.code === -412)) {
+        throw new Error('请求过于频繁, 请稍候片刻再试')
+      }
+      return body
     } catch (e) {
+      if (isRateLimitError(e)) {
+        console.log('[bili] 限流, 不重试: ' + (e.message || e))
+        throw e
+      }
       lastErr = e
       // 关键诊断: 下载成功却报错时, 打出原生返回的真实形态/状态码
       console.log('[bili] 第' + attempt + '次响应异常: ' + (e && e.message ? e.message : e)
