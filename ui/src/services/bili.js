@@ -249,8 +249,9 @@ async function getWbiKeys() {
     { 'User-Agent': UA, 'Referer': REFERER, 'Accept': 'application/json' }, 15)
   lastRequestAt = Date.now()
   const body = parseBody(unwrapResponse(res))
-  if (!body || body.code !== 0 || !body.data || !body.data.wbi_img) {
-    throw new Error('wbi key 获取失败')
+  // 匿名 nav 返回 code=-101(账号未登录), 但 data.wbi_img 仍然有效
+  if (!body || !body.data || !body.data.wbi_img) {
+    throw new Error('wbi key 获取失败 (code=' + (body && body.code) + ')')
   }
   const imgUrl = body.data.wbi_img.img_url
   const subUrl = body.data.wbi_img.sub_url
