@@ -121,17 +121,24 @@ function safeJson(v) {
   try { return JSON.stringify(v) } catch (e) { return String(v) }
 }
 
-// 相邻请求至少 1.2s (类人节奏); 命中 412/-352/-412 即进入冷却,
-// 连续命中按 1→2→5→10 分钟升级, 成功一次后清零
+// 相邻请求至少 1.2s (类人节奏); 命中 412/-352 进入冷却.
+// 冷却按接口分组隔离: 搜索被风控不再连累详情/UP主页.
+// 连续命中按 0.5→1→2→5 分钟升级, 成功一次后该组清零
 let lastRequestAt = 0
-let cooldownUntil = 0
 let cookieTried = false
-let consecutiveLimits = 0
 
-function rateLimitError(msg) {
-  consecutiveLimits++
-  const minutes = [1, 2, 5, 10][Math.min(consecutiveLimits - 1, 3)]
-  cooldownUntil = Date.now() + minutes * 60000
+const CD_SEARCH = 'search'
+const CD_DETAIL = 'detail'
+const CD_SPACE = 'space'
+const CD_OTHER = 'other'
+const cdState = {} // group -> { until, hits }
+
+function rateLimitError(msg, group) {
+  const g = group || CD_OTHER
+  const st = cdState[g] || (cdState[g] = { until: 0, hits: 0 })
+  st.hits++
+  const minutes = [0.5, 1, 2, 5][Math.min(st.hits - 1, 3)]
+  st.until = Date.now() + minutes * 60000
   const e = new Error(msg)
   e.rateLimited = true
   return e
@@ -139,6 +146,28 @@ function rateLimitError(msg) {
 
 function isRateLimitError(e) {
   return !!(e && e.rateLimited)
+}
+
+function cooldownRemaining(group) {
+  const st = cdState[group || CD_OTHER]
+  if (!st) return 0
+  return Math.max(0, st.until - Date.now())
+}
+
+function clearCooldown(group) {
+  const st = cdState[group || CD_OTHER]
+  if (st) st.hits = 0
+}
+
+// 结果缓存 (减少重复请求 = 直接降低风控触发率)
+const resultCache = {} // key -> { at, data }
+function cacheGet(key, ttlMs) {
+  const c = resultCache[key]
+  if (c && Date.now() - c.at < ttlMs) return c.data
+  return null
+}
+function cacheSet(key, data) {
+  resultCache[key] = { at: Date.now(), data: data }
 }
 
 // 反风控: 先取 buvid3 设备指纹 cookie, 之后所有请求带上, 可显著降低被风控概率
@@ -285,13 +314,13 @@ async function wbiQuery(params) {
   return qs + '&w_rid=' + md5Utf8(qs + mixin)
 }
 
-async function getJson(url, referer) {
+async function getJson(url, referer, group) {
   await ensureCookie()
-  if (Date.now() < cooldownUntil) {
-    // 冷却期内直接失败, 且不延长冷却 (反复点击不会加重封禁)
-    const secs = Math.ceil((cooldownUntil - Date.now()) / 1000)
-    console.log('[bili] 风控冷却中, 剩余 ' + secs + 's, 本次直接放弃')
-    const err = new Error('请求过于频繁, 请稍候约 ' + Math.ceil(secs / 60) + ' 分钟再试')
+  const remain = cooldownRemaining(group)
+  if (remain > 0) {
+    // 冷却只挡同组接口, 且不延长 (反复点击不会加重封禁)
+    console.log('[bili] ' + (group || CD_OTHER) + ' 组冷却中, 剩余 ' + Math.ceil(remain / 1000) + 's')
+    const err = new Error('请求过于频繁, 请稍候约 ' + Math.ceil(remain / 60000) + ' 分钟再试')
     err.rateLimited = true
     throw err
   }
@@ -319,11 +348,11 @@ async function getJson(url, referer) {
     }
     try {
       const body = parseBody(unwrapResponse(res))
-      // 业务码限流: 不重试
+      // 业务码限流: 不重试, 只冷却本组接口
       if (body && (body.code === -352 || body.code === -412)) {
-        throw rateLimitError('请求过于频繁, 请稍候片刻再试')
+        throw rateLimitError('请求过于频繁, 请稍候片刻再试', group)
       }
-      consecutiveLimits = 0 // 成功一次, 冷却升级清零
+      clearCooldown(group) // 成功一次, 本组升级清零
       return body
     } catch (e) {
       if (isRateLimitError(e)) {
@@ -359,10 +388,14 @@ function formatPlay(n) {
 export async function searchVideos(keyword, page) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
   // 搜索接口已强制 wbi 签名 (真机实测不带签直接返回风控 HTML 页)
+  // 同词同页缓存 2 分钟: 重搜/切页回退不再发请求
+  const ckey = 'search:' + keyword + ':' + (page || 1)
+  const cached = cacheGet(ckey, 120000)
+  if (cached) { console.log('[bili] 搜索命中缓存, 不发请求'); return cached }
   const url = 'https://api.bilibili.com/x/web-interface/search/type?'
     + (await wbiQuery({ search_type: 'video', keyword: keyword, page: page || 1, pagesize: 20 }))
 
-  const body = await getJson(url, REFERER_SEARCH)
+  const body = await getJson(url, REFERER_SEARCH, CD_SEARCH)
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('接口错误 code=' + body.code))
@@ -385,6 +418,7 @@ export async function searchVideos(keyword, page) {
       pic: pic
     })
   }
+  cacheSet(ckey, videos)
   return videos
 }
 
@@ -410,9 +444,15 @@ function formatDuration(sec) {
  */
 export async function getVideoDetail(bvid) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
-  const url = 'https://api.bilibili.com/x/web-interface/view?bvid=' + encodeURIComponent(bvid)
+  // 详情缓存 5 分钟: 反复进出同一视频不再请求
+  const ckey = 'view:' + bvid
+  const cached = cacheGet(ckey, 300000)
+  if (cached) { console.log('[bili] 详情命中缓存, 不发请求'); return cached }
+  // 详情也带 wbi 签名, 与官方前端一致
+  const url = 'https://api.bilibili.com/x/web-interface/view?'
+    + (await wbiQuery({ bvid: bvid }))
 
-  const body = await getJson(url, 'https://www.bilibili.com/video/' + encodeURIComponent(bvid))
+  const body = await getJson(url, 'https://www.bilibili.com/video/' + encodeURIComponent(bvid), CD_DETAIL)
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     if (body.code === -404) throw new Error('视频不存在或已删除')
@@ -423,7 +463,7 @@ export async function getVideoDetail(bvid) {
   const st = d.stat || {}
   let pic = d.pic || ''
   if (pic.indexOf('//') === 0) pic = 'https:' + pic
-  return {
+  const out = {
     bvid: d.bvid || bvid,
     aid: d.aid || 0,
     title: d.title || '',
@@ -451,6 +491,8 @@ export async function getVideoDetail(bvid) {
       })
     } : null
   }
+  cacheSet('view:' + bvid, out)
+  return out
 }
 
 /**
@@ -458,10 +500,15 @@ export async function getVideoDetail(bvid) {
  */
 export async function getRelatedVideos(bvid) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  const ckey = 'related:' + bvid
+  const cached = cacheGet(ckey, 300000)
+  if (cached) return cached
   const url = 'https://api.bilibili.com/x/web-interface/archive/related?bvid=' + encodeURIComponent(bvid)
-  const body = await getJson(url, 'https://www.bilibili.com/video/' + encodeURIComponent(bvid))
+  const body = await getJson(url, 'https://www.bilibili.com/video/' + encodeURIComponent(bvid), CD_DETAIL)
   if (body.code !== 0) return [] // 推荐失败容忍, 不阻塞详情
-  return (body.data || []).map(mapFeedItem)
+  const out = (body.data || []).map(mapFeedItem)
+  cacheSet(ckey, out)
+  return out
 }
 
 function mapFeedItem(v) {
@@ -484,8 +531,11 @@ function mapFeedItem(v) {
  */
 export async function getPopular(page) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  const ckey = 'popular:' + (page || 1)
+  const cached = cacheGet(ckey, 60000)
+  if (cached) return cached
   const url = 'https://api.bilibili.com/x/web-interface/popular?pn=' + (page || 1) + '&ps=20'
-  const body = await getJson(url, 'https://www.bilibili.com/v/popular/all')
+  const body = await getJson(url, 'https://www.bilibili.com/v/popular/all', CD_OTHER)
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('接口错误 code=' + body.code))
@@ -493,6 +543,7 @@ export async function getPopular(page) {
   const list = (body.data && body.data.list) || []
   const videos = []
   for (let i = 0; i < list.length; i++) videos.push(mapFeedItem(list[i]))
+  cacheSet(ckey, videos)
   return videos
 }
 
@@ -501,8 +552,11 @@ export async function getPopular(page) {
  */
 export async function getUpInfo(mid) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  const ckey = 'upinfo:' + mid
+  const cached = cacheGet(ckey, 600000)
+  if (cached) return cached
   const url = 'https://api.bilibili.com/x/space/wbi/acc/info?' + (await wbiQuery({ mid: mid }))
-  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid))
+  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid), CD_SPACE)
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     if (body.code === -352) throw new Error('接口风控, 无法获取UP主信息')
@@ -511,13 +565,15 @@ export async function getUpInfo(mid) {
   const d = body.data
   let face = d.face || ''
   if (face.indexOf('//') === 0) face = 'https:' + face
-  return {
+  const out = {
     mid: d.mid || mid,
     name: d.name || '',
     sign: d.sign || '',
     face: face,
     levelText: 'Lv' + (d.level !== undefined ? d.level : '?')
   }
+  cacheSet('upinfo:' + mid, out)
+  return out
 }
 
 /**
@@ -525,7 +581,7 @@ export async function getUpInfo(mid) {
  */
 export async function getUpFans(mid) {
   const url = 'https://api.bilibili.com/x/relation/stat?vmid=' + encodeURIComponent(mid)
-  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid))
+  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid), CD_SPACE)
   if (body.code !== 0 || !body.data) return ''
   return formatPlay(body.data.follower)
 }
@@ -535,9 +591,12 @@ export async function getUpFans(mid) {
  */
 export async function getUpVideos(mid, page) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  const ckey = 'upvideos:' + mid + ':' + (page || 1)
+  const cached = cacheGet(ckey, 120000)
+  if (cached) return cached
   const url = 'https://api.bilibili.com/x/space/wbi/arc/search?'
     + (await wbiQuery({ mid: mid, pn: page || 1, ps: 20, order: 'pubdate' }))
-  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid) + '/video')
+  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid) + '/video', CD_SPACE)
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     if (body.code === -352) throw new Error('接口风控, 视频列表暂不可用')
@@ -559,5 +618,6 @@ export async function getUpVideos(mid, page) {
       pic: pic
     })
   }
+  cacheSet(ckey, videos)
   return videos
 }
