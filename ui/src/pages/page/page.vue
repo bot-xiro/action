@@ -7,52 +7,91 @@
       <text class="header-title">视频详情</text>
     </div>
 
-    <text v-if="loading" class="state">加载中…</text>
-    <text v-else-if="error !== ''" class="state">{{ error }}</text>
+    <scroller class="content" scroll-direction="vertical" :show-scrollbar="true">
+      <!-- 顶部信息: 即使详情接口失败, 也尽可能显示列表页带来的标题, 不再整页拦截 -->
+      <div class="top">
+        <image v-if="detail && detail.pic" class="cover" :src="detail.pic" resize="cover"></image>
+        <div class="info">
+          <text class="title">{{ detail ? detail.title : fallbackTitle }}</text>
+          <text class="author" @click="openUp">{{ detail ? (detail.author + ' › · ') : '' }}{{ detail ? detail.pubdateText : '' }}</text>
+          <text v-if="detail" class="stat">播放 {{ detail.playText }} · 弹幕 {{ detail.danmakuText }} · {{ detail.duration }}</text>
+          <text v-if="detail" class="stat">赞 {{ detail.likeText }} · 币 {{ detail.coinText }} · 藏 {{ detail.favText }} · 转 {{ detail.shareText }}</text>
+        </div>
+      </div>
 
-    <div v-else class="content">
-      <image class="cover" :src="detail.pic" resize="cover"></image>
-      <div class="info">
-        <text class="title">{{ detail.title }}</text>
-        <text class="author" @click="openUp">{{ detail.author }} › · {{ detail.pubdateText }} · {{ detail.bvid }}</text>
-        <text class="stat">播放 {{ detail.playText }} · 弹幕 {{ detail.danmakuText }} · {{ detail.duration }}</text>
-        <text class="stat">点赞 {{ detail.likeText }} · 投币 {{ detail.coinText }} · 收藏 {{ detail.favText }} · 分享 {{ detail.shareText }}</text>
-        <scroller class="desc" scroll-direction="vertical" :show-scrollbar="true">
-          <text class="desc-text">{{ detail.desc !== '' ? detail.desc : '暂无简介' }}</text>
+      <text v-if="error !== ''" class="state-inline">{{ error }}</text>
+
+      <!-- 简介 (放大) -->
+      <div v-if="detail" class="section">
+        <text class="sec-title">简介</text>
+        <text class="desc">{{ detail.desc !== '' ? detail.desc : '暂无简介' }}</text>
+      </div>
+
+      <!-- 分 P / 合集切换 -->
+      <div v-if="detail && detail.pages.length > 1" class="section">
+        <text class="sec-title">分 P ({{ detail.pages.length }})</text>
+        <scroller class="plist" scroll-direction="horizontal" :show-scrollbar="true">
+          <text v-for="p in detail.pages" :key="p.page"
+                :class="['pitem', currentPage === p.page ? 'pitem-active' : '']"
+                @click="switchPage(p)">P{{ p.page }} {{ p.part }}</text>
         </scroller>
       </div>
-    </div>
+      <div v-else-if="detail && detail.season && detail.season.episodes.length > 1" class="section">
+        <text class="sec-title">合集 · {{ detail.season.title }}</text>
+        <scroller class="plist" scroll-direction="horizontal" :show-scrollbar="true">
+          <text v-for="e in detail.season.episodes" :key="e.bvid"
+                :class="['pitem', e.bvid === detail.bvid ? 'pitem-active' : '']"
+                @click="switchEpisode(e)">{{ e.title }}</text>
+        </scroller>
+      </div>
+
+      <!-- 相关推荐 -->
+      <div v-if="related.length > 0" class="section">
+        <text class="sec-title">推荐</text>
+        <div v-for="item in related" :key="item.bvid" class="ritem" @click="openVideo(item)">
+          <image class="rcover" :src="item.pic" resize="cover" :lazy-load="true"></image>
+          <div class="rmeta">
+            <text class="rtitle">{{ item.title }}</text>
+            <text class="rstat">{{ item.author }} · ▶{{ item.playText }} {{ item.duration }}</text>
+          </div>
+        </div>
+      </div>
+
+      <text v-if="loading" class="state-inline">加载中…</text>
+    </scroller>
   </div>
 </template>
 
 <script>
-import { getVideoDetail } from '../../services/bili.js'
+import { getVideoDetail, getRelatedVideos } from '../../services/bili.js'
 
 export default {
   name: 'page',
   data() {
     return {
       bvid: '',
+      currentPage: 1,
       fallbackTitle: '',
       loading: true,
       error: '',
       detail: null,
+      related: [],
       generation: 0
     }
   },
   methods: {
-    // 页面生命周期 (由 base-page.js 代理调用)
     onShow() {
       const options = this.$page.options || {}
       const bvid = options.bvid || ''
       if (!bvid) {
-        this.loading = false
         this.error = '缺少视频参数'
         return
       }
-      if (bvid === this.bvid && (this.detail || this.loading)) return // 避免 IME 等触发 onShow 时重复拉取
+      if (bvid === this.bvid && (this.detail || this.loading)) return
       this.bvid = bvid
       this.fallbackTitle = options.title || ''
+      // 进入新视频视为第 1 P (page 参数可通过 options.page 指定)
+      this.currentPage = parseInt(options.page || '1', 10) || 1
       this.load()
     },
 
@@ -60,30 +99,59 @@ export default {
       const gen = ++this.generation
       this.loading = true
       this.error = ''
-      this.detail = null
       try {
         const d = await getVideoDetail(this.bvid)
         if (gen !== this.generation) return
         this.detail = d
+        // 分 P 详情: 若指定 page, 需要选中的分 P 标题覆盖展示
+        if (d.pages.length > 1 && this.currentPage >= 1 && this.currentPage <= d.pages.length) {
+          const p = d.pages[this.currentPage - 1]
+          if (p && p.part) this.detail.title = d.title + '（' + p.part + '）'
+        }
       } catch (err) {
         if (gen !== this.generation) return
         console.log('[bili] detail error: ' + (err && err.message ? err.message : err))
-        // 失败时仍然展示从列表页带过来的标题, 用户不至于面对空屏
-        this.error = (err && err.message ? err.message : String(err))
-          + (this.fallbackTitle !== '' ? ('　|　' + this.fallbackTitle) : '')
+        this.error = err && err.message ? err.message : String(err)
       } finally {
         if (gen === this.generation) this.loading = false
       }
+      // 推荐失败容忍, 与主详情并行
+      try {
+        const rel = await getRelatedVideos(this.bvid)
+        if (gen !== this.generation) return
+        this.related = rel
+      } catch (e) {}
     },
 
-    goBack() {
-      this.$page.finish()
+    // 分 P: 同稿件内部切换, 不重新请求接口 (数据已在 pages 中)
+    switchPage(p) {
+      this.currentPage = p.page
+      if (this.detail && p.part) this.detail.title = this.detail.title.replace(/（[^（]*）$/, '') + '（' + p.part + '）'
+    },
+
+    // 合集: 不同稿件, 重新拉详情
+    switchEpisode(e) {
+      if (e.bvid === this.bvid) return
+      this.bvid = e.bvid
+      this.currentPage = 1
+      this.fallbackTitle = e.title
+      this.detail = null
+      this.related = []
+      this.load()
+    },
+
+    openVideo(item) {
+      $falcon.navTo('page', { bvid: item.bvid, title: item.title })
     },
 
     openUp() {
       if (this.detail && this.detail.mid) {
         $falcon.navTo('up', { mid: String(this.detail.mid), name: this.detail.author })
       }
+    },
+
+    goBack() {
+      this.$page.finish()
     },
 
     onUnload() {
@@ -103,7 +171,7 @@ export default {
 }
 .header {
   width: 960px;
-  height: 48px;
+  height: 44px;
   display: flex;
   flex-direction: row;
   align-items: center;
@@ -111,9 +179,9 @@ export default {
 }
 .back {
   width: 120px;
-  height: 36px;
+  height: 34px;
   margin-left: 12px;
-  border-radius: 18px;
+  border-radius: 17px;
   background-color: #2c2c2c;
   justify-content: center;
   align-items: center;
@@ -127,29 +195,27 @@ export default {
   color: #ffffff;
   margin-left: 24px;
 }
-.state {
-  font-size: 24px;
-  color: #999999;
-  margin-top: 70px;
-  text-align: center;
-}
 .content {
   width: 960px;
-  height: 218px;
+  height: 222px;
+  display: flex;
+  flex-direction: column;
+}
+.top {
+  width: 920px;
+  margin-left: 20px;
+  margin-top: 12px;
   display: flex;
   flex-direction: row;
 }
 .cover {
   width: 320px;
   height: 180px;
-  margin-left: 20px;
-  margin-top: 18px;
   border-radius: 12px;
   background-color: #2c2c2c;
 }
 .info {
   width: 580px;
-  height: 218px;
   margin-left: 20px;
   display: flex;
   flex-direction: column;
@@ -157,7 +223,6 @@ export default {
 .title {
   font-size: 24px;
   color: #ffffff;
-  margin-top: 14px;
   max-lines: 2;
   text-overflow: ellipsis;
   overflow: hidden;
@@ -172,13 +237,87 @@ export default {
   color: #888888;
   margin-top: 6px;
 }
-.desc {
-  width: 580px;
-  height: 60px;
-  margin-top: 8px;
+.state-inline {
+  font-size: 20px;
+  color: #e6a23c;
+  margin-left: 20px;
+  margin-top: 10px;
 }
-.desc-text {
+.section {
+  width: 920px;
+  margin-left: 20px;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+}
+.sec-title {
+  font-size: 20px;
+  color: #fb7299;
+}
+.desc {
+  font-size: 20px;
+  color: #cccccc;
+  margin-top: 8px;
+  line-height: 30px;
+}
+.plist {
+  width: 920px;
+  height: 52px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: row;
+}
+.pitem {
+  font-size: 20px;
+  color: #ffffff;
+  background-color: #2c2c2c;
+  border-radius: 20px;
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  margin-right: 10px;
+  max-lines: 1;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.pitem-active {
+  background-color: #fb7299;
+}
+.ritem {
+  width: 920px;
+  margin-top: 10px;
+  display: flex;
+  flex-direction: row;
+  background-color: #1f1f1f;
+  border-radius: 12px;
+}
+.rcover {
+  width: 160px;
+  height: 96px;
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+}
+.rmeta {
+  width: 740px;
+  height: 96px;
+  display: flex;
+  flex-direction: column;
+}
+.rtitle {
+  font-size: 20px;
+  color: #ffffff;
+  margin-left: 16px;
+  margin-top: 8px;
+  margin-right: 12px;
+  max-lines: 2;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.rstat {
   font-size: 18px;
-  color: #aaaaaa;
+  color: #888888;
+  margin-left: 16px;
+  margin-top: 8px;
 }
 </style>

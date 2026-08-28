@@ -1,7 +1,7 @@
 {
   "name": "bilibilipan",
   "appid": "8001812345678901",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "哔哩哔哩客户端 for 有道词典笔 (Falcon mini-app)",
   "icon": "app_icon.png",
   "quickjs": {

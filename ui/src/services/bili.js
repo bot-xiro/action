@@ -163,6 +163,127 @@ async function ensureCookie() {
   }
 }
 
+// ================= wbi 签名 (BACNext: 空间类接口已全部 wbi 化) =================
+const WBI_MIXIN_TAB = [46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
+  27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24,
+  55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
+  36, 20, 34, 44, 52]
+let wbiKeys = null
+let wbiKeysAt = 0
+
+// ---- 纯 JS MD5 (QuickJS 20200705 无字符串 hash; 固件 crypto 只有 hashFile) ----
+function md5Utf8(str) {
+  // UTF-8 编码为字节数组 (含代理对处理)
+  const bytes = []
+  for (let i = 0; i < str.length; i++) {
+    let c = str.charCodeAt(i)
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < str.length) {
+      const c2 = str.charCodeAt(i + 1)
+      if (c2 >= 0xdc00 && c2 <= 0xdfff) { c = 0x10000 + ((c - 0xd800) << 10) + (c2 - 0xdc00); i++ }
+    }
+    if (c < 0x80) bytes.push(c)
+    else if (c < 0x800) { bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f)) }
+    else if (c < 0x10000) { bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f)) }
+    else { bytes.push(0xf0 | (c >> 18), 0x80 | ((c >> 12) & 0x3f), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f)) }
+  }
+  const bitLen = bytes.length * 8
+  bytes.push(0x80)
+  while (bytes.length % 64 !== 56) bytes.push(0)
+  for (let i = 0; i < 8; i++) bytes.push(Math.floor(bitLen / Math.pow(2, i * 8)) & 0xff)
+
+  const w = []
+  for (let i = 0; i < bytes.length; i += 4) {
+    w.push(bytes[i] | (bytes[i + 1] << 8) | (bytes[i + 2] << 16) | (bytes[i + 3] << 24))
+  }
+
+  function add(x, y) {
+    const l = (x & 0xffff) + (y & 0xffff)
+    return (((x >> 16) + (y >> 16) + (l >> 16)) << 16) | (l & 0xffff)
+  }
+  function rol(n, s) { return (n << s) | (n >>> (32 - s)) }
+  function F(x, y, z) { return (x & y) | (~x & z) }
+  function G(x, y, z) { return (x & z) | (y & ~z) }
+  function H(x, y, z) { return x ^ y ^ z }
+  function I(x, y, z) { return y ^ (x | ~z) }
+  function step(fn, a, b, c, d, x, s, t) { return add(rol(add(add(a, fn(b, c, d)), add(x, t)), s), b) }
+
+  const T = []
+  for (let i = 1; i <= 64; i++) T.push(Math.floor(Math.abs(Math.sin(i)) * 4294967296))
+  const S = [7, 12, 17, 22, 5, 9, 14, 20, 4, 11, 16, 23, 6, 10, 15, 21]
+  const FN = [F, G, H, I]
+
+  let a = 0x67452301, b = 0xefcdab89, c = 0x98badcfe, d = 0x10325476
+  for (let k = 0; k < w.length; k += 16) {
+    const aa = a, bb = b, cc = c, dd = d
+    for (let round = 0; round < 4; round++) {
+      const f = FN[round]
+      const s = [S[round * 4], S[round * 4 + 1], S[round * 4 + 2], S[round * 4 + 3]]
+      for (let j = 0; j < 16; j++) {
+        let idx
+        if (round === 0) idx = j
+        else if (round === 1) idx = (5 * j + 1) % 16
+        else if (round === 2) idx = (3 * j + 5) % 16
+        else idx = (7 * j) % 16
+        const x = w[k + idx]
+        const t = T[round * 16 + j]
+        if (j % 4 === 0) a = step(f, a, b, c, d, x, s[0], t)
+        else if (j % 4 === 1) d = step(f, d, a, b, c, x, s[1], t)
+        else if (j % 4 === 2) c = step(f, c, d, a, b, x, s[2], t)
+        else b = step(f, b, c, d, a, x, s[3], t)
+      }
+    }
+    a = add(a, aa); b = add(b, bb); c = add(c, cc); d = add(d, dd)
+  }
+  function hexWord(n) {
+    let s = ''
+    for (let i = 0; i < 4; i++) s += ('0' + ((n >> (i * 8)) & 0xff).toString(16)).slice(-2)
+    return s
+  }
+  return hexWord(a) + hexWord(b) + hexWord(c) + hexWord(d)
+}
+
+async function getWbiKeys() {
+  // nav 匿名可访问, 返回 wbi_img 图片地址, key 缓存 24h
+  if (wbiKeys && Date.now() - wbiKeysAt < 86400000) return wbiKeys
+  const res = await httpGet('https://api.bilibili.com/x/web-interface/nav',
+    { 'User-Agent': UA, 'Referer': REFERER, 'Accept': 'application/json' }, 15)
+  lastRequestAt = Date.now()
+  const body = parseBody(unwrapResponse(res))
+  if (!body || body.code !== 0 || !body.data || !body.data.wbi_img) {
+    throw new Error('wbi key 获取失败')
+  }
+  const imgUrl = body.data.wbi_img.img_url
+  const subUrl = body.data.wbi_img.sub_url
+  const imgKey = imgUrl.substring(imgUrl.lastIndexOf('/') + 1).split('.')[0]
+  const subKey = subUrl.substring(subUrl.lastIndexOf('/') + 1).split('.')[0]
+  const orig = imgKey + subKey
+  let mixin = ''
+  for (let i = 0; i < 32; i++) mixin += orig.charAt(WBI_MIXIN_TAB[i])
+  wbiKeys = mixin
+  wbiKeysAt = Date.now()
+  console.log('[bili] wbi key 获取成功')
+  return wbiKeys
+}
+
+function encodeURIComponentRFC3986(s) {
+  return encodeURIComponent(String(s)).replace(/[!'()*]/g, '')
+}
+
+// 返回带签名的完整 query 串: k=v&k=v&wts=..&w_rid=md5(...)
+async function wbiQuery(params) {
+  const mixin = await getWbiKeys()
+  const p = {}
+  for (const k in params) p[k] = params[k]
+  p.wts = Math.floor(Date.now() / 1000)
+  const keys = Object.keys(p).sort()
+  const pairs = []
+  for (let i = 0; i < keys.length; i++) {
+    pairs.push(encodeURIComponentRFC3986(keys[i]) + '=' + encodeURIComponentRFC3986(p[keys[i]]))
+  }
+  const qs = pairs.join('&')
+  return qs + '&w_rid=' + md5Utf8(qs + mixin)
+}
+
 async function getJson(url, referer) {
   await ensureCookie()
   if (Date.now() < cooldownUntil) {
@@ -317,8 +438,30 @@ export async function getVideoDetail(bvid) {
     coinText: formatPlay(st.coin),
     favText: formatPlay(st.favorite),
     shareText: formatPlay(st.share),
-    mid: (d.owner && d.owner.mid) || 0
+    mid: (d.owner && d.owner.mid) || 0,
+    // 分 P (同稿件多段)
+    pages: (d.pages || []).map(function (p) {
+      return { page: p.page || 0, part: p.part || '', duration: formatDuration(p.duration) }
+    }),
+    // 合集 (不同稿件聚合)
+    season: d.ugc_season ? {
+      title: d.ugc_season.title || '',
+      episodes: (((d.ugc_season.sections || [])[0] || {}).episodes || []).map(function (e) {
+        return { bvid: e.bvid || '', title: e.title || '', aid: e.aid || 0 }
+      })
+    } : null
   }
+}
+
+/**
+ * 相关推荐视频 (x/web-interface/archive/related, 匿名可用)
+ */
+export async function getRelatedVideos(bvid) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  const url = 'https://api.bilibili.com/x/web-interface/archive/related?bvid=' + encodeURIComponent(bvid)
+  const body = await getJson(url, 'https://www.bilibili.com/video/' + encodeURIComponent(bvid))
+  if (body.code !== 0) return [] // 推荐失败容忍, 不阻塞详情
+  return (body.data || []).map(mapFeedItem)
 }
 
 function mapFeedItem(v) {
@@ -354,11 +497,11 @@ export async function getPopular(page) {
 }
 
 /**
- * UP主基本信息 (x/space/acc/info)
+ * UP主基本信息 (x/space/wbi/acc/info, wbi 签名)
  */
 export async function getUpInfo(mid) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
-  const url = 'https://api.bilibili.com/x/space/acc/info?mid=' + encodeURIComponent(mid)
+  const url = 'https://api.bilibili.com/x/space/wbi/acc/info?' + (await wbiQuery({ mid: mid }))
   const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid))
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
@@ -388,12 +531,12 @@ export async function getUpFans(mid) {
 }
 
 /**
- * UP主视频 (x/space/arc/search; 无 wbi 签名, 风控时返回 -352)
+ * UP主视频 (x/space/wbi/arc/search, wbi 签名)
  */
 export async function getUpVideos(mid, page) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
-  const url = 'https://api.bilibili.com/x/space/arc/search?mid=' + encodeURIComponent(mid)
-    + '&pn=' + (page || 1) + '&ps=20&order=pubdate'
+  const url = 'https://api.bilibili.com/x/space/wbi/arc/search?'
+    + (await wbiQuery({ mid: mid, pn: page || 1, ps: 20, order: 'pubdate' }))
   const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid) + '/video')
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
