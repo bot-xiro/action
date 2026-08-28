@@ -1,7 +1,8 @@
 {
   "pages": {
     "index": "pages/index/index.vue",
-    "page": "pages/page/page.vue"
+    "page": "pages/page/page.vue",
+    "up": "pages/up/up.vue"
   },
   "options": {
     "style": {

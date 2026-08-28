@@ -14,7 +14,7 @@
       <image class="cover" :src="detail.pic" resize="cover"></image>
       <div class="info">
         <text class="title">{{ detail.title }}</text>
-        <text class="author">{{ detail.author }} · {{ detail.pubdateText }} · {{ detail.bvid }}</text>
+        <text class="author" @click="openUp">{{ detail.author }} › · {{ detail.pubdateText }} · {{ detail.bvid }}</text>
         <text class="stat">播放 {{ detail.playText }} · 弹幕 {{ detail.danmakuText }} · {{ detail.duration }}</text>
         <text class="stat">点赞 {{ detail.likeText }} · 投币 {{ detail.coinText }} · 收藏 {{ detail.favText }} · 分享 {{ detail.shareText }}</text>
         <scroller class="desc" scroll-direction="vertical" :show-scrollbar="true">
@@ -78,6 +78,12 @@ export default {
 
     goBack() {
       this.$page.finish()
+    },
+
+    openUp() {
+      if (this.detail && this.detail.mid) {
+        $falcon.navTo('up', { mid: String(this.detail.mid), name: this.detail.author })
+      }
     },
 
     onUnload() {

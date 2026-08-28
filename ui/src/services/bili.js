@@ -231,6 +231,105 @@ export async function getVideoDetail(bvid) {
     likeText: formatPlay(st.like),
     coinText: formatPlay(st.coin),
     favText: formatPlay(st.favorite),
-    shareText: formatPlay(st.share)
+    shareText: formatPlay(st.share),
+    mid: (d.owner && d.owner.mid) || 0
   }
+}
+
+function mapFeedItem(v) {
+  let pic = v.pic || ''
+  if (pic.indexOf('//') === 0) pic = 'https:' + pic
+  return {
+    bvid: v.bvid || '',
+    aid: v.aid || 0,
+    title: stripTags(v.title),
+    author: v.author || (v.owner && v.owner.name) || '',
+    playText: formatPlay(v.play !== undefined ? v.play : (v.stat && v.stat.view)),
+    duration: typeof v.duration === 'number' ? formatDuration(v.duration) : (v.duration || ''),
+    pic: pic
+  }
+}
+
+/**
+ * 全站热门视频 (无需登录)
+ * @returns {Promise<Array<feedItem>>}
+ */
+export async function getPopular(page) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  const url = 'https://api.bilibili.com/x/web-interface/popular?pn=' + (page || 1) + '&ps=20'
+  const body = await getJson(url)
+  if (body.code !== 0) {
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('接口错误 code=' + body.code))
+  }
+  const list = (body.data && body.data.list) || []
+  const videos = []
+  for (let i = 0; i < list.length; i++) videos.push(mapFeedItem(list[i]))
+  return videos
+}
+
+/**
+ * UP主基本信息 (x/space/acc/info)
+ */
+export async function getUpInfo(mid) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  const url = 'https://api.bilibili.com/x/space/acc/info?mid=' + encodeURIComponent(mid)
+  const body = await getJson(url)
+  if (body.code !== 0 || !body.data) {
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    if (body.code === -352) throw new Error('接口风控, 无法获取UP主信息')
+    throw new Error(body.message || ('接口错误 code=' + body.code))
+  }
+  const d = body.data
+  let face = d.face || ''
+  if (face.indexOf('//') === 0) face = 'https:' + face
+  return {
+    mid: d.mid || mid,
+    name: d.name || '',
+    sign: d.sign || '',
+    face: face,
+    levelText: 'Lv' + (d.level !== undefined ? d.level : '?')
+  }
+}
+
+/**
+ * UP主粉丝数 (x/relation/stat; 独立接口, 失败容忍)
+ */
+export async function getUpFans(mid) {
+  const url = 'https://api.bilibili.com/x/relation/stat?vmid=' + encodeURIComponent(mid)
+  const body = await getJson(url)
+  if (body.code !== 0 || !body.data) return ''
+  return formatPlay(body.data.follower)
+}
+
+/**
+ * UP主视频 (x/space/arc/search; 无 wbi 签名, 风控时返回 -352)
+ */
+export async function getUpVideos(mid, page) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  const url = 'https://api.bilibili.com/x/space/arc/search?mid=' + encodeURIComponent(mid)
+    + '&pn=' + (page || 1) + '&ps=20&order=pubdate'
+  const body = await getJson(url)
+  if (body.code !== 0) {
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    if (body.code === -352) throw new Error('接口风控, 视频列表暂不可用')
+    throw new Error(body.message || ('接口错误 code=' + body.code))
+  }
+  const list = (body.data && body.data.list && body.data.list.vlist) || []
+  const videos = []
+  for (let i = 0; i < list.length; i++) {
+    const v = list[i]
+    let pic = v.pic || ''
+    if (pic.indexOf('//') === 0) pic = 'https:' + pic
+    videos.push({
+      bvid: v.bvid || '',
+      aid: v.aid || 0,
+      title: stripTags(v.title),
+      author: v.author || '',
+      playText: formatPlay(v.play),
+      duration: v.length || '',
+      pic: pic
+    })
+  }
+  return videos
 }
