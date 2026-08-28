@@ -14,10 +14,13 @@ function hasHttp() {
   return !!(j && ((j.http && j.http.request) || (j.net && j.net.request)))
 }
 
+let cookieHeader = ''
+
 async function httpGet(url, headersMap, timeoutSec) {
   const jsapi = $falcon.jsapi
   const headers = []
   for (const k in headersMap) headers.push(k + ': ' + headersMap[k])
+  if (cookieHeader) headers.push('Cookie: ' + cookieHeader)
   const params = { url: url, method: 'GET', headers: headers, timeout: timeoutSec }
   if (jsapi.http && jsapi.http.request) return await jsapi.http.request(params)
   return await jsapi.net.request(params)
@@ -78,15 +81,21 @@ function unwrapResponse(res) {
   if (isBinary(res) || typeof res === 'string') return res
   if (!res || typeof res !== 'object') throw new Error('空响应')
   if (res.error) {
-    const st0 = res.statusCode || res.status
-    throw new Error((typeof res.error === 'string' ? res.error : '传输失败')
-      + (st0 ? ' (HTTP ' + st0 + ')' : ''))
+    // 真机实测: 失败时包装为 {error:3, result:{errorMessage:"curl ... resCode:412"}},
+    // resCode 才是真正的 HTTP 状态码
+    const em = res.result && typeof res.result.errorMessage === 'string' ? res.result.errorMessage : ''
+    const m = em.match(/resCode:(\d+)/)
+    const code = m ? parseInt(m[1], 10) : (res.statusCode || res.status || 0)
+    if (code === 412) throw rateLimitError('请求被风控拦截, 请稍后再试 (HTTP 412)')
+    if (code === 429) throw rateLimitError('请求过于频繁, 请稍候片刻再试 (HTTP 429)')
+    throw new Error((typeof res.error === 'string' ? res.error : (em || '传输失败'))
+      + (code ? ' (HTTP ' + code + ')' : ''))
   }
   const status = res.statusCode || res.status
   const body = res.data !== undefined ? res.data : (res.body !== undefined ? res.body : res.result)
   if (status !== undefined && (status < 200 || status >= 300)) {
     // bilibili 风控常以 HTTP 412 返回
-    if (status === 412) throw new Error('请求被风控拦截, 请稍后再试 (HTTP 412)')
+    if (status === 412) throw rateLimitError('请求被风控拦截, 请稍后再试 (HTTP 412)')
     throw new Error('HTTP ' + status)
   }
   if (body === undefined) throw new Error('空响应')
@@ -106,16 +115,50 @@ function safeJson(v) {
   try { return JSON.stringify(v) } catch (e) { return String(v) }
 }
 
-// 全局限流: bilibili 对设备 IP 的请求频率敏感 (真机出现 -352/-412/过于频繁),
-// 相邻请求至少间隔 700ms; 识别到限流时立即抛出, 绝不重试以免加剧封禁
+// 全局限流: bilibili 对设备 IP 的请求频率敏感 (真机出现 -352/-412/HTTP412),
+// 相邻请求至少间隔 700ms; 识别到限流立即抛出并进入 60s 冷却, 不重试以免加剧封禁
 let lastRequestAt = 0
+let cooldownUntil = 0
+let cookieTried = false
+
+function rateLimitError(msg) {
+  cooldownUntil = Date.now() + 60000
+  const e = new Error(msg)
+  e.rateLimited = true
+  return e
+}
 
 function isRateLimitError(e) {
-  const m = e && e.message ? e.message : ''
-  return m.indexOf('频繁') !== -1 || m.indexOf('风控') !== -1
+  return !!(e && e.rateLimited)
+}
+
+// 反风控: 先取 buvid3 设备指纹 cookie, 之后所有请求带上, 可显著降低被风控概率
+async function ensureCookie() {
+  if (cookieTried) return
+  cookieTried = true
+  try {
+    const res = await httpGet('https://api.bilibili.com/x/frontend/finger/spi',
+      { 'User-Agent': UA, 'Referer': REFERER }, 15)
+    lastRequestAt = Date.now()
+    const body = parseBody(unwrapResponse(res))
+    if (body && body.code === 0 && body.data && body.data.b_3) {
+      cookieHeader = 'buvid3=' + body.data.b_3
+      console.log('[bili] buvid3 获取成功')
+    } else {
+      console.log('[bili] buvid3 不可用, code=' + (body && body.code))
+    }
+  } catch (e) {
+    console.log('[bili] buvid3 获取失败: ' + (e && e.message ? e.message : e))
+    lastRequestAt = Date.now()
+  }
 }
 
 async function getJson(url) {
+  await ensureCookie()
+  if (Date.now() < cooldownUntil) {
+    console.log('[bili] 风控冷却中, 本次直接放弃')
+    throw rateLimitError('请求过于频繁, 请稍候 1 分钟再试')
+  }
   let lastErr = null
   for (let attempt = 1; attempt <= 3; attempt++) {
     // 节流: 与上一次请求至少间隔 700ms
@@ -136,7 +179,7 @@ async function getJson(url) {
       const body = parseBody(unwrapResponse(res))
       // 业务码限流: 不重试
       if (body && (body.code === -352 || body.code === -412)) {
-        throw new Error('请求过于频繁, 请稍候片刻再试')
+        throw rateLimitError('请求过于频繁, 请稍候片刻再试')
       }
       return body
     } catch (e) {
