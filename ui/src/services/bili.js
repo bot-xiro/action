@@ -394,7 +394,7 @@ export async function searchVideos(keyword, page) {
   if (cached) { console.log('[bili] 搜索命中缓存, 不发请求'); return cached }
   // wbi 签名 + dm_* 反爬参数 (官方前端同款, 真机实测不带会被风控 HTML 拦截)
   // dm_img_str/dm_cover_img_str 是 WebGL/GPU 指纹的 base64, 设备无浏览器指纹, 用官方浏览器常量
-  const url = 'https://api.bilibili.com/x/web-interface/search/type?'
+  const url = 'https://api.bilibili.com/x/web-interface/wbi/search/type?'
     + (await wbiQuery({
       search_type: 'video',
       keyword: keyword,
@@ -459,8 +459,8 @@ export async function getVideoDetail(bvid) {
   const ckey = 'view:' + bvid
   const cached = cacheGet(ckey, 300000)
   if (cached) { console.log('[bili] 详情命中缓存, 不发请求'); return cached }
-  // 详情也带 wbi 签名, 与官方前端一致
-  const url = 'https://api.bilibili.com/x/web-interface/view?'
+  // 详情也带 wbi 签名, 与官方前端一致 (wbi/view 为 wbi 版本接口)
+  const url = 'https://api.bilibili.com/x/web-interface/wbi/view?'
     + (await wbiQuery({ bvid: bvid }))
 
   const body = await getJson(url, 'https://www.bilibili.com/video/' + encodeURIComponent(bvid), CD_DETAIL)
