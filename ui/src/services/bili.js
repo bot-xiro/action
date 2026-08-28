@@ -392,8 +392,19 @@ export async function searchVideos(keyword, page) {
   const ckey = 'search:' + keyword + ':' + (page || 1)
   const cached = cacheGet(ckey, 120000)
   if (cached) { console.log('[bili] 搜索命中缓存, 不发请求'); return cached }
+  // wbi 签名 + dm_* 反爬参数 (官方前端同款, 真机实测不带会被风控 HTML 拦截)
+  // dm_img_str/dm_cover_img_str 是 WebGL/GPU 指纹的 base64, 设备无浏览器指纹, 用官方浏览器常量
   const url = 'https://api.bilibili.com/x/web-interface/search/type?'
-    + (await wbiQuery({ search_type: 'video', keyword: keyword, page: page || 1, pagesize: 20 }))
+    + (await wbiQuery({
+      search_type: 'video',
+      keyword: keyword,
+      page: page || 1,
+      pagesize: 20,
+      dm_img_list: '[]',
+      dm_img_str: 'V2ViR0wgMS4wIChPcGVuR0wgRVMgMi4wIENocm9taXVtKQ',
+      dm_cover_img_str: 'QU5HTEUgKEludGVsLCBJbnRlbChSKSBVSEQgR3JhcGhpY3MgNjMwKCAweDAwMDAzRTkxKSBEaXJlY3QzRDExIHZzXzVfMCBwc181XzAsIEQzRDExKUdvb2dsZSBJbmMuIChJbnRlbCk',
+      dm_img_inter: '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}'
+    }))
 
   const body = await getJson(url, REFERER_SEARCH, CD_SEARCH)
   if (body.code !== 0) {
