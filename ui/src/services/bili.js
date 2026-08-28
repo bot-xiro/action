@@ -77,10 +77,16 @@ function isBinary(v) {
 function unwrapResponse(res) {
   if (isBinary(res) || typeof res === 'string') return res
   if (!res || typeof res !== 'object') throw new Error('空响应')
-  if (res.error) throw new Error(typeof res.error === 'string' ? res.error : '网络请求失败')
+  if (res.error) {
+    const st0 = res.statusCode || res.status
+    throw new Error((typeof res.error === 'string' ? res.error : '传输失败')
+      + (st0 ? ' (HTTP ' + st0 + ')' : ''))
+  }
   const status = res.statusCode || res.status
   const body = res.data !== undefined ? res.data : (res.body !== undefined ? res.body : res.result)
   if (status !== undefined && (status < 200 || status >= 300)) {
+    // bilibili 风控常以 HTTP 412 返回
+    if (status === 412) throw new Error('请求被风控拦截, 请稍后再试 (HTTP 412)')
     throw new Error('HTTP ' + status)
   }
   if (body === undefined) throw new Error('空响应')
@@ -98,15 +104,29 @@ function sleep(ms) {
 // "网络请求失败"), 传输层错误最多重试 3 次, 退避 800/1600ms;
 // 已拿到响应后的业务错误 (HTTP 状态 / 解析失败) 也按同一路径重试,
 // 单次 15s 收发不变, 最坏 15*3s 才报失败
+function safeJson(v) {
+  try { return JSON.stringify(v) } catch (e) { return String(v) }
+}
+
 async function getJson(url) {
   let lastErr = null
   for (let attempt = 1; attempt <= 3; attempt++) {
+    let res
     try {
-      const res = await httpGet(url, { 'User-Agent': UA, 'Referer': REFERER }, 15)
+      res = await httpGet(url, { 'User-Agent': UA, 'Referer': REFERER }, 15)
+    } catch (e) {
+      lastErr = e
+      console.log('[bili] 第' + attempt + '次传输失败: ' + (e && e.message ? e.message : safeJson(e)))
+      if (attempt < 3) await sleep(attempt * 800)
+      continue
+    }
+    try {
       return parseBody(unwrapResponse(res))
     } catch (e) {
       lastErr = e
-      console.log('[bili] 第' + attempt + '次请求失败: ' + (e && e.message ? e.message : e))
+      // 关键诊断: 下载成功却报错时, 打出原生返回的真实形态/状态码
+      console.log('[bili] 第' + attempt + '次响应异常: ' + (e && e.message ? e.message : e)
+        + ' raw=' + safeJson(res).substring(0, 400))
       if (attempt < 3) await sleep(attempt * 800)
     }
   }
