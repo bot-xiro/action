@@ -90,6 +90,29 @@ function unwrapResponse(res) {
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 const REFERER = 'https://www.bilibili.com'
 
+function sleep(ms) {
+  return new Promise(function (resolve) { setTimeout(resolve, ms) })
+}
+
+// 带有限重试的 GET-JSON: 设备网络偶发抖动 (真机观察到间歇性
+// "网络请求失败"), 传输层错误最多重试 3 次, 退避 800/1600ms;
+// 已拿到响应后的业务错误 (HTTP 状态 / 解析失败) 也按同一路径重试,
+// 单次 15s 收发不变, 最坏 15*3s 才报失败
+async function getJson(url) {
+  let lastErr = null
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await httpGet(url, { 'User-Agent': UA, 'Referer': REFERER }, 15)
+      return parseBody(unwrapResponse(res))
+    } catch (e) {
+      lastErr = e
+      console.log('[bili] 第' + attempt + '次请求失败: ' + (e && e.message ? e.message : e))
+      if (attempt < 3) await sleep(attempt * 800)
+    }
+  }
+  throw new Error('网络请求失败: ' + (lastErr && lastErr.message ? lastErr.message : lastErr))
+}
+
 function stripTags(s) {
   return String(s == null ? '' : s).replace(/<[^>]*>/g, '')
 }
@@ -113,14 +136,7 @@ export async function searchVideos(keyword, page) {
     + '?search_type=video&keyword=' + kw
     + '&page=' + (page || 1) + '&pagesize=20'
 
-  let res
-  try {
-    res = await httpGet(url, { 'User-Agent': UA, 'Referer': REFERER }, 15)
-  } catch (e) {
-    throw new Error('网络请求失败: ' + (e && e.message ? e.message : e))
-  }
-
-  const body = parseBody(unwrapResponse(res))
+  const body = await getJson(url)
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('接口错误 code=' + body.code))
@@ -170,14 +186,7 @@ export async function getVideoDetail(bvid) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
   const url = 'https://api.bilibili.com/x/web-interface/view?bvid=' + encodeURIComponent(bvid)
 
-  let res
-  try {
-    res = await httpGet(url, { 'User-Agent': UA, 'Referer': REFERER }, 15)
-  } catch (e) {
-    throw new Error('网络请求失败: ' + (e && e.message ? e.message : e))
-  }
-
-  const body = parseBody(unwrapResponse(res))
+  const body = await getJson(url)
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     if (body.code === -404) throw new Error('视频不存在或已删除')

@@ -223,7 +223,8 @@ export function createIME() {
           showCursor: true,
           cursorColor: '#fb7299',
           cursorSize: 2,
-          cursorIndex: 0,
+          // 光标默认落在已有文本末尾, 继续输入而不是从头插
+          cursorIndex: ((config && config.text) || '').length,
           enterButtonText: '搜索',
           confirmText: '搜索',
           // 不让输入法自行销毁会话, 由 finish 拿到结果后统一关闭
