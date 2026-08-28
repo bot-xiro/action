@@ -41,7 +41,12 @@ package:
 - `/userdisk` 下存在 `8001792669600001.0_2_6.amr`、`8001812345678901.0_0_3.amr`、
   `bilibili_test.amr`、`bilibili_test2.amr`、`libjsapi_gstplayer.so`
 
+## 已验证补充 (v0.1.2 / v0.1.3, 2026-08-28 真机)
+- textEditFinished 回调: 参数[0] 为去横线的会话 UUID 裸串, 参数[1] 为
+  {"text":...,"cursorIndex":N,"editConfirmed":bool}; 代码按全参数扫描处理
+- $falcon.jsapi.http.request: 原生日志 tag debug_httpApi; resolve 值为响应体本身
+  (无 statusCode 包装); headers 只认字符串数组 ["Key: value"], 对象形式被丢弃
+- timeout 单位为秒 (http.md)
 ## 未验证项
-- 输入法 confirm/cancel 回调具体数据形态 (代码已兼容 string / {value} / {text})
 - bilibili 搜索风控 (-412) 在设备网络上的触发概率
 - `<image>` 网络图 (i0.hdslb.com 防盗链, 已带 Referer 但 image 组件无法设 header, 可能裂图)

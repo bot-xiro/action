@@ -1,26 +1,90 @@
 // 哔哩哔哩网络服务
-// 网络层: $falcon.jsapi.http.request (参考 miniapp falcon.d.ts)
-// 归一化: statusCode / data(string|object) -> 统一结果或 Error
+// 网络层: $falcon.jsapi.http.request (固件 4.3.5 已验证可走通, 日志 tag debug_httpApi)
+// 真机已验证的返回形态差异 (v0.1.3 修复 "HTTP 错误"):
+//   - 该固件 request resolve 的是响应体自身 (ArrayBuffer / 二进制),
+//     不携带 statusCode, 旧代码取不到 status 一律报 "HTTP 错误"
+//   - headers 只接受字符串数组 ["Key: value"], 对象形式被原生层丢弃,
+//     导致 UA/Referer 实际没发出去
+// http API 文档 (references/haasui-docs/docs/jsapi/bashi/http.md):
+//   headers 形如 ["Content-Type:application/json"]; timeout 单位是秒(我们传毫秒值
+//   会被当作秒, 实际效果偏长, 统一改为秒)
 
-async function httpRequest(params) {
+function hasHttp() {
+  const j = $falcon && $falcon.jsapi
+  return !!(j && ((j.http && j.http.request) || (j.net && j.net.request)))
+}
+
+async function httpGet(url, headersMap, timeoutSec) {
   const jsapi = $falcon.jsapi
-  if (jsapi.http && jsapi.http.request) {
-    return await jsapi.http.request(params)
+  const headers = []
+  for (const k in headersMap) headers.push(k + ': ' + headersMap[k])
+  const params = { url: url, method: 'GET', headers: headers, timeout: timeoutSec }
+  if (jsapi.http && jsapi.http.request) return await jsapi.http.request(params)
+  return await jsapi.net.request(params)
+}
+
+// 二进制 -> UTF-8 字符串
+function bytesToString(res) {
+  try {
+    let u8 = null
+    if (typeof ArrayBuffer !== 'undefined' && res instanceof ArrayBuffer) {
+      u8 = new Uint8Array(res)
+    } else if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(res)) {
+      u8 = new Uint8Array(res.buffer, res.byteOffset || 0, res.byteLength)
+    } else if (Array.isArray(res)) {
+      u8 = res
+    } else {
+      return null
+    }
+    if (typeof TextDecoder !== 'undefined') {
+      return new TextDecoder('utf-8').decode(u8 instanceof Uint8Array ? u8 : new Uint8Array(u8))
+    }
+    // 无 TextDecoder 的兜底 (QuickJS 老版本): 仅保证 ASCII 正确
+    let s = ''
+    for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i])
+    return decodeURIComponent(escape(s))
+  } catch (e) {
+    return null
   }
-  if (jsapi.net && jsapi.net.request) {
-    return await jsapi.net.request(params)
-  }
-  throw new Error('当前固件不支持 http/net 请求')
 }
 
 function parseBody(data) {
-  if (data && typeof data === 'object') return data
+  if (data && typeof data === 'object' && !isBinary(data)) return data
   if (typeof data === 'string') {
     try { return JSON.parse(data) } catch (e) {
       throw new Error('服务器返回格式错误')
     }
   }
+  const s = bytesToString(data)
+  if (s !== null) {
+    try { return JSON.parse(s) } catch (e) {
+      throw new Error('服务器返回格式错误')
+    }
+  }
   throw new Error('空响应')
+}
+
+function isBinary(v) {
+  if (typeof ArrayBuffer === 'undefined') return false
+  return v instanceof ArrayBuffer || (ArrayBuffer.isView && ArrayBuffer.isView(v))
+}
+
+// 归一化各固件返回形态:
+//   1. 裸响应体: ArrayBuffer / TypedArray / string  (本固件实测形态)
+//   2. {statusCode|status, data|body}
+//   3. {error, result}
+// 返回 body 文本/对象; 状态码非 2xx 抛 HTTP 错误
+function unwrapResponse(res) {
+  if (isBinary(res) || typeof res === 'string') return res
+  if (!res || typeof res !== 'object') throw new Error('空响应')
+  if (res.error) throw new Error(typeof res.error === 'string' ? res.error : '网络请求失败')
+  const status = res.statusCode || res.status
+  const body = res.data !== undefined ? res.data : (res.body !== undefined ? res.body : res.result)
+  if (status !== undefined && (status < 200 || status >= 300)) {
+    throw new Error('HTTP ' + status)
+  }
+  if (body === undefined) throw new Error('空响应')
+  return body
 }
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -43,6 +107,7 @@ function formatPlay(n) {
  * @returns {Promise<Array<{bvid,title,author,playText,duration,pic}>>}
  */
 export async function searchVideos(keyword, page) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
   const kw = encodeURIComponent(keyword)
   const url = 'https://api.bilibili.com/x/web-interface/search/type'
     + '?search_type=video&keyword=' + kw
@@ -50,25 +115,12 @@ export async function searchVideos(keyword, page) {
 
   let res
   try {
-    res = await httpRequest({
-      url: url,
-      method: 'GET',
-      headers: {
-        'User-Agent': UA,
-        'Referer': REFERER
-      },
-      timeout: 15000
-    })
+    res = await httpGet(url, { 'User-Agent': UA, 'Referer': REFERER }, 15)
   } catch (e) {
     throw new Error('网络请求失败: ' + (e && e.message ? e.message : e))
   }
 
-  const status = res && (res.statusCode || res.status)
-  if (status !== 200) {
-    throw new Error('HTTP ' + (status || '错误'))
-  }
-
-  const body = parseBody(res.data != null ? res.data : res.body)
+  const body = parseBody(unwrapResponse(res))
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('接口错误 code=' + body.code))
