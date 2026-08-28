@@ -1,0 +1,36 @@
+name: Build AMR
+
+on:
+  push:
+    branches: [main, miniapp]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install dependencies
+        run: |
+          npm install -g pnpm@10.12.4
+          pnpm install -C ./ui
+
+      - name: Build AMR (production quickjs)
+        run: pnpm -C ui package
+
+      - name: Collect AMR
+        run: find . -name '*.amr' -type f
+
+      - name: Upload AMR artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bilibilipan-amr
+          path: ./ui/*.amr
+          if-no-files-found: error
+          retention-days: 30

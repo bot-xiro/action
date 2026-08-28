@@ -1,0 +1,4 @@
+node_modules
+*.amr
+dist
+.DS_Store

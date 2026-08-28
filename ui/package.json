@@ -1,0 +1,29 @@
+{
+  "name": "bilibilipan",
+  "appid": "8001812345678901",
+  "version": "0.1.0",
+  "description": "哔哩哔哩客户端 for 有道词典笔 (Falcon mini-app)",
+  "icon": "app_icon.png",
+  "quickjs": {
+    "version": "20200705",
+    "bigNum": false
+  },
+  "single-js-bundle": false,
+  "scripts": {
+    "build": "aiot-cli -p",
+    "build:dev": "aiot-cli",
+    "package": "aiot-cli -c -q -p"
+  },
+  "keywords": [
+    "iot",
+    "miniapp",
+    "bilibili"
+  ],
+  "devDependencies": {
+    "aiot-vue-cli": "^1.0.32"
+  },
+  "dependencies": {
+    "falcon-ui": "^2.0.2"
+  },
+  "packageManager": "pnpm@10.12.4"
+}
