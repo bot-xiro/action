@@ -102,8 +102,14 @@ function unwrapResponse(res) {
   return body
 }
 
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+// 反风控实践 (参考社区协议层分析):
+//   - UA 固定主流浏览器指纹
+//   - Referer 必须与访问场景一致: 搜索->search.bilibili.com,
+//     详情->视频页, 空间->space.bilibili.com, 热门->www.bilibili.com
+//   - Accept/Accept-Language 补全, 与浏览器请求形态对齐
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
 const REFERER = 'https://www.bilibili.com'
+const REFERER_SEARCH = 'https://search.bilibili.com/all'
 
 function sleep(ms) {
   return new Promise(function (resolve) { setTimeout(resolve, ms) })
@@ -115,14 +121,17 @@ function safeJson(v) {
   try { return JSON.stringify(v) } catch (e) { return String(v) }
 }
 
-// 全局限流: bilibili 对设备 IP 的请求频率敏感 (真机出现 -352/-412/HTTP412),
-// 相邻请求至少间隔 700ms; 识别到限流立即抛出并进入 60s 冷却, 不重试以免加剧封禁
+// 相邻请求至少 1.2s (类人节奏); 命中 412/-352/-412 即进入冷却,
+// 连续命中按 1→2→5→10 分钟升级, 成功一次后清零
 let lastRequestAt = 0
 let cooldownUntil = 0
 let cookieTried = false
+let consecutiveLimits = 0
 
 function rateLimitError(msg) {
-  cooldownUntil = Date.now() + 60000
+  consecutiveLimits++
+  const minutes = [1, 2, 5, 10][Math.min(consecutiveLimits - 1, 3)]
+  cooldownUntil = Date.now() + minutes * 60000
   const e = new Error(msg)
   e.rateLimited = true
   return e
@@ -143,6 +152,7 @@ async function ensureCookie() {
     const body = parseBody(unwrapResponse(res))
     if (body && body.code === 0 && body.data && body.data.b_3) {
       cookieHeader = 'buvid3=' + body.data.b_3
+      if (body.data.b_4) cookieHeader += '; buvid4=' + body.data.b_4
       console.log('[bili] buvid3 获取成功')
     } else {
       console.log('[bili] buvid3 不可用, code=' + (body && body.code))
@@ -153,21 +163,31 @@ async function ensureCookie() {
   }
 }
 
-async function getJson(url) {
+async function getJson(url, referer) {
   await ensureCookie()
   if (Date.now() < cooldownUntil) {
-    console.log('[bili] 风控冷却中, 本次直接放弃')
-    throw rateLimitError('请求过于频繁, 请稍候 1 分钟再试')
+    // 冷却期内直接失败, 且不延长冷却 (反复点击不会加重封禁)
+    const secs = Math.ceil((cooldownUntil - Date.now()) / 1000)
+    console.log('[bili] 风控冷却中, 剩余 ' + secs + 's, 本次直接放弃')
+    const err = new Error('请求过于频繁, 请稍候约 ' + Math.ceil(secs / 60) + ' 分钟再试')
+    err.rateLimited = true
+    throw err
+  }
+  const headers = {
+    'User-Agent': UA,
+    'Referer': referer || REFERER,
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'zh-CN,zh;q=0.9'
   }
   let lastErr = null
   for (let attempt = 1; attempt <= 3; attempt++) {
-    // 节流: 与上一次请求至少间隔 700ms
-    const waitMs = lastRequestAt + 700 - Date.now()
+    // 节流: 类人节奏, 与上一次请求至少间隔 1.2s
+    const waitMs = lastRequestAt + 1200 - Date.now()
     if (waitMs > 0) await sleep(waitMs)
 
     let res
     try {
-      res = await httpGet(url, { 'User-Agent': UA, 'Referer': REFERER }, 15)
+      res = await httpGet(url, headers, 15)
       lastRequestAt = Date.now()
     } catch (e) {
       lastErr = e
@@ -181,6 +201,7 @@ async function getJson(url) {
       if (body && (body.code === -352 || body.code === -412)) {
         throw rateLimitError('请求过于频繁, 请稍候片刻再试')
       }
+      consecutiveLimits = 0 // 成功一次, 冷却升级清零
       return body
     } catch (e) {
       if (isRateLimitError(e)) {
@@ -220,7 +241,7 @@ export async function searchVideos(keyword, page) {
     + '?search_type=video&keyword=' + kw
     + '&page=' + (page || 1) + '&pagesize=20'
 
-  const body = await getJson(url)
+  const body = await getJson(url, REFERER_SEARCH)
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('接口错误 code=' + body.code))
@@ -270,7 +291,7 @@ export async function getVideoDetail(bvid) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
   const url = 'https://api.bilibili.com/x/web-interface/view?bvid=' + encodeURIComponent(bvid)
 
-  const body = await getJson(url)
+  const body = await getJson(url, 'https://www.bilibili.com/video/' + encodeURIComponent(bvid))
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     if (body.code === -404) throw new Error('视频不存在或已删除')
@@ -321,7 +342,7 @@ function mapFeedItem(v) {
 export async function getPopular(page) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
   const url = 'https://api.bilibili.com/x/web-interface/popular?pn=' + (page || 1) + '&ps=20'
-  const body = await getJson(url)
+  const body = await getJson(url, 'https://www.bilibili.com/v/popular/all')
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('接口错误 code=' + body.code))
@@ -338,7 +359,7 @@ export async function getPopular(page) {
 export async function getUpInfo(mid) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
   const url = 'https://api.bilibili.com/x/space/acc/info?mid=' + encodeURIComponent(mid)
-  const body = await getJson(url)
+  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid))
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     if (body.code === -352) throw new Error('接口风控, 无法获取UP主信息')
@@ -361,7 +382,7 @@ export async function getUpInfo(mid) {
  */
 export async function getUpFans(mid) {
   const url = 'https://api.bilibili.com/x/relation/stat?vmid=' + encodeURIComponent(mid)
-  const body = await getJson(url)
+  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid))
   if (body.code !== 0 || !body.data) return ''
   return formatPlay(body.data.follower)
 }
@@ -373,7 +394,7 @@ export async function getUpVideos(mid, page) {
   if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
   const url = 'https://api.bilibili.com/x/space/arc/search?mid=' + encodeURIComponent(mid)
     + '&pn=' + (page || 1) + '&ps=20&order=pubdate'
-  const body = await getJson(url)
+  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid) + '/video')
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     if (body.code === -352) throw new Error('接口风控, 视频列表暂不可用')

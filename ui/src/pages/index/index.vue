@@ -97,7 +97,7 @@ export default {
       recLoading: false,
       recGeneration: 0,
       // 我的
-      appVersion: '0.2.2',
+      appVersion: '0.2.3',
       appid: '8001812345678901'
     }
   },
