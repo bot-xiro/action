@@ -7,19 +7,19 @@
       <text class="header-title">UP主主页</text>
     </div>
 
-    <text v-if="upStatus !== ''" class="state">{{ upStatus }}</text>
+    <!-- UP 信息栏内嵌为列表首项: 往上滑自然滚出, 滑回顶部自然恢复, 无事件依赖 -->
+    <scroller class="results" scroll-direction="vertical" :show-scrollbar="true">
+      <text v-if="upStatus !== ''" class="state">{{ upStatus }}</text>
 
-    <div class="info-row" v-if="info && !infoCollapsed">
-      <image class="face" :src="info.face" resize="cover"></image>
-      <div class="info-col">
-        <text class="name">{{ info.name }}</text>
-        <text class="meta">{{ info.levelText }} · 粉丝 {{ fansText }}</text>
-        <text class="sign">{{ info.sign !== '' ? info.sign : '这个人很神秘，什么都没有写' }}</text>
+      <div class="info-row" v-if="info">
+        <image class="face" :src="info.face" resize="cover"></image>
+        <div class="info-col">
+          <text class="name">{{ info.name }}</text>
+          <text class="meta">{{ info.levelText }} · 粉丝 {{ fansText }}</text>
+          <text class="sign">{{ info.sign !== '' ? info.sign : '这个人很神秘，什么都没有写' }}</text>
+        </div>
       </div>
-    </div>
 
-    <scroller class="results" :style="scrollerStyle" scroll-direction="vertical" :show-scrollbar="true"
-              @scrollend="onScrollEnd">
       <div v-for="item in videos" :key="item.bvid" class="item" @click="openVideo(item)">
         <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
         <div class="meta2">
@@ -46,18 +46,7 @@ export default {
       videos: [],
       upStatus: '加载中…',
       videosStatus: '',
-      generation: 0,
-      // 往上滑时隐藏 UP 信息栏
-      infoCollapsed: false
-    }
-  },
-  computed: {
-    // 页面 266px 固定: header 48 + 状态行(出现时约30) + info 96, 其余给列表
-    scrollerStyle() {
-      let h = 266 - 48
-      if (this.info && !this.infoCollapsed) h -= 96
-      if (this.upStatus !== '') h -= 30
-      return 'width: 960px; height: ' + h + 'px'
+      generation: 0
     }
   },
   methods: {
@@ -109,18 +98,6 @@ export default {
         if (gen !== this.generation) return
         console.log('[bili] up videos error: ' + (err && err.message ? err.message : err))
         this.videosStatus = err && err.message ? err.message : String(err)
-      }
-    },
-
-    // 往上滑 (contentOffset.y 增大) 隐藏 UP 信息栏; 滑回顶部附近恢复
-    // 用 scrollend 而非 scroll: 拖动中切换高度会让 scroller 布局重排, 偏移归零造成闪烁
-    onScrollEnd(e) {
-      const y = (e && e.contentOffset && typeof e.contentOffset.y === 'number')
-        ? e.contentOffset.y : 0
-      if (!this.infoCollapsed && y > 80) {
-        this.infoCollapsed = true
-      } else if (this.infoCollapsed && y <= 40) {
-        this.infoCollapsed = false
       }
     },
 
@@ -219,6 +196,7 @@ export default {
 }
 .results {
   width: 960px;
+  height: 218px;
 }
 .item {
   width: 920px;
