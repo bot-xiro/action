@@ -23,6 +23,9 @@ function getJson(url, timeoutSec) {
   } catch (e) {
     // 非 JSON: 风控 HTML 页 / 网关错误页等, 透出真实开头便于诊断
     console.log('[bili] 非JSON body: ' + String(s).substring(0, 300))
+    if (String(s).indexOf('<!DOCTYPE') === 0 || String(s).indexOf('<html') === 0) {
+      throw new Error('接口被风控拦截 (风控验证页)')
+    }
     throw new Error('接口返回非 JSON: ' + String(s).substring(0, 120))
   }
 }
@@ -352,25 +355,47 @@ export async function getUpInfo(mid) {
   const ckey = 'upinfo:' + mid
   const cached = cacheGet(ckey, 600000)
   if (cached) return cached
-  const url = 'https://api.bilibili.com/x/space/wbi/acc/info?' + (await wbiQuery({ mid: mid }))
-  const body = getJson(url, 15)
-  if (body.code !== 0 || !body.data) {
-    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
-    if (body.code === -352) throw new Error('接口风控, 无法获取UP主信息')
-    throw new Error(body.message || ('接口错误 code=' + body.code))
+  // 先走 acc/info (字段全)
+  try {
+    const url = 'https://api.bilibili.com/x/space/wbi/acc/info?' + (await wbiQuery({ mid: mid }))
+    const body = getJson(url, 15)
+    if (body.code !== 0 || !body.data) {
+      if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+      if (body.code === -352) throw new Error('接口风控, 无法获取UP主信息')
+      throw new Error(body.message || ('接口错误 code=' + body.code))
+    }
+    const d = body.data
+    let face = d.face || ''
+    if (face.indexOf('//') === 0) face = 'https:' + face
+    const out = {
+      mid: d.mid || mid,
+      name: d.name || '',
+      sign: d.sign || '',
+      face: face,
+      levelText: 'Lv' + (d.level !== undefined ? d.level : '?')
+    }
+    cacheSet('upinfo:' + mid, out)
+    return out
+  } catch (accErr) {
+    console.log('[bili] acc/info 失败, 降级 x/web-interface/card: ' + (accErr && accErr.message))
   }
-  const d = body.data
-  let face = d.face || ''
+  // 降级: x/web-interface/card (免登录基本资料接口, 风控比空间接口宽松)
+  const cardBody = getJson('https://api.bilibili.com/x/web-interface/card?mid=' + encodeURIComponent(mid), 15)
+  if (cardBody.code !== 0 || !cardBody.data) {
+    throw new Error(cardBody.message || ('接口错误 code=' + cardBody.code))
+  }
+  const cd = cardBody.data
+  let face = cd.face || ''
   if (face.indexOf('//') === 0) face = 'https:' + face
-  const out = {
-    mid: d.mid || mid,
-    name: d.name || '',
-    sign: d.sign || '',
+  const cardOut = {
+    mid: cd.mid || mid,
+    name: cd.name || '',
+    sign: cd.sign || '',
     face: face,
-    levelText: 'Lv' + (d.level !== undefined ? d.level : '?')
+    levelText: 'Lv' + (cd.level !== undefined ? cd.level : '?')
   }
-  cacheSet('upinfo:' + mid, out)
-  return out
+  cacheSet('upinfo:' + mid, cardOut)
+  return cardOut
 }
 
 /**
