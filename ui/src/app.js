@@ -4,12 +4,12 @@
 // - 统一注册 BasePage 管理事件/timer 资源
 import { BasePage } from './base-page.js'
 
-// 预热并注册 gstplayer 原生模块 (bili.js 的 httpGet 依赖它; 模仿 home 项目 app.js)
-import { gstPlayer } from 'gstplayer'
+// 注册 bilinet 原生模块 (bili.js 的 httpGet 依赖它)
+import { bilinet } from 'bilinet'
 try {
-  console.log('[app] gstplayer.httpGet=' + (typeof gstPlayer.httpGet))
+  console.log('[app] bilinet.httpGet=' + (typeof bilinet.httpGet))
 } catch (e) {
-  console.warn('[app] gstplayer import check failed: ' + (e && e.message ? e.message : e))
+  console.warn('[app] bilinet import check failed: ' + (e && e.message ? e.message : e))
 }
 
 class App extends $falcon.App {

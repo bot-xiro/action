@@ -5,7 +5,7 @@
     "up": "pages/up/up.vue"
   },
   "options": {
-    "external": ["gstplayer"],
+    "external": ["bilinet"],
     "style": {
       "lessPaths": ["styles"]
     }

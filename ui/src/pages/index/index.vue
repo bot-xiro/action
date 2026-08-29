@@ -69,6 +69,7 @@
 <script>
 import { createIME } from '../../services/ime.js'
 import { searchVideos, getPopular } from '../../services/bili.js'
+import pm from 'pm'
 
 export default {
   name: 'index',
@@ -96,8 +97,8 @@ export default {
       recLoaded: false,
       recLoading: false,
       recGeneration: 0,
-      // 我的
-      appVersion: '0.3.0',
+      // 我的 (版本号运行时从包管理器读取, 不硬编码)
+      appVersion: '',
       appid: '8001812345678901'
     }
   },
@@ -106,6 +107,13 @@ export default {
     this.ime.onDebug((msg) => {
       this.debugLog = msg
     })
+    // 版本号: 从包管理器读当前安装包信息 (haasui-docs jsapi/system/falcon/pm)
+    try {
+      const info = pm.getPackageInfo(this.appid)
+      if (info && info.version) this.appVersion = info.version
+    } catch (e) {
+      console.log('[index] getPackageInfo failed: ' + (e && e.message ? e.message : e))
+    }
     this.loadRecommend()
   },
   methods: {

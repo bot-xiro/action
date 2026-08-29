@@ -1,5 +1,5 @@
-// 哔哩哔哩网络服务
-// 传输层: gstplayer 原生模块 httpGet (popen 调设备自带 /bin/curl,
+﻿// 哔哩哔哩网络服务
+// 传输层: bilinet 原生模块 httpGet (popen 调设备自带 /bin/curl,
 //   固定浏览器 UA + Referer https://www.bilibili.com), 同步返回响应体字符串.
 // 真机实测背景 (home 项目 src/utils/api.js 结论, 同型号设备):
 //   - 系统 http JSAPI 不发送自定义 header, UA/Referer 全丢,
@@ -7,15 +7,15 @@
 //   - curl 携带浏览器 UA + Referer 后, popular/view/search/space 全部正常
 //   - 无 Cookie 态 (无 buvid3) 反而绕开部分风控, 故不再取手指纹
 
-import { gstPlayer } from 'gstplayer'
+import { bilinet } from 'bilinet'
 
 function hasHttp() {
-  return !!(gstPlayer && typeof gstPlayer.httpGet === 'function')
+  return !!(bilinet && typeof bilinet.httpGet === 'function')
 }
 
 // 同步原生 GET -> JSON body; 服务器返回什么就透传什么, 业务 code 由调用方判断
 function getJson(url, timeoutSec) {
-  const s = gstPlayer.httpGet(url, timeoutSec || 15)
+  const s = bilinet.httpGet(url, timeoutSec || 15)
   console.log('[bili] GET ' + url.replace(/(&|\?)w_rid=[^&]+/, '').replace(/(&|\?)wts=[^&]+/, '') + ' -> ' + (s ? s.length : 0) + 'B')
   if (!s) throw new Error('请求失败 (空响应)')
   try {
@@ -202,7 +202,7 @@ function mapFeedItem(v) {
  * @returns {Promise<Array<{bvid,title,author,playText,duration,pic}>>}
  */
 export async function searchVideos(keyword, page) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   // 同词同页缓存 2 分钟
   const ckey = 'search:' + keyword + ':' + (page || 1)
   const cached = cacheGet(ckey, 120000)
@@ -253,7 +253,7 @@ export async function searchVideos(keyword, page) {
  * @returns {Promise<{bvid,aid,title,pic,desc,author,duration,pubdateText,playText,danmakuText,likeText,coinText,favText,shareText}>}
  */
 export async function getVideoDetail(bvid) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   // 详情缓存 5 分钟
   const ckey = 'view:' + bvid
   const cached = cacheGet(ckey, 300000)
@@ -309,7 +309,7 @@ export async function getVideoDetail(bvid) {
  * 相关推荐视频 (x/web-interface/archive/related, 匿名可用)
  */
 export async function getRelatedVideos(bvid) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   const ckey = 'related:' + bvid
   const cached = cacheGet(ckey, 300000)
   if (cached) return cached
@@ -326,7 +326,7 @@ export async function getRelatedVideos(bvid) {
  * @returns {Promise<Array<feedItem>>}
  */
 export async function getPopular(page) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   const ckey = 'popular:' + (page || 1)
   const cached = cacheGet(ckey, 60000)
   if (cached) return cached
@@ -347,7 +347,7 @@ export async function getPopular(page) {
  * UP主基本信息 (x/space/wbi/acc/info, wbi 签名)
  */
 export async function getUpInfo(mid) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   const ckey = 'upinfo:' + mid
   const cached = cacheGet(ckey, 600000)
   if (cached) return cached
@@ -386,7 +386,7 @@ export async function getUpFans(mid) {
  * UP主视频 (x/space/wbi/arc/search, wbi 签名)
  */
 export async function getUpVideos(mid, page) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   const ckey = 'upvideos:' + mid + ':' + (page || 1)
   const cached = cacheGet(ckey, 120000)
   if (cached) return cached
