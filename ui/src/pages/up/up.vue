@@ -50,8 +50,8 @@ export default {
     }
   },
   methods: {
-    onShow() {
-      const options = this.$page.options || {}
+    beginLoad(options) {
+      options = options || this.$page.options || {}
       const mid = parseInt(options.mid || '0', 10)
       if (!mid) {
         this.upStatus = '缺少 UP 主参数'
@@ -60,7 +60,19 @@ export default {
       if (mid === this.mid && this.info) return
       this.mid = mid
       this.name = options.name || ''
+      this.info = null
+      this.videos = []
       this.load()
+    },
+
+    onShow() {
+      this.beginLoad()
+    },
+
+    // 同一页面被 navTo 重新打开时走 onNewOptions, 不会触发 onShow
+    onNewOptions(options) {
+      this.mid = 0  // 放开 beginLoad 的去重门槛
+      this.beginLoad(options)
     },
 
     async load() {

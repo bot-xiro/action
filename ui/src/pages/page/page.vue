@@ -80,8 +80,8 @@ export default {
     }
   },
   methods: {
-    onShow() {
-      const options = this.$page.options || {}
+    beginLoad(options) {
+      options = options || this.$page.options || {}
       const bvid = options.bvid || ''
       if (!bvid) {
         this.error = '缺少视频参数'
@@ -92,7 +92,21 @@ export default {
       this.fallbackTitle = options.title || ''
       // 进入新视频视为第 1 P (page 参数可通过 options.page 指定)
       this.currentPage = parseInt(options.page || '1', 10) || 1
+      this.detail = null
+      this.related = []
+      this.error = ''
       this.load()
+    },
+
+    onShow() {
+      this.beginLoad()
+    },
+
+    // 同一页面被 navTo 重新打开 (详情页点相关推荐) 会走 onNewOptions 而不是 onShow
+    onNewOptions(options) {
+      console.log('[page] onNewOptions bvid=' + (options && options.bvid))
+      this.bvid = ''  // 放开与 beginLoad 的去重门槛
+      this.beginLoad(options)
     },
 
     async load() {
