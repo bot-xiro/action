@@ -40,12 +40,23 @@ if(NOT GST_FOUND)
 endif()
 
 file(GLOB_RECURSE SDK_SOURCES "${IOT_UI_SDK_PATH}/src/*.cpp")
-file(GLOB_RECURSE MODULE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 
-add_library(jsapi_gstplayer SHARED ${SDK_SOURCES} ${MODULE_SOURCES})
+# JSAPI 模块: 不依赖 gstreamer 本体; 只拉起/守护 gstplayerd 子进程
+add_library(jsapi_gstplayer SHARED
+    ${SDK_SOURCES}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/GstPlayer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/JSGstPlayerModule.cpp)
 target_include_directories(jsapi_gstplayer PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_include_directories(jsapi_gstplayer PRIVATE ${GST_INCLUDE_DIRS})
-target_link_directories(jsapi_gstplayer PRIVATE ${GST_LIBRARY_DIRS})
-target_link_libraries(jsapi_gstplayer ${GST_LIBRARIES} gstreamer-1.0 gobject-2.0 glib-2.0 dl pthread)
+target_link_libraries(jsapi_gstplayer dl pthread)
+set_target_properties(jsapi_gstplayer PROPERTIES PREFIX "lib")
+
+# 独立守护进程: gstreamer 全在其中, 崩溃不影响 miniapp 宿主
+add_executable(gstplayerd
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/PlayCore.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/daemon.cpp)
+target_include_directories(gstplayerd PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_include_directories(gstplayerd PRIVATE ${GST_INCLUDE_DIRS})
+target_link_directories(gstplayerd PRIVATE ${GST_LIBRARY_DIRS})
+target_link_libraries(gstplayerd ${GST_LIBRARIES} gstreamer-1.0 gobject-2.0 glib-2.0 pthread)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)

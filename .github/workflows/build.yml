@@ -71,7 +71,9 @@ jobs:
             native/gstplayer
           cmake --build build/gstplayer --config Release --parallel $(nproc)
           cp -f build/gstplayer/libjsapi_gstplayer.so ui/libs/libjsapi_gstplayer.so
-          file ui/libs/libjsapi_gstplayer.so
+          cp -f build/gstplayer/gstplayerd ui/libs/gstplayerd
+          chmod +x ui/libs/gstplayerd
+          file ui/libs/libjsapi_gstplayer.so ui/libs/gstplayerd
           aarch64-linux-gnu-readelf -h ui/libs/libjsapi_gstplayer.so | grep -E 'Class|Machine'
           aarch64-linux-gnu-readelf -d ui/libs/libjsapi_gstplayer.so | grep NEEDED
           aarch64-linux-gnu-nm -D ui/libs/libjsapi_gstplayer.so | grep custom_init_jsapis
