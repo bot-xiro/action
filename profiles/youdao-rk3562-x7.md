@@ -50,3 +50,23 @@ package:
 ## 未验证项
 - bilibili 搜索风控 (-412) 在设备网络上的触发概率
 - `<image>` 网络图 (i0.hdslb.com 防盗链, 已带 Referer 但 image 组件无法设 header, 可能裂图)
+
+## 已验证补充 (v0.6.x, 2026-08-29 真机/探测, gst 1.22.0)
+- 逻辑→物理映射锚点来自触控 (references/ADB手册附录B):
+  `touchX = displayY + 107`, `touchY = 959 - displayX` → 面板 480x960, direction=270
+  → video KMS rect: px = ly + 107, py = 959 - (lx + lw), pw = lh, ph = lw
+- gst-1.x videoflip method 枚举: 0 identity / 1 90r / 2 180 / 3 90l / 4 horiz / 5 vert;
+  "4 = clockwise" 是错记忆 (4 是横向镜像). 竖屏面板+direction=270 该用 3 (90l).
+- KMS: plane 54 = Primary Esmart0-win0 (zpos=0, UI), plane 76 = Esmart1-win0 (zpos=2, 视频默认在上),
+  90/104 更高; 所有 plane rotation 只支持 rotate-0/reflect-y.
+- kmssink 本固件 (gst-launch 实测): plane-properties="props,zpos=(guint)0" 可解析;
+  分层验证必须启动 App 界面后再播 (裸 gst-launch 无 UI 参考, 结论无效).
+- ALSA: /etc/asound.conf 的 default pcm = speaker -> spk_softvol -> resample_spk -> hw:1,0
+  (aw883xx 智能功放主喇叭); card0 rk817 是耳机/麦克风路径; alsasink 用默认设备即可.
+- 音频链: `qtdemux ! aacparse ! faad ! audioconvert ! audioresample ! alsasink` 本地可解 AAC
+  (faad rank 128 存在), 但 decodebin 选 pad 不区分 use-first.
+- gstplayer 宿主进程教训:
+  * stopDaemon 不能在持锁态 join 会向 JS 派发的读线程 (互等死锁 → 看门狗重启)
+  * 宿主必须 SIGPIPE=SIG_IGN, 否则 daemon 先退出后向 PIPE 写 QUERY 会杀宿主
+- miniapp_cli capture 只截 UI 帧缓冲, 截不到 KMS video plane.
+
