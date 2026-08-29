@@ -1,115 +1,30 @@
 // 哔哩哔哩网络服务
-// 网络层: $falcon.jsapi.http.request (固件 4.3.5 已验证可走通, 日志 tag debug_httpApi)
-// 真机已验证的返回形态差异 (v0.1.3 修复 "HTTP 错误"):
-//   - 该固件 request resolve 的是响应体自身 (ArrayBuffer / 二进制),
-//     不携带 statusCode, 旧代码取不到 status 一律报 "HTTP 错误"
-//   - headers 只接受字符串数组 ["Key: value"], 对象形式被原生层丢弃,
-//     导致 UA/Referer 实际没发出去
-// http API 文档 (references/haasui-docs/docs/jsapi/bashi/http.md):
-//   headers 形如 ["Content-Type:application/json"]; timeout 单位是秒(我们传毫秒值
-//   会被当作秒, 实际效果偏长, 统一改为秒)
+// 传输层: gstplayer 原生模块 httpGet (popen 调设备自带 /bin/curl,
+//   固定浏览器 UA + Referer https://www.bilibili.com), 同步返回响应体字符串.
+// 真机实测背景 (home 项目 src/utils/api.js 结论, 同型号设备):
+//   - 系统 http JSAPI 不发送自定义 header, UA/Referer 全丢,
+//     wbi 类/风控敏感接口返回 v_voucher 空壳 (code=0 无 data)
+//   - curl 携带浏览器 UA + Referer 后, popular/view/search/space 全部正常
+//   - 无 Cookie 态 (无 buvid3) 反而绕开部分风控, 故不再取手指纹
+
+import { gstPlayer } from 'gstplayer'
 
 function hasHttp() {
-  const j = $falcon && $falcon.jsapi
-  return !!(j && ((j.http && j.http.request) || (j.net && j.net.request)))
+  return !!(gstPlayer && typeof gstPlayer.httpGet === 'function')
 }
 
-let cookieHeader = ''
-
-async function httpGet(url, headersMap, timeoutSec) {
-  const jsapi = $falcon.jsapi
-  const headers = []
-  for (const k in headersMap) headers.push(k + ': ' + headersMap[k])
-  if (cookieHeader) headers.push('Cookie: ' + cookieHeader)
-  const params = { url: url, method: 'GET', headers: headers, timeout: timeoutSec }
-  if (jsapi.http && jsapi.http.request) return await jsapi.http.request(params)
-  return await jsapi.net.request(params)
-}
-
-// 二进制 -> UTF-8 字符串
-function bytesToString(res) {
+// 同步原生 GET -> JSON body; 服务器返回什么就透传什么, 业务 code 由调用方判断
+function getJson(url, timeoutSec) {
+  const s = gstPlayer.httpGet(url, timeoutSec || 15)
+  console.log('[bili] GET ' + url.replace(/(&|\?)w_rid=[^&]+/, '').replace(/(&|\?)wts=[^&]+/, '') + ' -> ' + (s ? s.length : 0) + 'B')
+  if (!s) throw new Error('请求失败 (空响应)')
   try {
-    let u8 = null
-    if (typeof ArrayBuffer !== 'undefined' && res instanceof ArrayBuffer) {
-      u8 = new Uint8Array(res)
-    } else if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView && ArrayBuffer.isView(res)) {
-      u8 = new Uint8Array(res.buffer, res.byteOffset || 0, res.byteLength)
-    } else if (Array.isArray(res)) {
-      u8 = res
-    } else {
-      return null
-    }
-    if (typeof TextDecoder !== 'undefined') {
-      return new TextDecoder('utf-8').decode(u8 instanceof Uint8Array ? u8 : new Uint8Array(u8))
-    }
-    // 无 TextDecoder 的兜底 (QuickJS 老版本): 仅保证 ASCII 正确
-    let s = ''
-    for (let i = 0; i < u8.length; i++) s += String.fromCharCode(u8[i])
-    return decodeURIComponent(escape(s))
+    return JSON.parse(s)
   } catch (e) {
-    return null
+    // 非 JSON: 风控 HTML 页 / 网关错误页等, 透出真实开头便于诊断
+    throw new Error('接口返回非 JSON: ' + String(s).substring(0, 120))
   }
 }
-
-function parseBody(data) {
-  if (data && typeof data === 'object' && !isBinary(data)) return data
-  if (typeof data === 'string') {
-    try { return JSON.parse(data) } catch (e) {
-      throw new Error('服务器返回格式错误')
-    }
-  }
-  const s = bytesToString(data)
-  if (s !== null) {
-    try { return JSON.parse(s) } catch (e) {
-      throw new Error('服务器返回格式错误')
-    }
-  }
-  throw new Error('空响应')
-}
-
-function isBinary(v) {
-  if (typeof ArrayBuffer === 'undefined') return false
-  return v instanceof ArrayBuffer || (ArrayBuffer.isView && ArrayBuffer.isView(v))
-}
-
-// 归一化各固件返回形态:
-//   1. 裸响应体: ArrayBuffer / TypedArray / string  (本固件实测形态)
-//   2. {statusCode|status, data|body}
-//   3. {error, result}
-// 返回 body 文本/对象; 状态码非 2xx 抛 HTTP 错误
-function unwrapResponse(res) {
-  if (isBinary(res) || typeof res === 'string') return res
-  if (!res || typeof res !== 'object') throw new Error('空响应')
-  if (res.error) {
-    // 真机实测: 失败时包装为 {error:3, result:{errorMessage:"curl ... resCode:412"}},
-    // resCode 才是真正的 HTTP 状态码, 原样透出
-    const em = res.result && typeof res.result.errorMessage === 'string' ? res.result.errorMessage : ''
-    const m = em.match(/resCode:(\d+)/)
-    const code = m ? parseInt(m[1], 10) : (res.statusCode || res.status || 0)
-    throw new Error((typeof res.error === 'string' ? res.error : (em || '传输失败'))
-      + (code ? ' (HTTP ' + code + ')' : ''))
-  }
-  const status = res.statusCode || res.status
-  const body = res.data !== undefined ? res.data : (res.body !== undefined ? res.body : res.result)
-  if (status !== undefined && (status < 200 || status >= 300)) {
-    throw new Error('HTTP ' + status)
-  }
-  if (body === undefined) throw new Error('空响应')
-  return body
-}
-
-// 反风控实践 (参考社区协议层分析):
-//   - UA 固定主流浏览器指纹
-//   - Referer 必须与访问场景一致: 搜索->search.bilibili.com,
-//     详情->视频页, 空间->space.bilibili.com, 热门->www.bilibili.com
-//   - Accept/Accept-Language 补全, 与浏览器请求形态对齐
-const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
-const REFERER = 'https://www.bilibili.com'
-const REFERER_SEARCH = 'https://search.bilibili.com/all'
-
-// getJson: 所有 JSON 请求的唯一入口, 不做客户端限流/冷却/重试/节流,
-// 服务器返回什么就透传什么, 业务 code 由调用方自行判断
-let cookieTried = false
 
 // 结果缓存 (减少重复请求 = 直接降低风控触发率)
 const resultCache = {} // key -> { at, data }
@@ -122,27 +37,7 @@ function cacheSet(key, data) {
   resultCache[key] = { at: Date.now(), data: data }
 }
 
-// 反风控: 先取 buvid3 设备指纹 cookie, 之后所有请求带上, 可显著降低被风控概率
-async function ensureCookie() {
-  if (cookieTried) return
-  cookieTried = true
-  try {
-    const res = await httpGet('https://api.bilibili.com/x/frontend/finger/spi',
-      { 'User-Agent': UA, 'Referer': REFERER }, 15)
-    const body = parseBody(unwrapResponse(res))
-    if (body && body.code === 0 && body.data && body.data.b_3) {
-      cookieHeader = 'buvid3=' + body.data.b_3
-      if (body.data.b_4) cookieHeader += '; buvid4=' + body.data.b_4
-      console.log('[bili] buvid3 获取成功')
-    } else {
-      console.log('[bili] buvid3 不可用, code=' + (body && body.code))
-    }
-  } catch (e) {
-    console.log('[bili] buvid3 获取失败: ' + (e && e.message ? e.message : e))
-  }
-}
-
-// ================= wbi 签名 (BACNext: 空间类接口已全部 wbi 化) =================
+// ================= wbi 签名 (与官方文档 misc/sign/wbi.md 一致) =================
 const WBI_MIXIN_TAB = [46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35,
   27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24,
   55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63, 57, 62, 11,
@@ -207,7 +102,7 @@ function md5Utf8(str) {
         const t = T[round * 16 + j]
         if (j % 4 === 0) a = step(f, a, b, c, d, x, s[0], t)
         else if (j % 4 === 1) d = step(f, d, a, b, c, x, s[1], t)
-        else if (j % 4 === 2) c = step(f, c, d, a, b, x, s[2], t)
+        else if (j % 4 === 2) c = step(f, c, d, a, x, s[2], t)
         else b = step(f, b, c, d, a, x, s[3], t)
       }
     }
@@ -222,11 +117,9 @@ function md5Utf8(str) {
 }
 
 async function getWbiKeys() {
-  // nav 匿名可访问, 返回 wbi_img 图片地址, key 缓存 24h
-  if (wbiKeys && Date.now() - wbiKeysAt < 86400000) return wbiKeys
-  const res = await httpGet('https://api.bilibili.com/x/web-interface/nav',
-    { 'User-Agent': UA, 'Referer': REFERER, 'Accept': 'application/json' }, 15)
-  const body = parseBody(unwrapResponse(res))
+  // nav 匿名可访问, 返回 wbi_img 图片地址, key 缓存 12h (随官方前端节奏)
+  if (wbiKeys && Date.now() - wbiKeysAt < 12 * 3600 * 1000) return wbiKeys
+  const body = getJson('https://api.bilibili.com/x/web-interface/nav', 10)
   // 匿名 nav 返回 code=-101(账号未登录), 但 data.wbi_img 仍然有效
   if (!body || !body.data || !body.data.wbi_img) {
     throw new Error('wbi key 获取失败 (code=' + (body && body.code) + ')')
@@ -263,18 +156,6 @@ async function wbiQuery(params) {
   return qs + '&w_rid=' + md5Utf8(qs + mixin)
 }
 
-async function getJson(url, referer) {
-  await ensureCookie()
-  const headers = {
-    'User-Agent': UA,
-    'Referer': referer || REFERER,
-    'Accept': 'application/json, text/plain, */*',
-    'Accept-Language': 'zh-CN,zh;q=0.9'
-  }
-  const res = await httpGet(url, headers, 15)
-  return parseBody(unwrapResponse(res))
-}
-
 function stripTags(s) {
   return String(s == null ? '' : s).replace(/<[^>]*>/g, '')
 }
@@ -285,6 +166,35 @@ function formatPlay(n) {
   return String(num)
 }
 
+// QuickJS 20200705 不保证 Date.prototype.toISOString, 手工格式化
+function formatDate(epochSec) {
+  if (!epochSec) return ''
+  const dt = new Date(epochSec * 1000)
+  function pad(n) { return n < 10 ? '0' + n : '' + n }
+  return dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(dt.getDate())
+}
+
+function formatDuration(sec) {
+  const s = Math.max(0, Number(sec) || 0)
+  const m = Math.floor(s / 60)
+  const r = Math.floor(s % 60)
+  return m + ':' + (r < 10 ? '0' : '') + r
+}
+
+function mapFeedItem(v) {
+  let pic = v.pic || ''
+  if (pic.indexOf('//') === 0) pic = 'https:' + pic
+  return {
+    bvid: v.bvid || '',
+    aid: v.aid || 0,
+    title: stripTags(v.title),
+    author: v.author || (v.owner && v.owner.name) || '',
+    playText: formatPlay(v.play !== undefined ? v.play : (v.stat && v.stat.view)),
+    duration: typeof v.duration === 'number' ? formatDuration(v.duration) : (v.duration || ''),
+    pic: pic
+  }
+}
+
 /**
  * 搜索哔哩哔哩视频
  * @param {string} keyword 关键词
@@ -292,14 +202,12 @@ function formatPlay(n) {
  * @returns {Promise<Array<{bvid,title,author,playText,duration,pic}>>}
  */
 export async function searchVideos(keyword, page) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
-  // 搜索接口已强制 wbi 签名 (真机实测不带签直接返回风控 HTML 页)
-  // 同词同页缓存 2 分钟: 重搜/切页回退不再发请求
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
+  // 同词同页缓存 2 分钟
   const ckey = 'search:' + keyword + ':' + (page || 1)
   const cached = cacheGet(ckey, 120000)
   if (cached) { console.log('[bili] 搜索命中缓存, 不发请求'); return cached }
-  // wbi 签名 + dm_* 反爬参数 (官方前端同款, 真机实测不带会被风控 HTML 拦截)
-  // dm_img_str/dm_cover_img_str 是 WebGL/GPU 指纹的 base64, 设备无浏览器指纹, 用官方浏览器常量
+  // wbi 签名 + dm_* 反爬参数 (官方前端同款)
   const url = 'https://api.bilibili.com/x/web-interface/wbi/search/type?'
     + (await wbiQuery({
       search_type: 'video',
@@ -312,7 +220,7 @@ export async function searchVideos(keyword, page) {
       dm_img_inter: '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}'
     }))
 
-  const body = await getJson(url, REFERER_SEARCH)
+  const body = getJson(url, 15)
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('接口错误 code=' + body.code))
@@ -339,37 +247,22 @@ export async function searchVideos(keyword, page) {
   return videos
 }
 
-// QuickJS 20200705 不保证 Date.prototype.toISOString, 手工格式化
-function formatDate(epochSec) {
-  if (!epochSec) return ''
-  const dt = new Date(epochSec * 1000)
-  function pad(n) { return n < 10 ? '0' + n : '' + n }
-  return dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(dt.getDate())
-}
-
-function formatDuration(sec) {
-  const s = Math.max(0, Number(sec) || 0)
-  const m = Math.floor(s / 60)
-  const r = Math.floor(s % 60)
-  return m + ':' + (r < 10 ? '0' : '') + r
-}
-
 /**
  * 获取视频详情
  * @param {string} bvid
  * @returns {Promise<{bvid,aid,title,pic,desc,author,duration,pubdateText,playText,danmakuText,likeText,coinText,favText,shareText}>}
  */
 export async function getVideoDetail(bvid) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
-  // 详情缓存 5 分钟: 反复进出同一视频不再请求
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
+  // 详情缓存 5 分钟
   const ckey = 'view:' + bvid
   const cached = cacheGet(ckey, 300000)
   if (cached) { console.log('[bili] 详情命中缓存, 不发请求'); return cached }
-  // 详情也带 wbi 签名, 与官方前端一致 (wbi/view 为 wbi 版本接口)
+  // 详情带 wbi 签名, 与官方前端一致 (wbi/view 为 wbi 版本接口)
   const url = 'https://api.bilibili.com/x/web-interface/wbi/view?'
     + (await wbiQuery({ bvid: bvid }))
 
-  const body = await getJson(url, 'https://www.bilibili.com/video/' + encodeURIComponent(bvid))
+  const body = getJson(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     if (body.code === -404) throw new Error('视频不存在或已删除')
@@ -416,30 +309,16 @@ export async function getVideoDetail(bvid) {
  * 相关推荐视频 (x/web-interface/archive/related, 匿名可用)
  */
 export async function getRelatedVideos(bvid) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
   const ckey = 'related:' + bvid
   const cached = cacheGet(ckey, 300000)
   if (cached) return cached
   const url = 'https://api.bilibili.com/x/web-interface/archive/related?bvid=' + encodeURIComponent(bvid)
-  const body = await getJson(url, 'https://www.bilibili.com/video/' + encodeURIComponent(bvid))
+  const body = getJson(url, 15)
   if (body.code !== 0) return [] // 推荐失败容忍, 不阻塞详情
   const out = (body.data || []).map(mapFeedItem)
   cacheSet(ckey, out)
   return out
-}
-
-function mapFeedItem(v) {
-  let pic = v.pic || ''
-  if (pic.indexOf('//') === 0) pic = 'https:' + pic
-  return {
-    bvid: v.bvid || '',
-    aid: v.aid || 0,
-    title: stripTags(v.title),
-    author: v.author || (v.owner && v.owner.name) || '',
-    playText: formatPlay(v.play !== undefined ? v.play : (v.stat && v.stat.view)),
-    duration: typeof v.duration === 'number' ? formatDuration(v.duration) : (v.duration || ''),
-    pic: pic
-  }
 }
 
 /**
@@ -447,12 +326,12 @@ function mapFeedItem(v) {
  * @returns {Promise<Array<feedItem>>}
  */
 export async function getPopular(page) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
   const ckey = 'popular:' + (page || 1)
   const cached = cacheGet(ckey, 60000)
   if (cached) return cached
   const url = 'https://api.bilibili.com/x/web-interface/popular?pn=' + (page || 1) + '&ps=20'
-  const body = await getJson(url, 'https://www.bilibili.com/v/popular/all')
+  const body = getJson(url, 15)
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('接口错误 code=' + body.code))
@@ -468,12 +347,12 @@ export async function getPopular(page) {
  * UP主基本信息 (x/space/wbi/acc/info, wbi 签名)
  */
 export async function getUpInfo(mid) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
   const ckey = 'upinfo:' + mid
   const cached = cacheGet(ckey, 600000)
   if (cached) return cached
   const url = 'https://api.bilibili.com/x/space/wbi/acc/info?' + (await wbiQuery({ mid: mid }))
-  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid))
+  const body = getJson(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     if (body.code === -352) throw new Error('接口风控, 无法获取UP主信息')
@@ -498,7 +377,7 @@ export async function getUpInfo(mid) {
  */
 export async function getUpFans(mid) {
   const url = 'https://api.bilibili.com/x/relation/stat?vmid=' + encodeURIComponent(mid)
-  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid))
+  const body = getJson(url, 10)
   if (body.code !== 0 || !body.data) return ''
   return formatPlay(body.data.follower)
 }
@@ -507,13 +386,13 @@ export async function getUpFans(mid) {
  * UP主视频 (x/space/wbi/arc/search, wbi 签名)
  */
 export async function getUpVideos(mid, page) {
-  if (!hasHttp()) throw new Error('当前固件不支持 http/net 请求')
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 gstplayer 模块)')
   const ckey = 'upvideos:' + mid + ':' + (page || 1)
   const cached = cacheGet(ckey, 120000)
   if (cached) return cached
   const url = 'https://api.bilibili.com/x/space/wbi/arc/search?'
     + (await wbiQuery({ mid: mid, pn: page || 1, ps: 20, order: 'pubdate' }))
-  const body = await getJson(url, 'https://space.bilibili.com/' + encodeURIComponent(mid) + '/video')
+  const body = getJson(url, 15)
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     if (body.code === -352) throw new Error('接口风控, 视频列表暂不可用')

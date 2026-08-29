@@ -5,6 +5,7 @@
     "up": "pages/up/up.vue"
   },
   "options": {
+    "external": ["gstplayer"],
     "style": {
       "lessPaths": ["styles"]
     }
