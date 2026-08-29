@@ -73,6 +73,12 @@ import { getVideoDetail, getRelatedVideos } from '../../services/bili.js'
 
 export default {
   name: 'page',
+  // nextPage: 相关推荐点击后的跳转目标页副本名.
+  // 直开 page 路由默认跳 'page2'; page2..page12 包装页传入自己的下一环,
+  // 形成 page->page2->...->page12->page 轮换栈 (同名页 navTo 只替换不叠加)
+  props: {
+    nextPage: { type: String, default: 'page2' }
+  },
   data() {
     return {
       bvid: '',
@@ -192,7 +198,7 @@ export default {
 
     // 推荐视频跳转到"下一份"详情页副本, 实现真正的页面叠加 (同名页只替换)
     openVideo(item) {
-      $falcon.navTo('page2', { bvid: item.bvid, title: item.title })
+      $falcon.navTo(this.nextPage || 'page2', { bvid: item.bvid, title: item.title })
     },
 
     openPlayer() {
