@@ -33,7 +33,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -include pthread.h")
 # 头文件/链接搜索路径由 pkg-config (GST_CFLAGS/GST_LIBS) 或环境覆盖
 find_package(PkgConfig)
 if(PKG_CONFIG_FOUND)
-    pkg_check_modules(GST gstreamer-1.0)
+    pkg_check_modules(GST gstreamer-1.0 gstreamer-video-1.0)
 endif()
 if(NOT GST_FOUND)
     message(WARNING "pkg-config gstreamer-1.0 未找到, 依赖采集 GST_ROOT/include+lib")
@@ -57,6 +57,6 @@ add_executable(gstplayerd
 target_include_directories(gstplayerd PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_include_directories(gstplayerd PRIVATE ${GST_INCLUDE_DIRS})
 target_link_directories(gstplayerd PRIVATE ${GST_LIBRARY_DIRS})
-target_link_libraries(gstplayerd ${GST_LIBRARIES} gstreamer-1.0 gobject-2.0 glib-2.0 pthread)
+target_link_libraries(gstplayerd ${GST_LIBRARIES} gstvideo-1.0 gstreamer-1.0 gobject-2.0 glib-2.0 pthread)
 
 set(CMAKE_VERBOSE_MAKEFILE ON)
