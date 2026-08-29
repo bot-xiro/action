@@ -11,6 +11,7 @@
 #include "PlayCore.h"
 
 #include <gst/gst.h>
+#include <gst/video/video.h>
 #include <syslog.h>
 #include <cstring>
 
@@ -203,12 +204,13 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
     int px, py, pw, ph;
     gplayerLogicToPhys(lx, ly, lw, lh, px, py, pw, ph);
     GP_LOG("kmss rect LOGIC(%d,%d,%d,%d) -> PHYS(%d,%d,%d,%d)", lx, ly, lw, lh, px, py, pw, ph);
-    gchar rectStr[64];
-    snprintf(rectStr, sizeof(rectStr), "<%d,%d,%d,%d>", px, py, pw, ph);
+    // render-rectangle 是 GstVideoRectangle boxed 属性, 必须传结构体指针,
+    // 直传字符串会被当作 boxed 指针读出野值 (gmem 21GB alloc -> SIGTRAP, gdb 已定位)
+    GstVideoRectangle rect = { px, py, pw, ph };
     g_object_set(G_OBJECT(sink),
         "driver-name", "rockchip",
         "plane-id", (gint64)KMS_PLANE_ID,
-        "render-rectangle", rectStr,
+        "render-rectangle", &rect,
         "can-scale", TRUE,
         "sync", TRUE,
         NULL);
@@ -275,9 +277,8 @@ void PlayCore::fitVideoRect(int vw, int vh)
     int rx = lx + (lw - fw) / 2, ry = ly + (lh - fh) / 2;
     int px, py, pw, ph;
     gplayerLogicToPhys(rx, ry, fw, fh, px, py, pw, ph);
-    gchar rectStr[64];
-    snprintf(rectStr, sizeof(rectStr), "<%d,%d,%d,%d>", px, py, pw, ph);
-    g_object_set(G_OBJECT(m_kmsSink), "render-rectangle", rectStr, NULL);
+    GstVideoRectangle rect = { px, py, pw, ph };
+    g_object_set(G_OBJECT(m_kmsSink), "render-rectangle", &rect, NULL);
     GP_LOG("fit rect video=%dx%d logic(%d,%d,%d,%d) phys(%d,%d,%d,%d)",
            vw, vh, rx, ry, fw, fh, px, py, pw, ph);
 }
