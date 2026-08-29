@@ -380,11 +380,14 @@ export async function getUpInfo(mid) {
     console.log('[bili] acc/info 失败, 降级 x/web-interface/card: ' + (accErr && accErr.message))
   }
   // 降级: x/web-interface/card (免登录基本资料接口, 风控比空间接口宽松)
+  // 注意: 字段嵌套在 data.card 下, level 在 level_info.current_level
   const cardBody = getJson('https://api.bilibili.com/x/web-interface/card?mid=' + encodeURIComponent(mid), 15)
   if (cardBody.code !== 0 || !cardBody.data) {
     throw new Error(cardBody.message || ('接口错误 code=' + cardBody.code))
   }
-  const cd = cardBody.data
+  const cd = cardBody.data.card || cardBody.data
+  const lv = cd.level_info && cd.level_info.current_level !== undefined
+    ? cd.level_info.current_level : cd.level
   let face = cd.face || ''
   if (face.indexOf('//') === 0) face = 'https:' + face
   const cardOut = {
@@ -392,7 +395,7 @@ export async function getUpInfo(mid) {
     name: cd.name || '',
     sign: cd.sign || '',
     face: face,
-    levelText: 'Lv' + (cd.level !== undefined ? cd.level : '?')
+    levelText: 'Lv' + (lv !== undefined ? lv : '?')
   }
   cacheSet('upinfo:' + mid, cardOut)
   return cardOut
@@ -409,37 +412,67 @@ export async function getUpFans(mid) {
 }
 
 /**
- * UP主视频 (x/space/wbi/arc/search, wbi 签名)
+ * UP主视频 (x/space/wbi/arc/search, wbi 签名; 风控时降级 x/series/recArchivesByKeywords)
  */
 export async function getUpVideos(mid, page) {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   const ckey = 'upvideos:' + mid + ':' + (page || 1)
   const cached = cacheGet(ckey, 120000)
   if (cached) return cached
-  const url = 'https://api.bilibili.com/x/space/wbi/arc/search?'
-    + (await wbiQuery({ mid: mid, pn: page || 1, ps: 20, order: 'pubdate' }))
-  const body = getJson(url, 15)
-  if (body.code !== 0) {
-    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
-    if (body.code === -352) throw new Error('接口风控, 视频列表暂不可用')
-    throw new Error(body.message || ('接口错误 code=' + body.code))
+  // 主路径: 空间投稿接口 (wbi 签名)
+  try {
+    const url = 'https://api.bilibili.com/x/space/wbi/arc/search?'
+      + (await wbiQuery({ mid: mid, pn: page || 1, ps: 20, order: 'pubdate' }))
+    const body = getJson(url, 15)
+    if (body.code !== 0) {
+      if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+      if (body.code === -352) throw new Error('接口风控, 视频列表暂不可用')
+      throw new Error(body.message || ('接口错误 code=' + body.code))
+    }
+    const list = (body.data && body.data.list && body.data.list.vlist) || []
+    const videos = []
+    for (let i = 0; i < list.length; i++) {
+      const v = list[i]
+      let pic = v.pic || ''
+      if (pic.indexOf('//') === 0) pic = 'https:' + pic
+      videos.push({
+        bvid: v.bvid || '',
+        aid: v.aid || 0,
+        title: stripTags(v.title),
+        author: v.author || '',
+        playText: formatPlay(v.play),
+        duration: v.length || '',
+        pic: pic
+      })
+    }
+    cacheSet(ckey, videos)
+    return videos
+  } catch (arcErr) {
+    console.log('[bili] arc/search 失败, 降级 recArchivesByKeywords: ' + (arcErr && arcErr.message))
   }
-  const list = (body.data && body.data.list && body.data.list.vlist) || []
-  const videos = []
-  for (let i = 0; i < list.length; i++) {
-    const v = list[i]
+  // 降级: x/series/recArchivesByKeywords (不需要 wbi 签名, 官方文档注"暂未发现风控校验")
+  const url2 = 'https://api.bilibili.com/x/series/recArchivesByKeywords?mid='
+    + encodeURIComponent(mid) + '&keywords=&ps=20&pn=' + (page || 1) + '&orderby=pubdate'
+  const body2 = getJson(url2, 15)
+  if (body2.code !== 0) {
+    throw new Error(body2.message || ('接口错误 code=' + body2.code))
+  }
+  const list2 = (body2.data && body2.data.archives) || []
+  const videos2 = []
+  for (let i = 0; i < list2.length; i++) {
+    const v = list2[i]
     let pic = v.pic || ''
     if (pic.indexOf('//') === 0) pic = 'https:' + pic
-    videos.push({
+    videos2.push({
       bvid: v.bvid || '',
       aid: v.aid || 0,
       title: stripTags(v.title),
-      author: v.author || '',
-      playText: formatPlay(v.play),
-      duration: v.length || '',
+      author: '',
+      playText: formatPlay(v.stat && v.stat.view),
+      duration: v.duration ? formatDuration(v.duration) : '',
       pic: pic
     })
   }
-  cacheSet(ckey, videos)
-  return videos
+  cacheSet(ckey, videos2)
+  return videos2
 }
