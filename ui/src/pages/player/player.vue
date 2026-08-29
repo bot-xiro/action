@@ -157,7 +157,9 @@ export default {
         return
       }
       if (!this.bvid) {
-        this.statusText = '缺少视频参数'
+        // 测试入口: 无参数时播一段公网 MP4, 证明硬解/kmssink/进度/控制链路通
+        this.titleText = '测试视频 Big Buck Bunny 10s'
+        useDirectUrl('https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4')
         return
       }
       getVideoDetail(this.bvid).then(function (detail) {
