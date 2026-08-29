@@ -66,6 +66,12 @@ export default {
     },
 
     onShow() {
+      // 同页 navTo 的 onNewOptions 只发到 Page 实例, 需显式挂钩
+      if (this.$page && !this._newOptionsBound) {
+        this._newOptionsBound = true
+        const self = this
+        this.$page.onNewOptions = function (options) { self.onNewOptions(options) }
+      }
       this.beginLoad()
     },
 

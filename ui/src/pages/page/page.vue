@@ -99,6 +99,13 @@ export default {
     },
 
     onShow() {
+      // 固件的自动 Page 只桥接 onShow/onHide/onUnload 等固定生命周期,
+      // 同页 navTo 的 onNewOptions 只发到 Page 实例 -> 显式挂钩到实例方法
+      if (this.$page && !this._newOptionsBound) {
+        this._newOptionsBound = true
+        const self = this
+        this.$page.onNewOptions = function (options) { self.onNewOptions(options) }
+      }
       this.beginLoad()
     },
 
