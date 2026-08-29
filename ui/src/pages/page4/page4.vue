@@ -5,6 +5,9 @@
         <text class="back-text">‹ 返回</text>
       </div>
       <text class="header-title">视频详情</text>
+      <div class="homebtn" @click="goHome">
+        <text class="home-text">⌂ 主页</text>
+      </div>
     </div>
 
     <scroller class="content" scroll-direction="vertical" :show-scrollbar="true">
@@ -183,7 +186,7 @@ export default {
 
     // 推荐视频跳转到"下一份"详情页副本, 实现真正的页面叠加 (同名页只替换)
     openVideo(item) {
-      $falcon.navTo('page', { bvid: item.bvid, title: item.title })
+      $falcon.navTo('page5', { bvid: item.bvid, title: item.title })
     },
 
     openUp() {
@@ -194,6 +197,11 @@ export default {
 
     goBack() {
       this.$page.finish()
+    },
+
+    // 一键回主页: navTo 已存在的 index 页面 -> 框架把它暂时提到前台 (onNewOptions 会刷新刚发布的内容)
+    goHome() {
+      $falcon.navTo('index', {})
     },
 
     onUnload() {
@@ -242,6 +250,19 @@ export default {
   font-size: 24px;
   color: #ffffff;
   margin-left: 24px;
+}
+.homebtn {
+  width: 110px;
+  height: 34px;
+  margin-left: 560px;
+  border-radius: 17px;
+  background-color: #fb7299;
+  justify-content: center;
+  align-items: center;
+}
+.home-text {
+  font-size: 22px;
+  color: #ffffff;
 }
 .content {
   width: 960px;

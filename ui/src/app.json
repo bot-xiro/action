@@ -5,6 +5,14 @@
     "page2": "pages/page2/page2.vue",
     "page3": "pages/page3/page3.vue",
     "page4": "pages/page4/page4.vue",
+    "page5": "pages/page5/page5.vue",
+    "page6": "pages/page6/page6.vue",
+    "page7": "pages/page7/page7.vue",
+    "page8": "pages/page8/page8.vue",
+    "page9": "pages/page9/page9.vue",
+    "page10": "pages/page10/page10.vue",
+    "page11": "pages/page11/page11.vue",
+    "page12": "pages/page12/page12.vue",
     "up": "pages/up/up.vue"
   },
   "options": {
