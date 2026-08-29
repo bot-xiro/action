@@ -9,7 +9,7 @@
 
     <scroller class="content" scroll-direction="vertical" :show-scrollbar="true">
       <!-- 顶部信息: 即使详情接口失败, 也尽可能显示列表页带来的标题, 不再整页拦截 -->
-      <div class="top">
+      <div class="top" ref="topRef">
         <image v-if="detail && detail.pic" class="cover" :src="detail.pic" resize="cover"></image>
         <div class="info">
           <text class="title">{{ detail ? detail.title : fallbackTitle }}</text>
@@ -20,6 +20,8 @@
       </div>
 
       <text v-if="error !== ''" class="state-inline">{{ error }}</text>
+      <!-- 加载状态放在顶部: 切换视频时立即给出反馈 -->
+      <text v-if="loading" class="state-inline">加载中…</text>
 
       <!-- 简介 (放大) -->
       <div v-if="detail" class="section">
@@ -56,8 +58,6 @@
           </div>
         </div>
       </div>
-
-      <text v-if="loading" class="state-inline">加载中…</text>
     </scroller>
   </div>
 </template>
@@ -95,7 +95,19 @@ export default {
       this.detail = null
       this.related = []
       this.error = ''
+      this.loading = true   // 立即显示「加载中…」, 同页跳转时旧内容立刻清空
       this.load()
+      // 同页 navTo 停在原滚动位置 (推荐区) -> 复位到顶部
+      this.scrollTop()
+    },
+
+    scrollTop() {
+      const page = this.$page
+      try {
+        if (page && page.$dom && page.$dom.scrollToElement && this.$refs.topRef) {
+          page.$dom.scrollToElement(this.$refs.topRef, { offset: 0 })
+        }
+      } catch (e) {}
     },
 
     onShow() {
