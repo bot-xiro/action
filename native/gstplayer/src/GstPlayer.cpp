@@ -71,9 +71,17 @@ public:
             const char* rr = JS_ToCString(ctx, info[1]);
             if (rr) { rect = rr; JS_FreeCString(ctx, rr); }
         }
-        // 校验 uri/rect: 无控制字符, rect 必须是四整数
-        if (uri.empty() || uri.size() > 2048 ||
-            uri.find_first_of("\r\n\t|;&`<>\"'\\") != std::string::npos ||
+        // 校验 uri/rect (skill media-kms.md: 长度/ scheme / 控制字符校验).
+        // uri 经 execl(argv) 直传 gstplayerd, 不走 shell 也不走命令管道,
+        // 因此 & ? # 等 URL 保留字符必须放行; 之前黑名单含 & 会把
+        // bilibili playurl(必带 query 参数)全部误拒.
+        bool badUri = uri.empty() || uri.size() > 2048;
+        for (size_t i = 0; !badUri && i < uri.size(); i++) {
+            unsigned char uc = static_cast<unsigned char>(uri[i]);
+            if (uc < 0x20 || uc == 0x7f) badUri = true;
+        }
+        if (!badUri && uri.rfind("http://", 0) != 0 && uri.rfind("https://", 0) != 0) badUri = true;
+        if (badUri ||
             sscanf(rect.c_str(), "%d,%d,%d,%d", &r[0], &r[1], &r[2], &r[3]) != 4) {
             info.GetReturnValue().ThrowInternalError("open: invalid uri/rect");
             emitState("error: invalid uri/rect");
