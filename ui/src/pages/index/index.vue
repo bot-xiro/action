@@ -19,7 +19,6 @@
         </div>
       </div>
       <text v-if="status !== ''" class="status">{{ status }}</text>
-      <text v-if="debugLog !== ''" class="debug">{{ debugLog }}</text>
       <scroller class="results" scroll-direction="vertical" :show-scrollbar="true">
         <div v-for="item in results" :key="item.bvid" class="item" @click="openVideo(item)">
           <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
@@ -87,7 +86,6 @@ export default {
       placeholder: '点击输入搜索内容',
       status: '',
       results: [],
-      debugLog: '',
       searched: false,
       loading: false,
       generation: 0,
@@ -104,15 +102,14 @@ export default {
     }
   },
   mounted() {
-    // 进入动画: 首帧后翻转折射滑入
+    // 进入动画: 首帧后翻转折射滑入; timer 走 BasePage 托管, 页面卸载自动清理
     const self = this
     try {
-      setTimeout(function () { self.entering = false }, 60)
+      const p = this.$page
+      if (p && p.setTimeout) p.setTimeout(function () { self.entering = false }, 60)
+      else setTimeout(function () { self.entering = false }, 60)
     } catch (e) { self.entering = false }
     this.ime = createIME()
-    this.ime.onDebug((msg) => {
-      this.debugLog = msg
-    })
     // 版本号: 从包管理器读当前安装包信息 (haasui-docs jsapi/system/falcon/pm)
     try {
       const info = pm.getPackageInfo(this.appid)
@@ -302,11 +299,6 @@ export default {
   margin-left: 24px;
   margin-top: 4px;
   height: 30px;
-}
-.debug {
-  font-size: 18px;
-  color: #666666;
-  margin-left: 24px;
 }
 .results {
   width: 960px;

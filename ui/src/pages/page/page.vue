@@ -127,10 +127,13 @@ export default {
       }
       this.beginLoad()
       // 进入动画: 等到首帧绘制完成后再翻转 entering, CSS transition 从右滑入
+      // timer 走 BasePage 托管, 页面卸载由 release() 兜底
       if (this.entering) {
         const self2 = this
         try {
-          setTimeout(function () { self2.entering = false }, 60)
+          const p = this.$page
+          if (p && p.setTimeout) p.setTimeout(function () { self2.entering = false }, 60)
+          else setTimeout(function () { self2.entering = false }, 60)
         } catch (e) { self2.entering = false }
       }
     },

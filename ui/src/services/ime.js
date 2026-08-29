@@ -86,12 +86,10 @@ export function createIME() {
   let currentUuid = null
   let resolver = null
   let destroyed = false
-  let debugCb = null
   let subscribed = false
 
   function debug(msg) {
     console.log('[ime]', msg)
-    if (debugCb) { try { debugCb(msg) } catch (e) {} }
   }
 
   function subscribe() {
@@ -201,9 +199,6 @@ export function createIME() {
   }
 
   return {
-    /** 调试: 传入 (msg)=>void 接收内部日志 */
-    onDebug(cb) { debugCb = cb },
-
     open(config) {
       return new Promise((resolve, reject) => {
         try { getManager() } catch (e) { reject(e); return }

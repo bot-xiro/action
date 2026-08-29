@@ -74,11 +74,13 @@ export default {
         this.$page.onNewOptions = function (options) { self.onNewOptions(options) }
       }
       this.beginLoad()
-      // 进入动画: 首帧后翻转折射滑入
+      // 进入动画: 首帧后翻转折射滑入; timer 走 BasePage 托管, 页面卸载自动清理
       if (this.entering) {
         const self3 = this
         try {
-          setTimeout(function () { self3.entering = false }, 60)
+          const p = this.$page
+          if (p && p.setTimeout) p.setTimeout(function () { self3.entering = false }, 60)
+          else setTimeout(function () { self3.entering = false }, 60)
         } catch (e) { self3.entering = false }
       }
     },

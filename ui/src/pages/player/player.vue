@@ -1,6 +1,6 @@
 <template>
   <div class="page">
-    <!-- 点击空白区域 显示/隐藏控制条; 控制条上按钮各自拦截, Falcone 点击不冒泡 -->
+    <!-- 点击空白区域 显示/隐藏控制条; 控制条上按钮各自拦截, Falcon 点击不冒泡 -->
     <div class="stage" @click="toggleBar">
 
       <!-- 顶栏: 返回 + 标题 -->
@@ -48,14 +48,21 @@
 </template>
 
 <script>
+// 播放页
+// - 视频画面由 gstplayer 原生层走 GStreamer + KMS 平面输出, 本页只负责 UI 与控制
+// - 页面 timer 一律走 $page(BasePage) 的托管版本: onUnload 兜底释放, 见 skill falcon-runtime.md
+// - 生命周期契约:
+//     首次 onShow        读 options -> 取流地址 -> open/start, 订阅原生状态
+//     onNewOptions       同一 player 页被 navTo 重开 -> 换源重播
+//     onHide             暂停播放并停轮询 (回前台后由用户手动恢复, 不自动续播)
+//     onUnload           单一 stop 路径: generation++ -> 停 timer/订阅 -> close native
 import * as player from '../../services/player.js'
 import { getVideoDetail, getPlayUrl } from '../../services/bili.js'
 
-// 逻辑坐标 960x266 (profile 已验证); 进度条 24 个点击分段
-var SEG_COUNT = 24
-var POLL_MS = 500
-var BAR_HIDE_MS = 5000
-var SEEK_STEP_MS = 10000
+var SEG_COUNT = 24       // 进度条点击分段数, 逻辑坐标 760px 按 24 段切
+var POLL_MS = 500        // 进度轮询周期
+var BAR_HIDE_MS = 5000   // 播放中控制条自动隐藏延时
+var SEEK_STEP_MS = 10000 // 快退/快进步长
 
 function pad2(n) { return n < 10 ? '0' + n : '' + n }
 
@@ -68,39 +75,71 @@ function fmtMs(ms) {
   return m + ':' + pad2(s)
 }
 
+// BasePage 托管 timer 包装; 运行时不提供该 API 时退回全局函数,
+// 但页面侧仍统一持句并在 onHide/onUnload 中显式清, 保证没有孤儿 timer.
+function setTimer(vm, ms, fn) {
+  var p = vm.$page
+  if (p && p.setTimeout) return p.setTimeout(fn, ms)
+  return setTimeout(fn, ms)
+}
+function setTicker(vm, ms, fn) {
+  var p = vm.$page
+  if (p && p.setInterval) return p.setInterval(fn, ms)
+  return setInterval(fn, ms)
+}
+function clearTimer(vm, token) {
+  if (token == null) return
+  var p = vm.$page
+  if (p && p.clearTimeout) p.clearTimeout(token); else clearTimeout(token)
+}
+function clearTicker(vm, token) {
+  if (token == null) return
+  var p = vm.$page
+  if (p && p.clearInterval) p.clearInterval(token); else clearInterval(token)
+}
+
 export default {
   name: 'player',
   data: function () {
     return {
+      // 入参
       bvid: '',
       pageNo: 1,
+      directUrl: '',       // 调试直链, 由 options.url 传入
+      // 运行状态
+      inited: false,       // 是否已完成首次初始化 (防止后台回前台时重开流)
+      opened: false,       // native 管道是否已 open
+      playing: false,
+      // UI
       titleText: '',
       statusText: '加载中…',
-      playing: false,
       barVisible: true,
       curMs: 0,
       durMs: 0,
-      generation: 0,
-      opened: false,
       segList: (function () {
         var a = []
         for (var i = 0; i < SEG_COUNT; i++) a.push(i)
         return a
-      })()
+      })(),
+      // 异步世代: 换源/离开页面后, 过期回调不得再写界面
+      generation: 0,
+      // timer 句柄 (BasePage 兜底之外的显式管理)
+      pollTimer: null,
+      hideTimer: null
     }
   },
   computed: {
     fillPct: function () {
       if (!this.durMs) return 0
       var pct = (this.curMs / this.durMs) * 100
-      if (pct < 0) pct = 0
-      if (pct > 100) pct = 100
+      if (pct < 0) return 0
+      if (pct > 100) return 100
       return pct
     },
     fillStyle: function () {
       return { width: this.fillPct + '%' }
     },
-    // 进度条圆点: left 百分比, 用负 margin 自行居中
+    // 进度条圆点: left 百分比, 负 margin 自行居中
     thumbStyle: function () {
       return { left: this.fillPct + '%' }
     },
@@ -108,60 +147,94 @@ export default {
     durText: function () { return fmtMs(this.durMs) }
   },
   methods: {
+    // ---------------- 生命周期 (由 BasePage 代理到根组件) ----------------
     onShow: function () {
-      var opts = (this.$page && this.$page.options) || {}
-      this.bvid = opts.bvid || ''
-      this.pageNo = parseInt(opts.page || '1', 10) || 1
-      this.titleText = opts.title || ''
+      if (!this.inited) {
+        // 同页 navTo 的 onNewOptions 只发到 Page 实例, 需要显式挂钩到组件
+        if (this.$page && !this._newOptionsBound) {
+          this._newOptionsBound = true
+          var self = this
+          this.$page.onNewOptions = function (options) { self.onNewOptions(options) }
+        }
+        this.applyOptions((this.$page && this.$page.options) || {})
+        this.loadAndPlay()
+        return
+      }
+      // 后台回前台: 保持在暂停态并确保控制条可见, 由用户决定是否恢复
+      if (this.opened && !this.playing) this.showBar()
+      this.startPolling()
+    },
+
+    onNewOptions: function (options) {
+      // 同页重开 = 换视频: 走完整换源路径
+      console.log('[player] onNewOptions bvid=' + (options && options.bvid))
+      this.generation++
+      this.stopPolling()
+      this.cancelHideBar()
+      if (this.opened) {
+        try { player.close() } catch (e) {}
+        this.opened = false
+      }
+      this.playing = false
+      this.curMs = 0
+      this.durMs = 0
+      this.applyOptions(options || {})
       this.loadAndPlay()
     },
 
     onHide: function () {
-      // 进入后台(含系统输入法等)暂停, 回前台后手动恢复
+      // 进入后台: 暂停播放、停轮询、展示控制条, 不销毁管道; 回前台由用户恢复
       this.stopPolling()
       this.cancelHideBar()
       if (this.opened && this.playing) {
         try { player.pause() } catch (e) {}
         this.playing = false
       }
-      this.pushState('paused-hide')
+      this.barVisible = true
+    },
+
+    onUnload: function () {
+      // 单一 stop 路径: 递增 generation 使所有在途回调失效 -> 清 timer/订阅 -> 关 native
+      this.generation++
+      this.stopPolling()
+      this.cancelHideBar()
+      try { player.offState(this.onNativeState) } catch (e) {}
+      if (this.opened) {
+        try { player.close() } catch (e) {}
+        this.opened = false
+      }
+      this.playing = false
+    },
+
+    // ---------------- 打开与换源 ----------------
+    applyOptions: function (options) {
+      this.bvid = options.bvid || ''
+      this.pageNo = parseInt(options.page || '1', 10) || 1
+      this.titleText = options.title || ''
+      this.directUrl = options.url || ''   // 调试直链: miniapp_cli start <appid> --player? url 透传
     },
 
     loadAndPlay: function () {
-      var self = this
       var gen = ++this.generation
       if (!player.isSupported()) {
         this.statusText = '当前固件不支持视频播放 (缺少 gstplayer 模块)'
         return
       }
-      // 原生状态订阅 (与 onUnload 的 offState 严格成对)
+      // 原生状态订阅 (services/player.js 内部去重; onUnload 时 offState 与之成对)
       player.onState(this.onNativeState)
-      this.prepareAndOpen(gen)
-    },
+      this.inited = true
 
-    prepareAndOpen: function (gen) {
       var self = this
-      var useDirectUrl = function (url) {
-        if (gen !== self.generation) return
-        self.openStream(url)
-      }
-      var onErr = function (e) {
-        if (gen !== self.generation) return
-        self.statusText = e && e.message ? e.message : String(e)
-        self.playing = false
-      }
-      var directUrl = (this.$page && this.$page.options && this.$page.options.url) || ''
-      if (directUrl !== '') {
-        // 调试直达: miniapp_cli start <appid> --player --url <mp4> 的形态经 options 传入
-        useDirectUrl(directUrl)
+      if (this.directUrl !== '') {
+        this.statusText = '加载中…'
+        this.openStream(this.directUrl, gen)
         return
       }
       if (!this.bvid) {
-        // 测试入口: 无参数时播一段公网 MP4, 证明硬解/kmssink/进度/控制链路通
-        this.titleText = '测试视频 Big Buck Bunny 10s'
-        useDirectUrl('https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/360/Big_Buck_Bunny_360_10s_1MB.mp4')
+        this.statusText = '缺少视频参数 (bvid)'
         return
       }
+      this.statusText = '加载中…'
       getVideoDetail(this.bvid).then(function (detail) {
         if (gen !== self.generation) return
         if (self.titleText === '' && detail.title) self.titleText = detail.title
@@ -170,20 +243,26 @@ export default {
           : null
         var cid = page ? page.cid : 0
         if (!cid) throw new Error('未找到视频 cid')
-        return getPlayUrl(self.bvid, cid).then(function (play) {
-          if (gen !== self.generation) return
-          if (play.duration > 0) self.durMs = play.duration
-          self.openStream(play.url)
-        })
-      }).catch(onErr)
+        return getPlayUrl(self.bvid, cid)
+      }).then(function (play) {
+        if (gen !== self.generation || !play) return
+        if (play.duration > 0) self.durMs = play.duration
+        self.openStream(play.url, gen)
+      }).catch(function (err) {
+        if (gen !== self.generation) return
+        self.statusText = err && err.message ? err.message : String(err)
+        self.playing = false
+        self.showBar()
+      })
     },
 
-    openStream: function (url) {
+    openStream: function (url, gen) {
+      if (gen !== this.generation) return
       try {
-        // rect 为逻辑坐标 x,y,w,h; 原生层完成 LOGIC->PHYS 的 KMS 变换
-        player.open(url, '0,44,960,126')
-        this.opened = true
+        // rect 默认值定义在 services/player.js (logical 坐标, 原生层负责换算到 KMS)
         this.statusText = '缓冲中…'
+        player.open(url)
+        this.opened = true
         player.start()
         this.playing = true
         this.startPolling()
@@ -191,69 +270,66 @@ export default {
       } catch (e) {
         this.statusText = '打开失败: ' + (e && e.message ? e.message : String(e))
         this.playing = false
+        this.opened = false
+        this.showBar()
       }
     },
 
-    // ---------- 原生状态 (stateChanged 信号转发) ----------
+    // ---------------- 原生状态回调 ----------------
     onNativeState: function (state) {
-      var self = this
-      if (!self.$page) return
+      if (!this.$page) return
       var s = String(state || '').toLowerCase()
-      console.log('[player]' + ' stateChanged: ' + s)
-      if (s.indexOf('error') === 0 || s.indexOf('err') === 0) {
-        self.statusText = '播放错误: ' + state
-        self.playing = false
-        self.showBar()
+      console.log('[player] stateChanged: ' + s)
+      if (s.indexOf('err') === 0) {
+        this.statusText = '播放错误: ' + state
+        this.playing = false
+        this.stopPolling()
+        this.showBar()
         return
       }
-      if (s === 'eos' || s === 'ended' || s.indexOf('eos') >= 0) {
-        self.statusText = '播放结束'
-        self.playing = false
-        self.stopPolling()
-        self.showBar()
+      if (s.indexOf('eos') >= 0 || s.indexOf('ended') >= 0) {
+        this.statusText = '播放结束'
+        this.playing = false
+        this.stopPolling()
+        this.showBar()
         return
       }
-      if (s.indexOf('play') >= 0 || s.indexOf('playing') >= 0) {
-        self.playing = true
-        if (self.statusText !== '') self.statusText = ''
-        self.startPolling()
-        self.scheduleHideBar()
+      if (s.indexOf('play') >= 0) {
+        this.playing = true
+        if (this.statusText !== '') this.statusText = ''
+        this.startPolling()
+        this.scheduleHideBar()
         return
       }
       if (s.indexOf('pause') >= 0) {
-        self.playing = false
-        self.showBar()
+        this.playing = false
+        this.showBar()
         return
       }
-      // ready/opening 等过渡状态不改变界面文字；
-      // duration/closed 等原生事件不显示，避免屏幕中间闪出英文
+      // ready/buffering/loading 等过渡态只在尚未开播时显示为加载中;
+      // duration/closed 等事件不落界面, 避免屏幕中间闪英文
       if (s === 'ready' || s === 'buffering' || s === 'loading') {
-        if (!self.playing) self.statusText = '加载中…'
+        if (!this.playing) this.statusText = '加载中…'
       }
     },
 
-    pushState: function () {},
-
-    // ---------- 进度轮询 ----------
+    // ---------------- 进度轮询 ----------------
     startPolling: function () {
-      if (this._pollTimer) return
+      if (this.pollTimer != null || !this.opened) return
       var self = this
-      this._pollTimer = setInterval(function () {
+      this.pollTimer = setTicker(this, POLL_MS, function () {
         if (!self.opened) return
-        var pos = player.getPosition()
         var dur = player.getDuration()
         if (dur > 0) self.durMs = dur
-        if (pos >= 0) self.curMs = pos
-      }, POLL_MS)
+        self.curMs = player.getPosition()
+      })
     },
     stopPolling: function () {
-      if (this._pollTimer) {
-        clearInterval(this._pollTimer)
-        this._pollTimer = null
-      }
+      clearTicker(this, this.pollTimer)
+      this.pollTimer = null
     },
 
-    // ---------- 控制条显隐 ----------
+    // ---------------- 控制条显隐 ----------------
     showBar: function () {
       this.barVisible = true
       this.cancelHideBar()
@@ -271,19 +347,17 @@ export default {
       this.cancelHideBar()
       if (!this.playing) return
       var self = this
-      this._hideTimer = setTimeout(function () {
-        self._hideTimer = null
+      this.hideTimer = setTimer(this, BAR_HIDE_MS, function () {
+        self.hideTimer = null
         if (self.playing) self.barVisible = false
-      }, BAR_HIDE_MS)
+      })
     },
     cancelHideBar: function () {
-      if (this._hideTimer) {
-        clearTimeout(this._hideTimer)
-        this._hideTimer = null
-      }
+      clearTimer(this, this.hideTimer)
+      this.hideTimer = null
     },
 
-    // ---------- 播放控制 ----------
+    // ---------------- 播放控制 ----------------
     togglePlay: function () {
       if (!this.opened) return
       this.showBar()
@@ -296,67 +370,46 @@ export default {
           this.playing = true
           if (this.statusText === '播放结束') this.statusText = ''
           this.startPolling()
+          this.scheduleHideBar()
         }
       } catch (e) {
         this.statusText = '控制失败: ' + (e && e.message ? e.message : String(e))
       }
     },
 
-    seekBack: function () {
-      this.seekBy(-SEEK_STEP_MS)
-    },
-    seekForward: function () {
-      this.seekBy(SEEK_STEP_MS)
-    },
+    seekBack: function () { this.seekBy(-SEEK_STEP_MS) },
+    seekForward: function () { this.seekBy(SEEK_STEP_MS) },
     seekBy: function (deltaMs) {
       if (!this.opened) return
       this.showBar()
-      var target = player.getPosition() + deltaMs
-      var dur = this.durMs || player.getDuration()
-      if (dur > 0 && target > dur) target = dur - 500
-      if (target < 0) target = 0
-      try {
-        player.seek(target)
-        this.curMs = target
-        this.statusText = ''
-      } catch (e) {
-        console.log('[player] seekBy error: ' + (e && e.message ? e.message : e))
-      }
+      this.applySeek(player.getPosition() + deltaMs)
     },
 
-    // 进度条分段点击: segIndex 0..23 -> 跳到 (i+0.5)/SEGCOUNT 处
+    // 进度条分段点击: segIndex 0..23 -> 跳到 (i+0.5)/SEG_COUNT 处
     seekBySeg: function (segIndex) {
       if (!this.opened) return
       this.showBar()
       var dur = this.durMs || player.getDuration()
       if (dur <= 0) return
-      var target = Math.round(((segIndex + 0.5) / SEG_COUNT) * dur)
+      this.applySeek(Math.round(((segIndex + 0.5) / SEG_COUNT) * dur))
+    },
+
+    applySeek: function (targetMs) {
+      var dur = this.durMs || player.getDuration()
+      var t = targetMs
+      if (dur > 0 && t > dur - 500) t = dur - 500
+      if (t < 0) t = 0
       try {
-        player.seek(target)
-        this.curMs = target
-        this.statusText = ''
+        player.seek(t)
+        this.curMs = t
+        if (this.statusText === '播放结束') this.statusText = ''
       } catch (e) {
-        console.log('[player] seekBySeg error: ' + (e && e.message ? e.message : e))
+        console.log('[player] seek error: ' + (e && e.message ? e.message : e))
       }
     },
 
     goBack: function () {
       this.$page.finish()
-    },
-
-    onUnload: function () {
-      // stop 顺序: 递增 generation -> 停 timer/订阅 -> 关闭 native 管道
-      this.generation++
-      this.stopPolling()
-      this.cancelHideBar()
-      try { player.offState(this.onNativeState) } catch (e) {}
-      if (this.opened) {
-        try {
-          player.close()
-        } catch (e) {}
-        this.opened = false
-        this.playing = false
-      }
     }
   }
 }
