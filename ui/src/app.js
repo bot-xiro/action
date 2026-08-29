@@ -12,6 +12,14 @@ try {
   console.warn('[app] bilinet import check failed: ' + (e && e.message ? e.message : e))
 }
 
+// 预热 gstplayer 原生模块 (模块加载时执行 gst_init 插件扫描, 移出 open 首帧路径)
+import * as gstmod from 'gstplayer'
+try {
+  console.log('[app] gstplayer=' + (typeof (gstmod && gstmod.gstPlayer)))
+} catch (e) {
+  console.warn('[app] gstplayer import check failed: ' + (e && e.message ? e.message : e))
+}
+
 class App extends $falcon.App {
   constructor() {
     super()

@@ -13,10 +13,11 @@
     "page10": "pages/page10/page10.vue",
     "page11": "pages/page11/page11.vue",
     "page12": "pages/page12/page12.vue",
-    "up": "pages/up/up.vue"
+    "up": "pages/up/up.vue",
+    "player": "pages/player/player.vue"
   },
   "options": {
-    "external": ["bilinet"],
+    "external": ["bilinet", "gstplayer"],
     "style": {
       "lessPaths": ["styles"]
     }

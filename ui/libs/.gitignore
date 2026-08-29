@@ -1,1 +1,2 @@
 *.so
+!libjsapi_gstplayer.so

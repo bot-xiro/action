@@ -185,6 +185,36 @@ function formatDuration(sec) {
   return m + ':' + (r < 10 ? '0' : '') + r
 }
 
+/**
+ * 获取视频播放地址 (x/player/playurl, MP4 durl 形态, 供 gstplayer 硬解播放)
+ * @param {string} bvid
+ * @param {number} cid
+ * @returns {Promise<{url:string, duration:number}>} duration 为毫秒 (timelength)
+ */
+export async function getPlayUrl(bvid, cid) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
+  // 播放地址 10 分钟内有效, 同参数缓存
+  const ckey = 'playurl:' + bvid + ':' + cid
+  const cached = cacheGet(ckey, 600000)
+  if (cached) return cached
+  const url = 'https://api.bilibili.com/x/player/playurl?bvid=' + encodeURIComponent(bvid)
+    + '&cid=' + encodeURIComponent(cid) + '&qn=32&fnval=0&fnver=0&fourk=0'
+  const body = getJson(url, 15)
+  if (body.code !== 0 || !body.data) {
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('播放地址接口错误 code=' + body.code))
+  }
+  const durl = body.data.durl || []
+  if (durl.length === 0 || !durl[0].url) throw new Error('没有可用的 MP4 播放地址')
+  let playUrl = durl[0].url
+  if (playUrl.indexOf('//') === 0) playUrl = 'https:' + playUrl
+  // gstplayer 的 souphttpsrc 走 TLS, 尽量使用 https 直连地址
+  if (playUrl.indexOf('http://') === 0) playUrl = 'https://' + playUrl.substring(7)
+  const out = { url: playUrl, duration: Number(body.data.timelength) || 0 }
+  cacheSet(ckey, out)
+  return out
+}
+
 // B站图片服务按需裁切 (大幅缩短列表首次渲染的下载+解码耗时)
 function thumb(url, w, h) {
   if (!url) return ''
@@ -304,7 +334,7 @@ export async function getVideoDetail(bvid) {
     mid: (d.owner && d.owner.mid) || 0,
     // 分 P (同稿件多段)
     pages: (d.pages || []).map(function (p) {
-      return { page: p.page || 0, part: p.part || '', duration: formatDuration(p.duration) }
+      return { page: p.page || 0, cid: p.cid || 0, part: p.part || '', duration: formatDuration(p.duration) }
     }),
     // 合集 (不同稿件聚合)
     season: d.ugc_season ? {
