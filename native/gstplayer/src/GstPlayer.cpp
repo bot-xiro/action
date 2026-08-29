@@ -44,11 +44,14 @@ public:
     GstPlayer()
     {
         GP_LOG("GstPlayer ctr (process-backed)");
+        // 守护进程退出后向已关闭管道写 QUERY 会触发 SIGPIPE 终止宿主进程
+        // (退出到一半整机看门狗重启的常见根因), 宿主层显式忽略.
+        signal(SIGPIPE, SIG_IGN);
     }
     ~GstPlayer()
     {
         GP_LOG("GstPlayer dtr");
-        stopDaemonLocked();
+        stopDaemon();
     }
 
     void open(JQFunctionInfo& info)
@@ -101,8 +104,7 @@ public:
             return;
         }
 
-        std::lock_guard<std::mutex> lock(m_lock);
-        stopDaemonLocked();
+        stopDaemon();   // 幂等停旧守护进程 (无锁 join 版本)
 
         int inPipe[2];   // 我们写 -> 子进程 stdin
         int outPipe[2];  // 子进程 stdout -> 我们读
@@ -150,9 +152,29 @@ public:
     void close(JQFunctionInfo&)
     {
         GP_LOG("close");
-        std::lock_guard<std::mutex> lock(m_lock);
-        stopDaemonLocked();
+        stopDaemon();   // 不在 m_lock 下 join 读写线程, 见 stopDaemon 注释
         emitState("closed");
+    }
+
+    void setRect(JQFunctionInfo& info)
+    {
+        if (info.Length() < 1 || !JS_IsString(info[0])) {
+            info.GetReturnValue().ThrowTypeError("setRect: rect required");
+            return;
+        }
+        const char* r = JS_ToCString(info.GetContext(), info[0]);
+        if (!r) return;
+        // rect 走命令管道, 禁止换行/控制字符避免注入多条指令
+        bool ok = true;
+        for (const char* p = r; *p; ++p) {
+            if (*p == '\n' || *p == '\r' || *p == '\t') { ok = false; break; }
+        }
+        char buf[64];
+        if (ok) {
+            snprintf(buf, sizeof(buf), "SETRECT %s\n", r);
+            sendCmd(buf);
+        }
+        JS_FreeCString(info.GetContext(), r);
     }
 
     void seek(JQFunctionInfo& info)
@@ -267,31 +289,42 @@ private:
         } catch (...) {}
     }
 
-    void stopDaemonLocked()
+    // 停掉守护进程. 绝不在调用方持有的 m_lock 内 join reader/poller:
+    // reader 线程可能正 emit 状态回 JS, 若 JS 线程持锁等待 join 而 emit
+    // 又要同线程派发, 两方互等即死锁 -> 退出卡死 -> 看门狗重启整机.
+    // 顺序: 跑锁外设置标志 -> 闭 stdin (daemon teardown, ~1.5s 超时强杀)
+    //       -> 闭 stdout -> join.
+    void stopDaemon()
     {
         m_running = false;
-        if (m_cmdFd >= 0) {
-            // 优先闭合 stdin: 守护进程收到 EOF 主动 teardown+退出
-            ::close(m_cmdFd);
-            m_cmdFd = -1;
+        {
+            std::lock_guard<std::mutex> lock(m_lock);
+            if (m_cmdFd >= 0) { ::close(m_cmdFd); m_cmdFd = -1; }
         }
-        if (m_pid > 0) {
-            for (int i = 0; i < 30; i++) {  // 最多等 1.5s
-                int st = 0;
-                if (waitpid(m_pid, &st, WNOHANG) > 0) break;
-                usleep(50000);
+        {
+            std::lock_guard<std::mutex> lock(m_lock);
+            if (m_pid > 0) {
+                for (int i = 0; i < 30; i++) {
+                    if (waitpid(m_pid, NULL, WNOHANG) > 0) break;
+                    usleep(50000);
+                }
+                if (waitpid(m_pid, NULL, WNOHANG) <= 0) {
+                    GP_LOG("daemon alive after EOF, SIGKILL pid=%d", (int)m_pid);
+                    kill(m_pid, SIGKILL);
+                    waitpid(m_pid, NULL, 0);
+                }
+                m_pid = -1;
             }
-            int st = 0;
-            if (waitpid(m_pid, &st, WNOHANG) <= 0) {
-                GP_LOG("daemon alive after EOF, SIGKILL pid=%d", (int)m_pid);
-                kill(m_pid, SIGKILL);
-                waitpid(m_pid, &st, 0);
-            }
-            m_pid = -1;
         }
-        if (m_outFd >= 0) { ::close(m_outFd); m_outFd = -1; }
-        if (m_reader.joinable() && std::this_thread::get_id() != m_reader.get_id()) m_reader.join();
-        if (m_poller.joinable() && std::this_thread::get_id() != m_poller.get_id()) m_poller.join();
+        {
+            std::lock_guard<std::mutex> lock(m_lock);
+            if (m_outFd >= 0) { ::close(m_outFd); m_outFd = -1; }
+        }
+        // reader 可能正阻塞在 stateChanged.emit (向 JS 线程投递); 若 JS 线程在
+        // close()->join 里等它就互锁. detach 替代 join, 靠 m_running/fd 关闭让任务
+        // 自然结束 (GstPlayer 是单例且生命周期贯穿进程, detach 无悬挂对象风险).
+        if (m_reader.joinable() && std::this_thread::get_id() != m_reader.get_id()) m_reader.detach();
+        if (m_poller.joinable() && std::this_thread::get_id() != m_poller.get_id()) m_poller.detach();
     }
 
     std::mutex m_lock;
@@ -323,6 +356,7 @@ static JSValue createGstPlayer(JQModuleEnv* env)
     tpl->SetProtoMethod("resume", &GstPlayer::resume);
     tpl->SetProtoMethod("close", &GstPlayer::close);
     tpl->SetProtoMethod("seek", &GstPlayer::seek);
+    tpl->SetProtoMethod("setRect", &GstPlayer::setRect);
     tpl->SetProtoMethod("getPosition", &GstPlayer::getPosition);
     tpl->SetProtoMethod("getDuration", &GstPlayer::getDuration);
     tpl->InstanceTemplate()->Set("stateChanged", &GstPlayer::stateChanged);

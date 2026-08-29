@@ -36,12 +36,23 @@ function toMs(v) {
   return n
 }
 
+// 视频显示区域 (逻辑坐标 960x266). 窗口态让出顶栏(44)与底部控制条(44);
+// 控制条隐藏时由 setRect 切到整屏. KMS 平面在 UI 层之上 -> 视频区不能叠交互控件
+export const RECT_WINDOW = '0,44,960,178'
+export const RECT_FULL = '0,0,960,266'
+
 export function open(url, rect) {
   // 本仓库自研 native/gstplayer: open(uri, rect?)  rect="x,y,w,h" 逻辑坐标
-  // 默认值让出顶栏(44px)与底部控制条(96px)区域, 避免 KMS 视频平面盖住控件
-  const r = rect || '0,44,960,126'
+  const r = rect || RECT_WINDOW
   console.log(LOG + 'open url(前96)=' + String(url).substring(0, 96) + ' rect=' + r)
   gstPlayer.open(String(url), r)
+}
+
+export function setRect(rect) {
+  if (gstPlayer && typeof gstPlayer.setRect === 'function') {
+    console.log(LOG + 'setRect ' + rect)
+    gstPlayer.setRect(String(rect))
+  }
 }
 
 export function start() {

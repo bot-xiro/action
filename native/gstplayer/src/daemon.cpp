@@ -2,7 +2,7 @@
 //
 // 协议 (全文本行协议, 一行一条):
 //   启动:   gstplayerd <uri> <rect>
-//   stdin:  START | PAUSE | SEEK <ms> | QUERY | CLOSE
+//   stdin:  START | PAUSE | SEEK <ms> | SETRECT <x,y,w,h> | QUERY | CLOSE
 //   stdout: S <state>              状态事件 (opening/play/pause/ready/eos/closed/error: ...)
 //           P <posMs> <durMs>      QUERY 应答
 //           L <text>               日志回声
@@ -52,6 +52,8 @@ int main(int argc, char** argv)
             core.pause();
         } else if (strncmp(p, "SEEK ", 5) == 0) {
             core.seekMs(atof(p + 5));
+        } else if (strncmp(p, "SETRECT ", 8) == 0) {
+            core.setRect(p + 8);
         } else if (strcmp(p, "QUERY") == 0) {
             printf("P %.0f %.0f\n", core.positionMs(), core.durationMs());
             fflush(stdout);

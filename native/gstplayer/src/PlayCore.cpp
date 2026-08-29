@@ -27,12 +27,19 @@ static const int KMS_PLANE_ID = 76;
 // 逻辑坐标 (x,y,w,h) -> 物理像素矩形; direction=270 时逻辑轴与物理轴互换
 void gplayerLogicToPhys(int lx, int ly, int lw, int lh, int& px, int& py, int& pw, int& ph)
 {
-    const double sw = (double)PANEL_W / LOGIC_H;
-    const double sh = (double)PANEL_H / LOGIC_W;
-    px = (int)((LOGIC_H - (ly + lh)) * sw);
-    py = (int)(lx * sh);
-    pw = (int)(lh * sw);
-    ph = (int)(lw * sh);
+    // 逻辑 960x266 横屏 → 物理 480x960 竖屏 (direction=270).
+    // 真机锚点 (references/设备ADB手册 附录B):
+    //   触控坐标  touchX = logicalY + 107  (YOFFSET=107: 266 行居中于物理 480 行)
+    //             touchY = 959 - logicalX
+    // 视频 content 需让 KMS 看到的矩形落在同一坐标系上:
+    //   面板横轴(物理x) ← 逻辑竖轴(逻辑y), 加 107 偏移;
+    //   面板竖轴(物理y) ← 逻辑横轴(逻辑x), 镜像翻转.
+    // 顶点映射 (0,0)→(107, 959), (960,266)→(373, 0).
+    const int YOFF = 107;
+    px = ly + YOFF;            // 逻辑 y → 物理 x (同向)
+    py = (PANEL_H - 1) - (lx + lw - 1);  // 逻辑 x 右端 → 物理 y 顶端
+    pw = lh;
+    ph = lw;
     if (px < 0) px = 0;
     if (py < 0) py = 0;
     if (pw <= 0) pw = 1;
@@ -211,7 +218,11 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
                !!queueV, !!parse, !!dec, !!flip, !!conv, !!queueV2, !!sink);
         return false;
     }
-    g_object_set(G_OBJECT(flip), "method", 4 /* clockwise */, NULL);
+    // gst-1.x videoflip method 枚举: 0 identity, 1 90r, 2 180, 3 90l, 4 horiz, 5 vert ...
+    // 之前用 4 (横向镜像, 不旋转) 是错项: 视频只能按面板原生方向 (竖屏) 看.
+    // 竖屏面板逻辑->物理映射 (px=ly+107, py=959-lx) 要求内容旋转 90l (逆时针):
+    //   画面 up 指向 -phys_x (UI 正上方).
+    g_object_set(G_OBJECT(flip), "method", 3 /* 90l counter-clockwise */, NULL);
     int lx = 0, ly = 0, lw = LOGIC_W, lh = LOGIC_H;
     int r[4];
     if (parseRect(m_rectStr, r)) { lx = r[0]; ly = r[1]; lw = r[2]; lh = r[3]; }
@@ -273,9 +284,31 @@ unsigned int PlayCore::capsProbe(GstPad*, GstPadProbeInfo* pi, void* userData)
     int w = 0, h = 0;
     if (gst_structure_get_int(st, "width", &w) && gst_structure_get_int(st, "height", &h) &&
         w > 0 && h > 0) {
-        static_cast<PlayCore*>(userData)->fitVideoRect(w, h);
+        PlayCore* self = static_cast<PlayCore*>(userData);
+        self->m_videoW = w; self->m_videoH = h;
+        self->fitVideoRect(w, h);
     }
     return GST_PAD_PROBE_OK;
+}
+
+// 运行时切换显示区域 (控制条显隐驱动窗口/全屏切换). 立即按已知分辨率拟合.
+void PlayCore::setRect(const std::string& rect)
+{
+    // rect 只接受 4 个整数的白名单格式
+    int r[4];
+    if (!parseRect(rect, r)) {
+        GP_LOG("setRect invalid: %s", rect.c_str());
+        return;
+    }
+    int vw, vh;
+    {
+        std::lock_guard<std::mutex> lock(m_lock);
+        m_rectStr = rect;
+        vw = m_videoW; vh = m_videoH;
+    }
+    GP_LOG("setRect %s (video %dx%d)", rect.c_str(), vw, vh);
+    // fitVideoRect 内部自取 m_lock, 这里不能持有锁再调
+    if (vw > 0 && vh > 0) fitVideoRect(vw, vh);
 }
 
 void PlayCore::fitVideoRect(int vw, int vh)

@@ -19,7 +19,10 @@ typedef struct _GstPadProbeInfo GstPadProbeInfo;
 namespace gstplayer {
 
 // 设备几何 (youdao-rk3562-melon profile):
-// 面板 DSI-1 480x960, Falcon 逻辑 960x266, direction 270, KMS plane 76
+// 面板 DSI-1 480x960, Falcon 逻辑 960x266, direction 270, KMS plane 76.
+// 逻辑->物理映射以真机触控映射为锚点 (见 references 设备 COS 手册附录B):
+//   touchX = displayY + 107,  touchY = 959 - displayX
+// 即逻辑屏幕是物理面板上 480x960 旋转 270 后、纵向裁出 266 的一条带 (居中于 y=107..372).
 void gplayerLogicToPhys(int lx, int ly, int lw, int lh, int& px, int& py, int& pw, int& ph);
 
 // kmssink render-rectangle 在本设备固件上是 GST_TYPE_ARRAY of gint (write-only),
@@ -44,6 +47,8 @@ public:
     double positionMs();
     double durationMs();
     void close();  // 幂等
+    // 更新视频显示区域 (逻辑坐标 "x,y,w,h"), 已有分辨率时立即按宽高比拟合
+    void setRect(const std::string& rect);
 
 private:
     static void onDemuxPadAdded(GstElement* demux, GstPad* pad, void* userData);
@@ -68,6 +73,8 @@ private:
     GstElement* m_kmsSink;    // 弱引用, 生命周期属于 m_pipeline
     GstElement* m_audioTail[4];
     std::string m_rectStr;
+    int m_videoW;             // 最近一次解码器报告的源分辨率 (供 setRect 重新拟合)
+    int m_videoH;
     EventFn m_eventFn;
 };
 

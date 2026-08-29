@@ -16,8 +16,17 @@
         <text class="status">{{ statusText }}</text>
       </div>
 
-      <!-- 底部控制区 -->
+      <!-- 底部控制条: 单行 44px, 让视频区尽量大 (窗口态视频=0,44,960,178) -->
       <div v-if="barVisible" class="ctrl">
+        <div class="btn btn-mini" @click="seekBack">
+          <text class="btn-text">«10s</text>
+        </div>
+        <div class="btn btn-main" @click="togglePlay">
+          <text class="btn-text">{{ playing ? '❚❚' : '▶' }}</text>
+        </div>
+        <div class="btn btn-mini" @click="seekForward">
+          <text class="btn-text">10s»</text>
+        </div>
         <!-- 进度条: 底部为按 width% 渲染的播放位置, 上面叠 N 个隐形点击分段实现点击调节 -->
         <div class="seek">
           <div class="track">
@@ -27,21 +36,8 @@
           <div class="segs">
             <div v-for="seg in segList" :key="seg" class="seg" @click="seekBySeg(seg)"></div>
           </div>
-          <text class="time">{{ curText }} / {{ durText }}</text>
         </div>
-
-        <!-- 播放控制按钮 -->
-        <div class="btns">
-          <div class="btn" @click="seekBack">
-            <text class="btn-text">« 10s</text>
-          </div>
-          <div class="btn btn-main" @click="togglePlay">
-            <text class="btn-text">{{ playing ? '❚❚ 暂停' : '▶ 播放' }}</text>
-          </div>
-          <div class="btn" @click="seekForward">
-            <text class="btn-text">10s »</text>
-          </div>
-        </div>
+        <text class="time">{{ curText }}/{{ durText }}</text>
       </div>
     </div>
   </div>
@@ -190,7 +186,7 @@ export default {
         try { player.pause() } catch (e) {}
         this.playing = false
       }
-      this.barVisible = true
+      this.showBar()
     },
 
     onUnload: function () {
@@ -332,16 +328,23 @@ export default {
     // ---------------- 控制条显隐 ----------------
     showBar: function () {
       this.barVisible = true
+      // 控制条显示时视频收窄回窗口态, 不盖住控件
+      if (this.opened) player.setRect(player.RECT_WINDOW)
       this.cancelHideBar()
       if (this.playing) this.scheduleHideBar()
     },
     toggleBar: function () {
       if (this.barVisible) {
-        this.cancelHideBar()
-        this.barVisible = false
+        this.hideBar()
       } else {
         this.showBar()
       }
+    },
+    hideBar: function () {
+      this.cancelHideBar()
+      this.barVisible = false
+      // 控制条隐藏: 视频提到全屏 (KMS 平面在 UI 之上, 无需预留按钮区)
+      if (this.opened) player.setRect(player.RECT_FULL)
     },
     scheduleHideBar: function () {
       this.cancelHideBar()
@@ -349,7 +352,7 @@ export default {
       var self = this
       this.hideTimer = setTimer(this, BAR_HIDE_MS, function () {
         self.hideTimer = null
-        if (self.playing) self.barVisible = false
+        if (self.playing) self.hideBar()
       })
     },
     cancelHideBar: function () {
@@ -467,83 +470,77 @@ export default {
 }
 .ctrl {
   width: 960px;
-  height: 96px;
+  height: 44px;
+  padding-left: 10px;
+  padding-right: 10px;
   background-color: rgba(0, 0, 0, 0.55);
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
+}
+.btn {
+  height: 32px;
+  margin-right: 8px;
+  border-radius: 16px;
+  background-color: rgba(255, 255, 255, 0.18);
   justify-content: center;
+  align-items: center;
+}
+.btn-mini {
+  width: 66px;
+}
+.btn-main {
+  width: 74px;
+  background-color: #fb7299;
+}
+.btn-text {
+  font-size: 20px;
+  color: #ffffff;
 }
 .seek {
-  width: 920px;
-  height: 34px;
-  margin-left: 20px;
+  width: 500px;
+  height: 44px;
   flex-direction: row;
   align-items: center;
 }
 .track {
   position: absolute;
-  left: 20px;
-  top: 12px;
-  width: 760px;
-  height: 10px;
-  border-radius: 5px;
+  left: 0px;
+  top: 18px;
+  width: 500px;
+  height: 8px;
+  border-radius: 4px;
   background-color: rgba(255, 255, 255, 0.25);
 }
 .fill {
   position: absolute;
   left: 0px;
   top: 0px;
-  height: 10px;
-  border-radius: 5px;
+  height: 8px;
+  border-radius: 4px;
   background-color: #fb7299;
 }
 .thumb {
   position: absolute;
   top: -4px;
-  width: 18px;
-  height: 18px;
-  margin-left: -9px;
-  border-radius: 9px;
+  width: 16px;
+  height: 16px;
+  margin-left: -8px;
+  border-radius: 8px;
   background-color: #ffffff;
 }
 .segs {
-  width: 760px;
-  height: 34px;
+  width: 500px;
+  height: 44px;
   flex-direction: row;
 }
 .seg {
-  width: 31.66px;
-  height: 34px;
+  width: 20.83px;
+  height: 44px;
 }
 .time {
-  font-size: 18px;
+  font-size: 16px;
   color: #ffffff;
-  width: 150px;
-  margin-left: 10px;
-}
-.btns {
-  width: 920px;
-  height: 52px;
-  margin-left: 20px;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-}
-.btn {
-  width: 150px;
-  height: 42px;
-  margin-left: 30px;
-  margin-right: 30px;
-  border-radius: 21px;
-  background-color: rgba(255, 255, 255, 0.18);
-  justify-content: center;
-  align-items: center;
-}
-.btn-main {
-  width: 200px;
-  background-color: #fb7299;
-}
-.btn-text {
-  font-size: 22px;
-  color: #ffffff;
+  width: 160px;
+  margin-left: 8px;
 }
 </style>
