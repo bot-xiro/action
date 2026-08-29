@@ -37,11 +37,10 @@ function toMs(v) {
 }
 
 export function open(url, rect) {
-  // open(uri, audio, rect, fill): 安卓真机原生日志形态
-  //   [gstplayer] open uri=%s audio=%d rect=%s fill=%s
+  // 本仓库自研 native/gstplayer: open(uri, rect?)  rect="x,y,w,h" 逻辑坐标
   const r = rect || '0,0,960,266'
   console.log(LOG + 'open url(前96)=' + String(url).substring(0, 96) + ' rect=' + r)
-  gstPlayer.open(String(url), 1, r, 'contain')
+  gstPlayer.open(String(url), r)
 }
 
 export function start() {

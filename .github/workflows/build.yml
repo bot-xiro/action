@@ -40,6 +40,36 @@ jobs:
           aarch64-linux-gnu-readelf -h ui/libs/libjsapi_bilinet.so | grep -E 'Class|Machine'
           aarch64-linux-gnu-nm -D ui/libs/libjsapi_bilinet.so | grep custom_init_jsapis
 
+      - name: Install aarch64 GStreamer dev (multiarch)
+        run: |
+          # arm64 gstreamer/glib 开发包与设备 (gnueabihf=glibc buildroot, gst 1.22) ABI 兼容;
+          # Ubuntu jammy 为 glib 2.72/gst 1.20, 基础 API 向下兼容, 运行时链接设备 /usr/lib 同名库
+          sudo dpkg --add-architecture arm64
+          sudo sed -i -e 's|^deb http|deb [arch=amd64] http|' /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main universe" | sudo tee /etc/apt/sources.list.d/arm64-ports.list
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libglib2.0-dev:arm64 libgstreamer1.0-dev:arm64
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Cross-compile libjsapi_gstplayer.so (aarch64)
+        env:
+          PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig
+          PKG_CONFIG_LIBDIR: /usr/lib/aarch64-linux-gnu/pkgconfig
+        run: |
+          cmake -B build/gstplayer \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            native/gstplayer
+          cmake --build build/gstplayer --config Release --parallel $(nproc)
+          cp -f build/gstplayer/libjsapi_gstplayer.so ui/libs/libjsapi_gstplayer.so
+          file ui/libs/libjsapi_gstplayer.so
+          aarch64-linux-gnu-readelf -h ui/libs/libjsapi_gstplayer.so | grep -E 'Class|Machine'
+          aarch64-linux-gnu-readelf -d ui/libs/libjsapi_gstplayer.so | grep NEEDED
+          aarch64-linux-gnu-nm -D ui/libs/libjsapi_gstplayer.so | grep custom_init_jsapis
+
       - name: Setup Node.js 18
         uses: actions/setup-node@v4
         with:
