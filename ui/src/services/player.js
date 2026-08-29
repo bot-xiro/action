@@ -36,14 +36,15 @@ function toMs(v) {
   return n
 }
 
-// 视频显示区域 (逻辑坐标 960x266). 分层模型见 skill references/media-kms.md:
-// 视频平面 zpos=0 压到 UI 平面之下, 页面用 <hole> 把视频透出,
-// 控制条永远浮在视频上方, 从此视频不再按显隐切换尺寸.
-export const RECT_FULL = '0,0,960,266'
+// 视频显示区域 (逻辑坐标 960x266). 分层实测结论 (2026-08-30):
+// Esmart1 video plane 即使 zpos=0 也仍排在 UI 上面 (同 zpos 按 plane id
+// 定序, VOP2 实验证实), 做不到真正的 UI 浮层; 只能让出 UI 布局区域,
+// 即视频只渲染在 top 44..bottom 44 之间的带内. 带高 178px.
+export const RECT_BAND = '0,44,960,178'
 
 export function open(url, rect) {
   // 本仓库自研 native/gstplayer: open(uri, rect?)  rect="x,y,w,h" 逻辑坐标
-  const r = rect || RECT_FULL
+  const r = rect || RECT_BAND
   console.log(LOG + 'open url(前96)=' + String(url).substring(0, 96) + ' rect=' + r)
   gstPlayer.open(String(url), r)
 }

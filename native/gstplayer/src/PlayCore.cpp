@@ -12,9 +12,19 @@
 
 #include <gst/gst.h>
 #include <syslog.h>
+#include <cstdio>
 #include <cstring>
 
-#define GP_LOG(fmt, ...) syslog(LOG_ERR, "[gstplayer] " fmt, ##__VA_ARGS__)
+// 日志: syslog (设备侧可能没开 syslog 转发) + /tmp/gstplayerd.log 留档,
+// 便于查 probe/audio/state 问题 (媒体调试参考 skill: media-kms.md "独立日志").
+#define GP_LOG(fmt, ...) do { \
+    syslog(LOG_ERR, "[gstplayer] " fmt, ##__VA_ARGS__); \
+    FILE* _lf = fopen("/tmp/gstplayerd.log", "a"); \
+    if (_lf) { \
+        fprintf(_lf, "[gstplayer] " fmt "\n", ##__VA_ARGS__); \
+        fclose(_lf); \
+    } \
+} while (0)
 
 namespace gstplayer {
 
@@ -238,16 +248,10 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
         "can-scale", TRUE,
         "sync", TRUE,
         NULL);
-    // 分层 (skill media-kms.md): 视频平面必须低于 UI 主平面 (Esmart0 zpos=0).
-    // 实测不在启动状态下裸跑 gst-launch 看不到结论, 只能整链路改.
-    // kmssink 1.22 的 plane-properties 是 GstStructure, DRM "zpos" 是 range(int).
-    {
-        GstStructure* props = gst_structure_new("plane-properties",
-            "zpos", G_TYPE_INT, 0,
-            NULL);
-        g_object_set(G_OBJECT(sink), "plane-properties", props, NULL);
-        gst_structure_free(props);
-    }
+    // 分层实测结论 (2026-08-30): Esmart1-win0 平面即使把 zpos 设成 0 与主平面同值,
+    // VOP2 硬件仍以 plane 顺序排到 UI 之上 (plane-properties 能生效, 但级序按 plane id,
+    // 同 zpos 时 id 高者在上). 本固件上视频平面无法低于 UI, 只能靠"视频带上界让出
+    // UI 区域"来做播放器. 不再强行改 zpos.
     setRenderRect(sink, px, py, pw, ph);
     gst_bin_add_many(GST_BIN(m_pipeline), queueV, parse, dec, flip, conv, queueV2, sink, NULL);
     if (!gst_element_link_many(queueV, parse, dec, flip, conv, queueV2, sink, NULL)) {

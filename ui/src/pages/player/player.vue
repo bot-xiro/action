@@ -1,13 +1,12 @@
 <template>
   <div class="page">
-    <!-- hole: UI 层的透明洞, 视频平面 (zpos=0) 从下层通过它露出.
-         逻辑整屏 960x266; rects 见 services/player.js RECT_FULL -->
-    <hole class="hole"></hole>
-
-    <!-- 点击空白区域 显示/隐藏控制条; 控制条上按钮各自拦截, Falcon 点击不冒泡 -->
+    <!-- 分层实测: 本固件视频平面始终在 UI 之上 (改 plane-properties
+         zpos=0 也不能互换, 同 zpos 按 plane id 排序), 故布局让出
+         UI 区域而不是靠 hole/浮层: 顶部 44px 与底部 44px 布局区
+         留视频平面外的空间, 视频带 (44..222) 留给 KMS. -->
     <div class="stage" @click="toggleBar">
 
-      <!-- 顶栏: 返回 + 标题 (浮在视频上方) -->
+      <!-- 顶栏: 返回 + 标题 -->
       <div v-if="barVisible" class="top-bar">
         <div class="back" @click="goBack">
           <text class="back-text">‹ 返回</text>
@@ -15,12 +14,12 @@
         <text class="title">{{ titleText }}</text>
       </div>
 
-      <!-- 中央状态提示 (浮层) -->
+      <!-- 中央状态提示 -->
       <div v-if="statusText !== ''" class="center">
         <text class="status">{{ statusText }}</text>
       </div>
 
-      <!-- 底部控制条: 单行 44px, 浮在视频上方 -->
+      <!-- 底部控制条: 单行 44px -->
       <div v-if="barVisible" class="ctrl">
         <div class="btn btn-mini" @click="seekBack">
           <text class="btn-text">«10s</text>
@@ -425,26 +424,14 @@ export default {
   height: 266px;
   background-color: #000000;
 }
-/* <hole>: UI 帧缓冲上的透明区域, 下层 video plane 内容从此透出.
-   必须与 video KMS rect (services/player.js RECT_FULL 逻辑坐标) 对齐. */
-.hole {
-  position: absolute;
-  left: 0px;
-  top: 0px;
-  width: 960px;
-  height: 266px;
-}
 .stage {
-  position: absolute;
-  left: 0px;
-  top: 0px;
   width: 960px;
   height: 266px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 .top-bar {
-  position: absolute;
-  left: 0px;
-  top: 0px;
   width: 960px;
   height: 44px;
   flex-direction: row;
@@ -473,10 +460,6 @@ export default {
   overflow: hidden;
 }
 .center {
-  position: absolute;
-  left: 0px;
-  top: 100px;
-  width: 960px;
   height: 44px;
   align-items: center;
   justify-content: center;
@@ -486,9 +469,6 @@ export default {
   color: #e6a23c;
 }
 .ctrl {
-  position: absolute;
-  left: 0px;
-  top: 222px;
   width: 960px;
   height: 44px;
   padding-left: 10px;
