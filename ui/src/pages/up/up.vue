@@ -19,7 +19,7 @@
     </div>
 
     <scroller class="results" :style="scrollerStyle" scroll-direction="vertical" :show-scrollbar="true"
-              scrollEventInterval="100" @scroll="onScroll">
+              @scrollend="onScrollEnd">
       <div v-for="item in videos" :key="item.bvid" class="item" @click="openVideo(item)">
         <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
         <div class="meta2">
@@ -113,12 +113,13 @@ export default {
     },
 
     // 往上滑 (contentOffset.y 增大) 隐藏 UP 信息栏; 滑回顶部附近恢复
-    onScroll(e) {
+    // 用 scrollend 而非 scroll: 拖动中切换高度会让 scroller 布局重排, 偏移归零造成闪烁
+    onScrollEnd(e) {
       const y = (e && e.contentOffset && typeof e.contentOffset.y === 'number')
         ? e.contentOffset.y : 0
-      if (!this.infoCollapsed && y > 60) {
+      if (!this.infoCollapsed && y > 80) {
         this.infoCollapsed = true
-      } else if (this.infoCollapsed && y <= 30) {
+      } else if (this.infoCollapsed && y <= 40) {
         this.infoCollapsed = false
       }
     },
