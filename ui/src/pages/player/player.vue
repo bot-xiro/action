@@ -1,9 +1,13 @@
 <template>
   <div class="page">
+    <!-- hole: UI 层的透明洞, 视频平面 (zpos=0) 从下层通过它露出.
+         逻辑整屏 960x266; rects 见 services/player.js RECT_FULL -->
+    <hole class="hole"></hole>
+
     <!-- 点击空白区域 显示/隐藏控制条; 控制条上按钮各自拦截, Falcon 点击不冒泡 -->
     <div class="stage" @click="toggleBar">
 
-      <!-- 顶栏: 返回 + 标题 -->
+      <!-- 顶栏: 返回 + 标题 (浮在视频上方) -->
       <div v-if="barVisible" class="top-bar">
         <div class="back" @click="goBack">
           <text class="back-text">‹ 返回</text>
@@ -11,12 +15,12 @@
         <text class="title">{{ titleText }}</text>
       </div>
 
-      <!-- 中央状态提示 -->
+      <!-- 中央状态提示 (浮层) -->
       <div v-if="statusText !== ''" class="center">
         <text class="status">{{ statusText }}</text>
       </div>
 
-      <!-- 底部控制条: 单行 44px, 让视频区尽量大 (窗口态视频=0,44,960,178) -->
+      <!-- 底部控制条: 单行 44px, 浮在视频上方 -->
       <div v-if="barVisible" class="ctrl">
         <div class="btn btn-mini" @click="seekBack">
           <text class="btn-text">«10s</text>
@@ -328,8 +332,6 @@ export default {
     // ---------------- 控制条显隐 ----------------
     showBar: function () {
       this.barVisible = true
-      // 控制条显示时视频收窄回窗口态, 不盖住控件
-      if (this.opened) player.setRect(player.RECT_WINDOW)
       this.cancelHideBar()
       if (this.playing) this.scheduleHideBar()
     },
@@ -343,8 +345,7 @@ export default {
     hideBar: function () {
       this.cancelHideBar()
       this.barVisible = false
-      // 控制条隐藏: 视频提到全屏 (KMS 平面在 UI 之上, 无需预留按钮区)
-      if (this.opened) player.setRect(player.RECT_FULL)
+      // 视频始终全屏 (UI 在视频平面上方, 由 <hole> 透出), 控制条只控制自己显隐
     },
     scheduleHideBar: function () {
       this.cancelHideBar()
@@ -424,14 +425,26 @@ export default {
   height: 266px;
   background-color: #000000;
 }
-.stage {
+/* <hole>: UI 帧缓冲上的透明区域, 下层 video plane 内容从此透出.
+   必须与 video KMS rect (services/player.js RECT_FULL 逻辑坐标) 对齐. */
+.hole {
+  position: absolute;
+  left: 0px;
+  top: 0px;
   width: 960px;
   height: 266px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+}
+.stage {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 960px;
+  height: 266px;
 }
 .top-bar {
+  position: absolute;
+  left: 0px;
+  top: 0px;
   width: 960px;
   height: 44px;
   flex-direction: row;
@@ -460,6 +473,10 @@ export default {
   overflow: hidden;
 }
 .center {
+  position: absolute;
+  left: 0px;
+  top: 100px;
+  width: 960px;
   height: 44px;
   align-items: center;
   justify-content: center;
@@ -469,6 +486,9 @@ export default {
   color: #e6a23c;
 }
 .ctrl {
+  position: absolute;
+  left: 0px;
+  top: 222px;
   width: 960px;
   height: 44px;
   padding-left: 10px;

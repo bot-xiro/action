@@ -238,6 +238,16 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
         "can-scale", TRUE,
         "sync", TRUE,
         NULL);
+    // 分层 (skill media-kms.md): 视频平面必须低于 UI 主平面 (Esmart0 zpos=0).
+    // 实测不在启动状态下裸跑 gst-launch 看不到结论, 只能整链路改.
+    // kmssink 1.22 的 plane-properties 是 GstStructure, DRM "zpos" 是 range(int).
+    {
+        GstStructure* props = gst_structure_new("plane-properties",
+            "zpos", G_TYPE_INT, 0,
+            NULL);
+        g_object_set(G_OBJECT(sink), "plane-properties", props, NULL);
+        gst_structure_free(props);
+    }
     setRenderRect(sink, px, py, pw, ph);
     gst_bin_add_many(GST_BIN(m_pipeline), queueV, parse, dec, flip, conv, queueV2, sink, NULL);
     if (!gst_element_link_many(queueV, parse, dec, flip, conv, queueV2, sink, NULL)) {
