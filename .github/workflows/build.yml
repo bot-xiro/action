@@ -45,8 +45,13 @@ jobs:
           # arm64 gstreamer/glib 开发包与设备 (gnueabihf=glibc buildroot, gst 1.22) ABI 兼容;
           # Ubuntu jammy 为 glib 2.72/gst 1.20, 基础 API 向下兼容, 运行时链接设备 /usr/lib 同名库
           sudo dpkg --add-architecture arm64
-          sudo sed -i -e 's|^deb http|deb [arch=amd64] http|' /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main universe" | sudo tee /etc/apt/sources.list.d/arm64-ports.list
+          sudo rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
+          sudo tee /etc/apt/sources.list > /dev/null <<'EOF'
+deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy main restricted universe multiverse
+deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy-updates main restricted universe multiverse
+deb [arch=amd64] http://security.ubuntu.com/ubuntu jammy-security main restricted universe multiverse
+deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse
+EOF
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libglib2.0-dev:arm64 libgstreamer1.0-dev:arm64
           sudo rm -rf /var/lib/apt/lists/*
