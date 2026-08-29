@@ -181,7 +181,7 @@ export default {
     openStream: function (url) {
       try {
         // rect 为逻辑坐标 x,y,w,h; 原生层完成 LOGIC->PHYS 的 KMS 变换
-        player.open(url, '0,0,960,266')
+        player.open(url, '0,44,960,126')
         this.opened = true
         this.statusText = '缓冲中…'
         player.start()
@@ -225,8 +225,11 @@ export default {
         self.showBar()
         return
       }
-      // ready/loading/buffering 等其他状态
-      if (s !== '') self.statusText = s
+      // ready/opening 等过渡状态不改变界面文字；
+      // duration/closed 等原生事件不显示，避免屏幕中间闪出英文
+      if (s === 'ready' || s === 'buffering' || s === 'loading') {
+        if (!self.playing) self.statusText = '加载中…'
+      }
     },
 
     pushState: function () {},

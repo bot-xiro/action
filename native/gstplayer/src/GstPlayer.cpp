@@ -250,6 +250,7 @@ private:
         gchar rectStr[64];
         snprintf(rectStr, sizeof(rectStr), "<%d,%d,%d,%d>", px, py, pw, ph);
         g_object_set(G_OBJECT(sink),
+            "driver-name", "rockchip",
             "plane-id", (gint64)KMS_PLANE_ID,
             "render-rectangle", rectStr,
             "can-scale", TRUE,
@@ -277,9 +278,54 @@ private:
         gst_element_sync_state_with_parent(conv);
         gst_element_sync_state_with_parent(queueV2);
         gst_element_sync_state_with_parent(sink);
+        m_kmsSink = sink;
+        // 解码源 caps 携带真实分辨率时, 按比例适配显示区域 (kmssink 无 keep-aspect-ratio)
+        GstPad* decSrc = gst_element_get_static_pad(dec, "src");
+        if (decSrc) {
+            gst_pad_add_probe(decSrc, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+                              &GstPlayer::capsProbe, this, NULL);
+            gst_object_unref(decSrc);
+        }
         m_videoLinked = true;
         GP_LOG("video branch linked");
         return true;
+    }
+
+    // 解码器 src caps 事件: 得到视频真实分辨率
+    static GstPadProbeReturn capsProbe(GstPad*, GstPadProbeInfo* info, gpointer userData)
+    {
+        GstEvent* ev = GST_PAD_PROBE_INFO_EVENT(info);
+        if (!ev || GST_EVENT_TYPE(ev) != GST_EVENT_CAPS) return GST_PAD_PROBE_OK;
+        GstCaps* caps = NULL;
+        gst_event_parse_caps(ev, &caps);
+        if (!caps || !gst_caps_is_fixed(caps)) return GST_PAD_PROBE_OK;
+        GstStructure* st = gst_caps_get_structure(caps, 0);
+        int w = 0, h = 0;
+        if (gst_structure_get_int(st, "width", &w) && gst_structure_get_int(st, "height", &h) && w > 0 && h > 0) {
+            static_cast<GstPlayer*>(userData)->fitVideoRect(w, h);
+        }
+        return GST_PAD_PROBE_OK;
+    }
+
+    // 在用户给的逻辑框内按视频宽高比居中
+    void fitVideoRect(int vw, int vh)
+    {
+        std::lock_guard<std::mutex> lock(m_lock);
+        if (!m_kmsSink) return;
+        int lx = 0, ly = 0, lw = LOGIC_W, lh = LOGIC_H;
+        int r[4];
+        if (!m_rectStr.empty() && parseRect(m_rectStr, r)) { lx = r[0]; ly = r[1]; lw = r[2]; lh = r[3]; }
+        double ar = (double)vw / (double)vh;
+        int fw = lw, fh = (int)(lw / ar + 0.5);
+        if (fh > lh) { fh = lh; fw = (int)(lh * ar + 0.5); }
+        int rx = lx + (lw - fw) / 2, ry = ly + (lh - fh) / 2;
+        int px, py, pw, ph;
+        logicToPhys(rx, ry, fw, fh, px, py, pw, ph);
+        gchar rectStr[64];
+        snprintf(rectStr, sizeof(rectStr), "<%d,%d,%d,%d>", px, py, pw, ph);
+        g_object_set(G_OBJECT(m_kmsSink), "render-rectangle", rectStr, NULL);
+        GP_LOG("fit rect video=%dx%d logic(%d,%d,%d,%d) phys(%d,%d,%d,%d)",
+               vw, vh, rx, ry, fw, fh, px, py, pw, ph);
     }
 
     // 音频: qtdemux pad -> queue -> decodebin -> audioconvert -> audioresample -> alsasink
@@ -350,6 +396,7 @@ private:
         m_rectStr = rect;
         m_videoLinked = false;
         m_audioLinked = false;
+        m_kmsSink = NULL;
         memset(m_audioTail, 0, sizeof(m_audioTail));
 
         GstElement* src = NULL;
@@ -480,6 +527,7 @@ private:
         if (m_pipeline) { gst_object_unref(m_pipeline); m_pipeline = NULL; }
         m_videoLinked = false;
         m_audioLinked = false;
+        m_kmsSink = NULL;
         memset(m_audioTail, 0, sizeof(m_audioTail));
         GP_LOG("teardown done");
     }
@@ -491,6 +539,7 @@ private:
     std::atomic<bool> m_running{ false };
     bool m_videoLinked = false;
     bool m_audioLinked = false;
+    GstElement* m_kmsSink = NULL; // 弱引用, 生命周期属于 m_pipeline
     GstElement* m_audioTail[4] = { NULL, NULL, NULL, NULL };
     std::string m_rectStr;
 };

@@ -38,7 +38,8 @@ function toMs(v) {
 
 export function open(url, rect) {
   // 本仓库自研 native/gstplayer: open(uri, rect?)  rect="x,y,w,h" 逻辑坐标
-  const r = rect || '0,0,960,266'
+  // 默认值让出顶栏(44px)与底部控制条(96px)区域, 避免 KMS 视频平面盖住控件
+  const r = rect || '0,44,960,126'
   console.log(LOG + 'open url(前96)=' + String(url).substring(0, 96) + ' rect=' + r)
   gstPlayer.open(String(url), r)
 }
