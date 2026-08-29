@@ -237,7 +237,7 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
     GstPad* decSrc = gst_element_get_static_pad(dec, "src");
     if (decSrc) {
         gst_pad_add_probe(decSrc, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
-                          &PlayCore::capsProbe, this, NULL);
+                          (GstPadProbeCallback)&PlayCore::capsProbe, this, NULL);
         gst_object_unref(decSrc);
     }
     m_videoLinked = true;
@@ -246,9 +246,8 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
 }
 
 // 解码器 src caps 事件: 得到视频真实分辨率, 按宽高比居中
-unsigned int PlayCore::capsProbe(GstPad*, void* info, void* userData)
+unsigned int PlayCore::capsProbe(GstPad*, GstPadProbeInfo* pi, void* userData)
 {
-    GstPadProbeInfo* pi = (GstPadProbeInfo*)info;
     GstEvent* ev = GST_PAD_PROBE_INFO_EVENT(pi);
     if (!ev || GST_EVENT_TYPE(ev) != GST_EVENT_CAPS) return GST_PAD_PROBE_OK;
     GstCaps* caps = NULL;

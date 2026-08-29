@@ -14,6 +14,7 @@ struct _GstPad;
 typedef struct _GstElement GstElement;
 typedef struct _GstBus GstBus;
 typedef struct _GstPad GstPad;
+typedef struct _GstPadProbeInfo GstPadProbeInfo;
 
 namespace gstplayer {
 
@@ -43,7 +44,7 @@ public:
 private:
     static void onDemuxPadAdded(GstElement* demux, GstPad* pad, void* userData);
     static void onAudioDecodePadAdded(GstElement* decode, GstPad* pad, void* userData);
-    static unsigned int capsProbe(GstPad* pad, void* info, void* userData); // GstPadProbeReturn
+    static unsigned int capsProbe(GstPad* pad, GstPadProbeInfo* info, void* userData); // GstPadProbeReturn
 
     bool buildPipeline(const std::string& uri, const std::string& rect);
     bool linkVideoBranch(GstPad* demuxPad);

@@ -17,6 +17,7 @@
 #include <errno.h>
 #include <poll.h>
 #include <signal.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <syslog.h>
@@ -108,20 +109,20 @@ public:
             // 子进程
             dup2(inPipe[0], 0);
             dup2(outPipe[1], 1);
-            close(inPipe[0]); close(inPipe[1]);
-            close(outPipe[0]); close(outPipe[1]);
+            ::close(inPipe[0]); ::close(inPipe[1]);
+            ::close(outPipe[0]); ::close(outPipe[1]);
             execl(daemon.c_str(), "gstplayerd", uri.c_str(), rect.c_str(), (char*)NULL);
             _exit(127);
         }
         if (pid < 0) {
             GP_LOG("fork failed errno=%d", errno);
-            close(inPipe[0]); close(inPipe[1]);
-            close(outPipe[0]); close(outPipe[1]);
+            ::close(inPipe[0]); ::close(inPipe[1]);
+            ::close(outPipe[0]); ::close(outPipe[1]);
             emitState("error: fork failed");
             return;
         }
-        close(inPipe[0]);
-        close(outPipe[1]);
+        ::close(inPipe[0]);
+        ::close(outPipe[1]);
         m_pid = pid;
         m_cmdFd = inPipe[1];
         m_outFd = outPipe[0];
@@ -263,7 +264,7 @@ private:
         m_running = false;
         if (m_cmdFd >= 0) {
             // 优先闭合 stdin: 守护进程收到 EOF 主动 teardown+退出
-            close(m_cmdFd);
+            ::close(m_cmdFd);
             m_cmdFd = -1;
         }
         if (m_pid > 0) {
@@ -280,7 +281,7 @@ private:
             }
             m_pid = -1;
         }
-        if (m_outFd >= 0) { close(m_outFd); m_outFd = -1; }
+        if (m_outFd >= 0) { ::close(m_outFd); m_outFd = -1; }
         if (m_reader.joinable() && std::this_thread::get_id() != m_reader.get_id()) m_reader.join();
         if (m_poller.joinable() && std::this_thread::get_id() != m_poller.get_id()) m_poller.join();
     }
