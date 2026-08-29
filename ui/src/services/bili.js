@@ -185,6 +185,15 @@ function formatDuration(sec) {
   return m + ':' + (r < 10 ? '0' : '') + r
 }
 
+// B站图片服务按需裁切 (大幅缩短列表首次渲染的下载+解码耗时)
+function thumb(url, w, h) {
+  if (!url) return ''
+  if (url.indexOf('//') === 0) url = 'https:' + url
+  // 已经是缩略尺寸的不重复追加
+  if (url.indexOf('@') > 0) return url
+  return url + '@' + w + 'w_' + h + 'h_1c.jpg'
+}
+
 function mapFeedItem(v) {
   let pic = v.pic || ''
   if (pic.indexOf('//') === 0) pic = 'https:' + pic
@@ -195,7 +204,7 @@ function mapFeedItem(v) {
     author: v.author || (v.owner && v.owner.name) || '',
     playText: formatPlay(v.play !== undefined ? v.play : (v.stat && v.stat.view)),
     duration: typeof v.duration === 'number' ? formatDuration(v.duration) : (v.duration || ''),
-    pic: pic
+    pic: thumb(pic, 400, 250)
   }
 }
 
@@ -244,7 +253,7 @@ export async function searchVideos(keyword, page) {
       author: item.author || '',
       playText: formatPlay(item.play),
       duration: item.duration || '',
-      pic: pic
+      pic: thumb(pic, 400, 250)
     })
   }
   cacheSet(ckey, videos)
@@ -281,7 +290,7 @@ export async function getVideoDetail(bvid) {
     bvid: d.bvid || bvid,
     aid: d.aid || 0,
     title: d.title || '',
-    pic: pic,
+    pic: thumb(pic, 640, 400),
     desc: d.desc || '',
     author: (d.owner && d.owner.name) || '',
     duration: formatDuration(d.duration),
@@ -371,7 +380,7 @@ export async function getUpInfo(mid) {
       mid: d.mid || mid,
       name: d.name || '',
       sign: d.sign || '',
-      face: face,
+      face: thumb(face, 96, 96),
       levelText: 'Lv' + (d.level !== undefined ? d.level : '?')
     }
     cacheSet('upinfo:' + mid, out)
@@ -394,7 +403,7 @@ export async function getUpInfo(mid) {
     mid: cd.mid || mid,
     name: cd.name || '',
     sign: cd.sign || '',
-    face: face,
+    face: thumb(face, 96, 96),
     levelText: 'Lv' + (lv !== undefined ? lv : '?')
   }
   cacheSet('upinfo:' + mid, cardOut)
@@ -442,7 +451,7 @@ export async function getUpVideos(mid, page) {
         author: v.author || '',
         playText: formatPlay(v.play),
         duration: v.length || '',
-        pic: pic
+        pic: thumb(pic, 400, 250)
       })
     }
     cacheSet(ckey, videos)
@@ -470,7 +479,7 @@ export async function getUpVideos(mid, page) {
       author: '',
       playText: formatPlay(v.stat && v.stat.view),
       duration: v.duration ? formatDuration(v.duration) : '',
-      pic: pic
+      pic: thumb(pic, 400, 250)
     })
   }
   cacheSet(ckey, videos2)

@@ -9,7 +9,7 @@
 
     <text v-if="upStatus !== ''" class="state">{{ upStatus }}</text>
 
-    <div class="info-row" v-if="info">
+    <div class="info-row" v-if="info && !infoCollapsed">
       <image class="face" :src="info.face" resize="cover"></image>
       <div class="info-col">
         <text class="name">{{ info.name }}</text>
@@ -18,7 +18,8 @@
       </div>
     </div>
 
-    <scroller class="results" scroll-direction="vertical" :show-scrollbar="true">
+    <scroller class="results" :style="scrollerStyle" scroll-direction="vertical" :show-scrollbar="true"
+              scrollEventInterval="100" @scroll="onScroll">
       <div v-for="item in videos" :key="item.bvid" class="item" @click="openVideo(item)">
         <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
         <div class="meta2">
@@ -45,7 +46,18 @@ export default {
       videos: [],
       upStatus: '加载中…',
       videosStatus: '',
-      generation: 0
+      generation: 0,
+      // 往上滑时隐藏 UP 信息栏
+      infoCollapsed: false
+    }
+  },
+  computed: {
+    // 页面 266px 固定: header 48 + 状态行(出现时约30) + info 96, 其余给列表
+    scrollerStyle() {
+      let h = 266 - 48
+      if (this.info && !this.infoCollapsed) h -= 96
+      if (this.upStatus !== '') h -= 30
+      return 'width: 960px; height: ' + h + 'px'
     }
   },
   methods: {
@@ -97,6 +109,17 @@ export default {
         if (gen !== this.generation) return
         console.log('[bili] up videos error: ' + (err && err.message ? err.message : err))
         this.videosStatus = err && err.message ? err.message : String(err)
+      }
+    },
+
+    // 往上滑 (contentOffset.y 增大) 隐藏 UP 信息栏; 滑回顶部附近恢复
+    onScroll(e) {
+      const y = (e && e.contentOffset && typeof e.contentOffset.y === 'number')
+        ? e.contentOffset.y : 0
+      if (!this.infoCollapsed && y > 60) {
+        this.infoCollapsed = true
+      } else if (this.infoCollapsed && y <= 30) {
+        this.infoCollapsed = false
       }
     },
 
@@ -195,7 +218,6 @@ export default {
 }
 .results {
   width: 960px;
-  height: 122px;
 }
 .item {
   width: 920px;
