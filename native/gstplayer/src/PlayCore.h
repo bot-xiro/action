@@ -22,6 +22,10 @@ namespace gstplayer {
 // 面板 DSI-1 480x960, Falcon 逻辑 960x266, direction 270, KMS plane 76
 void gplayerLogicToPhys(int lx, int ly, int lw, int lh, int& px, int& py, int& pw, int& ph);
 
+// kmssink render-rectangle 在本设备固件上是 GST_TYPE_ARRAY of gint (write-only),
+// 不能按 boxed/字符串传, 需 GValue array 设置
+void setRenderRect(GstElement* sink, int x, int y, int w, int h);
+
 class PlayCore {
 public:
     // state 事件: "opening" "play" "pause" "ready" "eos" "closed" "error: ..."

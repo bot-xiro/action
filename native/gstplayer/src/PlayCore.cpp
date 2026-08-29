@@ -11,7 +11,6 @@
 #include "PlayCore.h"
 
 #include <gst/gst.h>
-#include <gst/video/video.h>
 #include <syslog.h>
 #include <cstring>
 
@@ -40,6 +39,21 @@ void gplayerLogicToPhys(int lx, int ly, int lw, int lh, int& px, int& py, int& p
     if (ph <= 0) ph = 1;
     if (px + pw > PANEL_W) pw = PANEL_W - px;
     if (py + ph > PANEL_H) ph = PANEL_H - py;
+}
+
+void setRenderRect(GstElement* sink, int x, int y, int w, int h)
+{
+    GValue arr = G_VALUE_INIT;
+    GValue v = G_VALUE_INIT;
+    g_value_init(&arr, GST_TYPE_ARRAY);
+    g_value_init(&v, G_TYPE_INT);
+    g_value_set_int(&v, x); gst_value_array_append_value(&arr, &v);
+    g_value_set_int(&v, y); gst_value_array_append_value(&arr, &v);
+    g_value_set_int(&v, w); gst_value_array_append_value(&arr, &v);
+    g_value_set_int(&v, h); gst_value_array_append_value(&arr, &v);
+    g_object_set_property(G_OBJECT(sink), "render-rectangle", &arr);
+    g_value_unset(&v);
+    g_value_unset(&arr);
 }
 
 static bool parseRect(const std::string& s, int* r)
@@ -204,16 +218,16 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
     int px, py, pw, ph;
     gplayerLogicToPhys(lx, ly, lw, lh, px, py, pw, ph);
     GP_LOG("kmss rect LOGIC(%d,%d,%d,%d) -> PHYS(%d,%d,%d,%d)", lx, ly, lw, lh, px, py, pw, ph);
-    // render-rectangle 是 GstVideoRectangle boxed 属性, 必须传结构体指针,
-    // 直传字符串会被当作 boxed 指针读出野值 (gmem 21GB alloc -> SIGTRAP, gdb 已定位)
-    GstVideoRectangle rect = { px, py, pw, ph };
+    // 属性类型以 gst-inspect 为准 (本固件实测):
+    //   plane-id        = gint          (不是 gint64! varargs 传错会让后续参数串位)
+    //   render-rectangle = GST_TYPE_ARRAY of gint (write-only), 见 setRenderRect
     g_object_set(G_OBJECT(sink),
         "driver-name", "rockchip",
-        "plane-id", (gint64)KMS_PLANE_ID,
-        "render-rectangle", &rect,
+        "plane-id", (gint)KMS_PLANE_ID,
         "can-scale", TRUE,
         "sync", TRUE,
         NULL);
+    setRenderRect(sink, px, py, pw, ph);
     gst_bin_add_many(GST_BIN(m_pipeline), queueV, parse, dec, flip, conv, queueV2, sink, NULL);
     if (!gst_element_link_many(queueV, parse, dec, flip, conv, queueV2, sink, NULL)) {
         GP_LOG("video branch link failed");
@@ -277,8 +291,7 @@ void PlayCore::fitVideoRect(int vw, int vh)
     int rx = lx + (lw - fw) / 2, ry = ly + (lh - fh) / 2;
     int px, py, pw, ph;
     gplayerLogicToPhys(rx, ry, fw, fh, px, py, pw, ph);
-    GstVideoRectangle rect = { px, py, pw, ph };
-    g_object_set(G_OBJECT(m_kmsSink), "render-rectangle", &rect, NULL);
+    setRenderRect(m_kmsSink, px, py, pw, ph);
     GP_LOG("fit rect video=%dx%d logic(%d,%d,%d,%d) phys(%d,%d,%d,%d)",
            vw, vh, rx, ry, fw, fh, px, py, pw, ph);
 }
