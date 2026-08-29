@@ -1,4 +1,4 @@
-﻿// 哔哩哔哩网络服务
+// 哔哩哔哩网络服务
 // 传输层: bilinet 原生模块 httpGet (popen 调设备自带 /bin/curl,
 //   固定浏览器 UA + Referer https://www.bilibili.com), 同步返回响应体字符串.
 // 真机实测背景 (home 项目 src/utils/api.js 结论, 同型号设备):
@@ -17,11 +17,12 @@ function hasHttp() {
 function getJson(url, timeoutSec) {
   const s = bilinet.httpGet(url, timeoutSec || 15)
   console.log('[bili] GET ' + url.replace(/(&|\?)w_rid=[^&]+/, '').replace(/(&|\?)wts=[^&]+/, '') + ' -> ' + (s ? s.length : 0) + 'B')
-  if (!s) throw new Error('请求失败 (空响应)')
+  if (!s) { console.log('[bili] GET 空响应'); throw new Error('请求失败 (空响应)') }
   try {
     return JSON.parse(s)
   } catch (e) {
     // 非 JSON: 风控 HTML 页 / 网关错误页等, 透出真实开头便于诊断
+    console.log('[bili] 非JSON body: ' + String(s).substring(0, 300))
     throw new Error('接口返回非 JSON: ' + String(s).substring(0, 120))
   }
 }
