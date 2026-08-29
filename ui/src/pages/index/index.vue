@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page" :class="entering ? 'page-enter' : ''">
     <div class="tabs">
       <div v-for="t in tabs" :key="t.key"
            :class="['tab', activeTab === t.key ? 'tab-active' : '']"
@@ -99,10 +99,16 @@ export default {
       recGeneration: 0,
       // 我的 (版本号运行时从包管理器读取, 不硬编码)
       appVersion: '',
-      appid: '8001812345678901'
+      appid: '8001812345678901',
+      entering: true   // 页面进入动画
     }
   },
   mounted() {
+    // 进入动画: 首帧后翻转折射滑入
+    const self = this
+    try {
+      setTimeout(function () { self.entering = false }, 60)
+    } catch (e) { self.entering = false }
     this.ime = createIME()
     this.ime.onDebug((msg) => {
       this.debugLog = msg
@@ -215,6 +221,12 @@ export default {
   background-color: #141414;
   display: flex;
   flex-direction: column;
+  transition-property: transform;
+  transition-duration: 260ms;
+  transition-timing-function: ease-out;
+}
+.page-enter {
+  transform: translateX(960px);
 }
 .tabs {
   width: 960px;

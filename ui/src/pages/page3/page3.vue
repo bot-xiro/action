@@ -183,7 +183,7 @@ export default {
 
     // 推荐视频跳转到"下一份"详情页副本, 实现真正的页面叠加 (同名页只替换)
     openVideo(item) {
-      $falcon.navTo('page2', { bvid: item.bvid, title: item.title })
+      $falcon.navTo('page4', { bvid: item.bvid, title: item.title })
     },
 
     openUp() {

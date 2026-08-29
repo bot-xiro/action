@@ -1,5 +1,5 @@
 <template>
-  <div class="page">
+  <div class="page" :class="entering ? 'page-enter' : ''">
     <div class="header">
       <div class="back" @click="goBack">
         <text class="back-text">‹ 返回</text>
@@ -46,7 +46,8 @@ export default {
       videos: [],
       upStatus: '加载中…',
       videosStatus: '',
-      generation: 0
+      generation: 0,
+      entering: true   // 页面进入动画
     }
   },
   methods: {
@@ -73,6 +74,13 @@ export default {
         this.$page.onNewOptions = function (options) { self.onNewOptions(options) }
       }
       this.beginLoad()
+      // 进入动画: 首帧后翻转折射滑入
+      if (this.entering) {
+        const self3 = this
+        try {
+          setTimeout(function () { self3.entering = false }, 60)
+        } catch (e) { self3.entering = false }
+      }
     },
 
     // 同一页面被 navTo 重新打开时走 onNewOptions, 不会触发 onShow
@@ -141,6 +149,12 @@ export default {
   background-color: #141414;
   display: flex;
   flex-direction: column;
+  transition-property: transform;
+  transition-duration: 260ms;
+  transition-timing-function: ease-out;
+}
+.page-enter {
+  transform: translateX(960px);
 }
 .header {
   width: 960px;
