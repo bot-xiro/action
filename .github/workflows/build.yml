@@ -34,11 +34,9 @@ jobs:
           cmake --version | head -n 1
 
       - name: Install aiot-vue-cli from mirror
-        working-directory: pvplayer-test
         run: npm install aiot-vue-cli@1.0.32 --no-audit --no-fund
 
       - name: Cross-compile native jsapi (pvplayer)
-        working-directory: pvplayer-test
         env:
           CROSS_C_COMPILER: aarch64-linux-gnu-gcc
           CROSS_CXX_COMPILER: aarch64-linux-gnu-g++
@@ -49,7 +47,6 @@ jobs:
           cmake --build . --parallel
 
       - name: Verify .so (arch/exports)
-        working-directory: pvplayer-test
         run: |
           SO=jsapi/build/libjsapi_pvplayer.so
           file "$SO"
@@ -57,19 +54,17 @@ jobs:
           aarch64-linux-gnu-readelf -d "$SO" | grep NEEDED || true
           nm -D "$SO" | grep custom_init_jsapis
 
-      - name: Stage native lib into UI libs/
-        working-directory: pvplayer-test
+      - name: Stage native lib into ui/libs
         run: |
           mkdir -p libs
           cp jsapi/build/libjsapi_pvplayer.so libs/
 
       - name: Build AMR (production)
-        working-directory: pvplayer-test
         run: npx aiot-cli -c -q -p
 
       - name: Upload AMR
         uses: actions/upload-artifact@v4
         with:
           name: pvplayer-amr
-          path: pvplayer-test/8001812345678903.amr
+          path: 8001812345678903.amr
           if-no-files-found: error
