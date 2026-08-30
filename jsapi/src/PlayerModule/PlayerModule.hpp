@@ -8,6 +8,7 @@
 #pragma once
 #include <string>
 #include <memory>
+#include <functional>
 
 // 播放器稳定状态枚举（跨 JS 层协议）
 enum class PlayerState {
