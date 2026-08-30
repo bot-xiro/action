@@ -1,7 +1,8 @@
 <template>
   <div class="page">
-    <!-- hole: 让 UI 表面在整屏区域透明, 下层 Weston 视频 surface 透出
-         (references/transparent.md; native 侧走 waylandsink 合成) -->
+    <!-- hole: 中间 44..222 视频带挖透, 下层 Weston 视频 surface 透出;
+         顶栏/底栏在 hole 之外保持可见 (references/transparent.md;
+         native 侧走 waylandsink 合成). -->
     <hole class="hole"></hole>
 
     <!-- 点击空白区域 显示/隐藏控制条; 控制条上按钮各自拦截, Falcon 点击不冒泡 -->
@@ -425,13 +426,14 @@ export default {
   height: 266px;
   background-color: transparent;
 }
-/* <hole>: UI surface 帧缓冲上挖透明区, 下层 Weston 视频 surface 透出 */
+/* <hole>: UI surface 帧缓冲上挖透明区, 下层 Weston 视频 surface 透出.
+   只挖中间视频带 (顶/底 44px 控制条仍在 UI 上, 不受 hole 影响). */
 .hole {
   position: absolute;
   left: 0px;
-  top: 0px;
+  top: 44px;
   width: 960px;
-  height: 266px;
+  height: 178px;
 }
 .stage {
   position: absolute;

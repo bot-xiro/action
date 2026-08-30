@@ -231,10 +231,9 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
         return false;
     }
     // gst-1.x videoflip method 枚举: 0 identity, 1 90r, 2 180, 3 90l, 4 horiz, 5 vert ...
-    // 之前用 4 (横向镜像, 不旋转) 是错项: 视频只能按面板原生方向 (竖屏) 看.
-    // 竖屏面板逻辑->物理映射 (px=ly+107, py=959-lx) 要求内容旋转 90l (逆时针):
-    //   画面 up 指向 -phys_x (UI 正上方).
-    g_object_set(G_OBJECT(flip), "method", 3 /* 90l counter-clockwise */, NULL);
+    // 实测真机: waylandsink 走 Weston -> panel 合成, 90l 会让画面偏向另一侧;
+    // 实测反馈 = 需要 90r (顺时针 90 度, 与 direction=270 对应).
+    g_object_set(G_OBJECT(flip), "method", 1 /* 90r clockwise */, NULL);
     // 实测 (2026-08-30): kmssink 的 plane 76 (Esmart1) 始终压在 UI 平面 (Esmart0) 上,
     // plane-properties zpos=0 也压不下去 (VOP2 同 zpos 按 plane-id 定序).
     // 悬浮方案改用 Weston 合成: 视频走 waylandsink 作为 client surface,
@@ -277,13 +276,9 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
     gst_element_sync_state_with_parent(scale);
     gst_element_sync_state_with_parent(capsf);
     gst_element_sync_state_with_parent(sink);
-    m_kmsSink = sink;
-    GstPad* decSrc = gst_element_get_static_pad(dec, "src");
-    if (decSrc) {
-        gst_pad_add_probe(decSrc, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
-                          (GstPadProbeCallback)&PlayCore::capsProbe, this, NULL);
-        gst_object_unref(decSrc);
-    }
+    // waylandsink 没有 KMS render-rectangle 语义; m_kmsSink 置 NULL,
+    // fitVideoRect / setRect 内部因 !m_kmsSink 而短路.
+    m_kmsSink = NULL;
     m_videoLinked = true;
     GP_LOG("video branch linked");
     return true;
@@ -361,8 +356,10 @@ bool PlayCore::linkAudioBranch(GstPad* demuxPad)
         return false;
     }
     gst_bin_add_many(GST_BIN(m_pipeline), queueA, decode, convert, resample, volume, sink, NULL);
-    if (!gst_element_link_many(convert, resample, volume, sink, NULL)) {
-        GP_LOG("audio tail link failed");
+    // 注意: 必须主动 queueA->decode 链接; 原实现只链了尾部 convert->sink,
+    // decodebin sink 悬空, pad-added 永不触发 -> 没声音 (静默 bug).
+    if (!gst_element_link_many(queueA, decode, convert, resample, volume, sink, NULL)) {
+        GP_LOG("audio chain link failed");
         gst_bin_remove_many(GST_BIN(m_pipeline), queueA, decode, convert, resample, volume, sink, NULL);
         return false;
     }
