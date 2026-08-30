@@ -1,0 +1,23 @@
+{
+  "name": "videoprobe",
+  "appid": "8001812345678999",
+  "version": "0.1.0",
+  "description": "KMS/Weston 视频分层探测程序 for 有道词典笔 (Falcon mini-app)",
+  "icon": "app_icon.png",
+  "quickjs": {
+    "version": "20200705",
+    "bigNum": false
+  },
+  "single-js-bundle": false,
+  "scripts": {
+    "build": "aiot-cli -p",
+    "package": "aiot-cli -c -q -p"
+  },
+  "devDependencies": {
+    "aiot-vue-cli": "^1.0.32"
+  },
+  "dependencies": {
+    "falcon-ui": "^2.0.2"
+  },
+  "packageManager": "pnpm@10.12.4"
+}
