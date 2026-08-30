@@ -1,13 +1,17 @@
-// PlayCore 实现: GStreamer + MPP 硬解 + kmssink KMS 直出
+// PlayCore 实现: GStreamer + MPP 硬解 + waylandsink (Weston 合成)
 //
 // 设备契约 (youdao-rk3562-melon profile):
-//   - KMS: plane-id=76 (Esmart1-win0 overlay, zpos=2), driver rockchip,
-//     不支持平面旋转 (仅 rotate-0/reflect-y) -> 用 videoflip 软转
-//   - kmssink 必须带 driver-name=rockchip, 否则它在 card0/card1 间重扫
-//     永远起不了 Preroll (实测 gst-launch strace 确认)
-//   - 面板 DSI-1 480x960, Falcon 逻辑 960x266, direction=270
+//   - 屏幕合成走 Weston: Falcon UI 是 Weston top-level surface; kmssink
+//     走 KMS plane 76 (Esmart1-win0), 会在 VOP2 硬件层盖住 UI (同 zpos
+//     按 plane id 定序, 实测 2026-08-30), 无法用 plane-properties 压下去.
+//   - 要让 UI 浮在视频上方, 视频必须进 Weston 的 client surface (waylandsink),
+//     由 Weston 按 surface 顺序把 UI 画在视频上方; UI 画面要用 alpha 透明
+//     让视频透出 (<hole>/透明背景).
+//   - 面板 DSI-1 480x960, Falcon 逻辑 960x266, direction=270, 视频内容需
+//     videoflip 90l (method=3) 补偿 direction 旋转.
 //   - 解码 mppvideodec (rank 257), B 站 durl 为 MP4 (h264/aac)
 //   - souphttpsrc 需 UA + Referer 才能直连 B 站 CDN
+//   - waylandsink 需要 WAYLAND_DISPLAY, 由 daemon.cpp 启动时 setenv 兜底.
 #include "PlayCore.h"
 
 #include <gst/gst.h>
@@ -221,11 +225,9 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
     GstElement* dec = gst_element_factory_make("mppvideodec", "vdec");
     GstElement* flip = gst_element_factory_make("videoflip", "vflip");
     GstElement* conv = gst_element_factory_make("videoconvert", "vconv");
-    GstElement* queueV2 = gst_element_factory_make("queue", "vqueue2");
-    GstElement* sink = gst_element_factory_make("kmssink", "vsink");
-    if (!queueV || !parse || !dec || !flip || !conv || !queueV2 || !sink) {
-        GP_LOG("video branch factory failed q=%d p=%d d=%d f=%d c=%d q2=%d s=%d",
-               !!queueV, !!parse, !!dec, !!flip, !!conv, !!queueV2, !!sink);
+    if (!queueV || !parse || !dec || !flip || !conv) {
+        GP_LOG("video branch factory failed q=%d p=%d d=%d f=%d c=%d",
+               !!queueV, !!parse, !!dec, !!flip, !!conv);
         return false;
     }
     // gst-1.x videoflip method 枚举: 0 identity, 1 90r, 2 180, 3 90l, 4 horiz, 5 vert ...
@@ -233,30 +235,30 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
     // 竖屏面板逻辑->物理映射 (px=ly+107, py=959-lx) 要求内容旋转 90l (逆时针):
     //   画面 up 指向 -phys_x (UI 正上方).
     g_object_set(G_OBJECT(flip), "method", 3 /* 90l counter-clockwise */, NULL);
-    int lx = 0, ly = 0, lw = LOGIC_W, lh = LOGIC_H;
-    int r[4];
-    if (parseRect(m_rectStr, r)) { lx = r[0]; ly = r[1]; lw = r[2]; lh = r[3]; }
-    int px, py, pw, ph;
-    gplayerLogicToPhys(lx, ly, lw, lh, px, py, pw, ph);
-    GP_LOG("kmss rect LOGIC(%d,%d,%d,%d) -> PHYS(%d,%d,%d,%d)", lx, ly, lw, lh, px, py, pw, ph);
-    // 属性类型以 gst-inspect 为准 (本固件实测):
-    //   plane-id        = gint          (不是 gint64! varargs 传错会让后续参数串位)
-    //   render-rectangle = GST_TYPE_ARRAY of gint (write-only), 见 setRenderRect
-    g_object_set(G_OBJECT(sink),
-        "driver-name", "rockchip",
-        "plane-id", (gint)KMS_PLANE_ID,
-        "can-scale", TRUE,
-        "sync", TRUE,
+    // 实测 (2026-08-30): kmssink 的 plane 76 (Esmart1) 始终压在 UI 平面 (Esmart0) 上,
+    // plane-properties zpos=0 也压不下去 (VOP2 同 zpos 按 plane-id 定序).
+    // 悬浮方案改用 Weston 合成: 视频走 waylandsink 作为 client surface,
+    // UI surface 盖在上面, 透明区透出视频 (references/transparent.md + hole).
+    GstElement* scale = gst_element_factory_make("videoscale", "vscale");
+    GstElement* capsf = gst_element_factory_make("capsfilter", "vcaps");
+    GstElement* sink = gst_element_factory_make("waylandsink", "vsink");
+    if (!scale || !capsf || !sink) {
+        GP_LOG("wayland branch factory failed s=%d cf=%d k=%d", !!scale, !!capsf, !!sink);
+        gst_bin_remove_many(GST_BIN(m_pipeline), queueV, parse, dec, flip, conv, NULL);
+        return false;
+    }
+    // 旋转后帧是竖向(96… ; direction=270), 缩放到面板物理尺寸, fullscreen 显示.
+    GstCaps* sz = gst_caps_new_simple("video/x-raw",
+        "width", G_TYPE_INT, PANEL_W,
+        "height", G_TYPE_INT, PANEL_H,
         NULL);
-    // 分层实测结论 (2026-08-30): Esmart1-win0 平面即使把 zpos 设成 0 与主平面同值,
-    // VOP2 硬件仍以 plane 顺序排到 UI 之上 (plane-properties 能生效, 但级序按 plane id,
-    // 同 zpos 时 id 高者在上). 本固件上视频平面无法低于 UI, 只能靠"视频带上界让出
-    // UI 区域"来做播放器. 不再强行改 zpos.
-    setRenderRect(sink, px, py, pw, ph);
-    gst_bin_add_many(GST_BIN(m_pipeline), queueV, parse, dec, flip, conv, queueV2, sink, NULL);
-    if (!gst_element_link_many(queueV, parse, dec, flip, conv, queueV2, sink, NULL)) {
-        GP_LOG("video branch link failed");
-        gst_bin_remove_many(GST_BIN(m_pipeline), queueV, parse, dec, flip, conv, queueV2, sink, NULL);
+    g_object_set(capsf, "caps", sz, NULL);
+    gst_caps_unref(sz);
+    g_object_set(sink, "fullscreen", TRUE, NULL);
+    gst_bin_add_many(GST_BIN(m_pipeline), queueV, parse, dec, flip, conv, scale, capsf, sink, NULL);
+    if (!gst_element_link_many(queueV, parse, dec, flip, conv, scale, capsf, sink, NULL)) {
+        GP_LOG("video branch link failed (waylandsink path)");
+        gst_bin_remove_many(GST_BIN(m_pipeline), queueV, parse, dec, flip, conv, scale, capsf, sink, NULL);
         return false;
     }
     GstPad* sinkPad = gst_element_get_static_pad(queueV, "sink");
@@ -264,7 +266,7 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
     gst_object_unref(sinkPad);
     if (ret != GST_PAD_LINK_OK) {
         GP_LOG("video pad link failed ret=%d", ret);
-        gst_bin_remove_many(GST_BIN(m_pipeline), queueV, parse, dec, flip, conv, queueV2, sink, NULL);
+        gst_bin_remove_many(GST_BIN(m_pipeline), queueV, parse, dec, flip, conv, scale, capsf, sink, NULL);
         return false;
     }
     gst_element_sync_state_with_parent(queueV);
@@ -272,7 +274,8 @@ bool PlayCore::linkVideoBranch(GstPad* demuxPad)
     gst_element_sync_state_with_parent(dec);
     gst_element_sync_state_with_parent(flip);
     gst_element_sync_state_with_parent(conv);
-    gst_element_sync_state_with_parent(queueV2);
+    gst_element_sync_state_with_parent(scale);
+    gst_element_sync_state_with_parent(capsf);
     gst_element_sync_state_with_parent(sink);
     m_kmsSink = sink;
     GstPad* decSrc = gst_element_get_static_pad(dec, "src");

@@ -1,9 +1,10 @@
 <template>
   <div class="page">
-    <!-- 分层实测: 本固件视频平面始终在 UI 之上 (改 plane-properties
-         zpos=0 也不能互换, 同 zpos 按 plane id 排序), 故布局让出
-         UI 区域而不是靠 hole/浮层: 顶部 44px 与底部 44px 布局区
-         留视频平面外的空间, 视频带 (44..222) 留给 KMS. -->
+    <!-- hole: 让 UI 表面在整屏区域透明, 下层 Weston 视频 surface 透出
+         (references/transparent.md; native 侧走 waylandsink 合成) -->
+    <hole class="hole"></hole>
+
+    <!-- 点击空白区域 显示/隐藏控制条; 控制条上按钮各自拦截, Falcon 点击不冒泡 -->
     <div class="stage" @click="toggleBar">
 
       <!-- 顶栏: 返回 + 标题 -->
@@ -422,16 +423,27 @@ export default {
 .page {
   width: 960px;
   height: 266px;
-  background-color: #000000;
+  background-color: transparent;
 }
-.stage {
+/* <hole>: UI surface 帧缓冲上挖透明区, 下层 Weston 视频 surface 透出 */
+.hole {
+  position: absolute;
+  left: 0px;
+  top: 0px;
   width: 960px;
   height: 266px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
+}
+.stage {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 960px;
+  height: 266px;
 }
 .top-bar {
+  position: absolute;
+  left: 0px;
+  top: 0px;
   width: 960px;
   height: 44px;
   flex-direction: row;
@@ -460,6 +472,10 @@ export default {
   overflow: hidden;
 }
 .center {
+  position: absolute;
+  left: 0px;
+  top: 100px;
+  width: 960px;
   height: 44px;
   align-items: center;
   justify-content: center;
@@ -469,6 +485,9 @@ export default {
   color: #e6a23c;
 }
 .ctrl {
+  position: absolute;
+  left: 0px;
+  top: 222px;
   width: 960px;
   height: 44px;
   padding-left: 10px;

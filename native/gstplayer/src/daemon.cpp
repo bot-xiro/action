@@ -24,6 +24,10 @@ int main(int argc, char** argv)
         fprintf(stderr, "usage: gstplayerd <uri> [rect]\n");
         return 2;
     }
+    // waylandsink 需要知道 Weston socket; /run/wayland-0 是本固件实测路径
+    // (miniapp 宿主进程通常继承有序, 这里兜底).
+    setenv("WAYLAND_DISPLAY", "/run/wayland-0", 0);
+    setenv("XDG_RUNTIME_DIR", "/run", 0);
     std::string uri = argv[1];
     std::string rect = argc >= 3 ? argv[2] : "0,0,960,266";
 
