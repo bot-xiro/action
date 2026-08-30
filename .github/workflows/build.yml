@@ -1,0 +1,75 @@
+name: Build PV Player AMR
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "*" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (locked for aiot-vue-cli)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          registry-url: https://registry.npmmirror.com
+
+      - name: Install aarch64 cross toolchain (RK3562 /glibc)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu cmake
+
+      - name: Verify toolchain & gst runtime present on target UI?
+        run: |
+          aarch64-linux-gnu-gcc --version | head -n 1
+          aarch64-linux-gnu-g++ --version | head -n 1
+          cmake --version | head -n 1
+
+      - name: Install aiot-vue-cli from mirror
+        working-directory: pvplayer-test
+        run: npm install aiot-vue-cli@1.0.32 --no-audit --no-fund
+
+      - name: Cross-compile native jsapi (pvplayer)
+        working-directory: pvplayer-test
+        env:
+          CROSS_C_COMPILER: aarch64-linux-gnu-gcc
+          CROSS_CXX_COMPILER: aarch64-linux-gnu-g++
+        run: |
+          mkdir -p jsapi/build
+          cd jsapi/build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          cmake --build . --parallel
+
+      - name: Verify .so (arch/exports)
+        working-directory: pvplayer-test
+        run: |
+          SO=jsapi/build/libjsapi_pvplayer.so
+          file "$SO"
+          aarch64-linux-gnu-readelf -h "$SO" | grep -E 'Class|Machine'
+          aarch64-linux-gnu-readelf -d "$SO" | grep NEEDED || true
+          nm -D "$SO" | grep custom_init_jsapis
+
+      - name: Stage native lib into UI libs/
+        working-directory: pvplayer-test
+        run: |
+          mkdir -p libs
+          cp jsapi/build/libjsapi_pvplayer.so libs/
+
+      - name: Build AMR (production)
+        working-directory: pvplayer-test
+        run: npx aiot-cli -c -q -p
+
+      - name: Upload AMR
+        uses: actions/upload-artifact@v4
+        with:
+          name: pvplayer-amr
+          path: pvplayer-test/8001812345678903.amr
+          if-no-files-found: error

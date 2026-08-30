@@ -1,0 +1,12 @@
+{
+  "pages": {
+    "player": "pages/player/player.js"
+  },
+  "options": {
+    "style": {
+      "lessPaths": ["styles"],
+      "theme": "theme-dark"
+    },
+    "alias": {}
+  }
+}

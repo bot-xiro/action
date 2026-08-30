@@ -1,0 +1,39 @@
+// 设备 profile：有道词典笔 P5 / Melon Pro（RK3562）
+// 经 adb 只读探测（2026-08-30），命令输出见本文件行内注释。
+profile_id: youdao-215-rk3562
+model: "YoudaoDictionaryPen 215 / Melon Pro"
+firmware: "buildroot 2021.11"
+runtime:
+  falcon: "Miniapp/Falcon (QuickJS)"
+  vue: "2"
+  quickjs: "20200705"
+abi:
+  machine: "aarch64 GNU/Linux 5.10.160"
+  bits: 64
+  libc: "glibc"
+  loader: "/lib64/ld-linux-aarch64.so.1"
+  toolchain: "aarch64-none-linux-gnu-gcc 10.3 (ARM A-profile)"
+screen:
+  physical: { width: 480, height: 960, direction: 270, xoffset: 0, yoffset: 107 }
+  design: { width: 960, height: 266 }   # Falcon viewport：setViewPort(960) + direction 270
+touch: { direction: 270, xoffset: 113, yoffset: 0 }
+media:
+  gstreamer: "1.22.0"
+  decoder: "mppvideodec (Rockchip MPP，h264/h265/vp8/vp9)"
+  kms_driver: "rockchip"
+  connector: "125 (DSI-1)"
+  crtc: 68
+  plane: 54 (Primary, NV12/NV21/…)
+  sources: ["souphttpsrc", "filesrc", "hlssrc"]
+  demux: ["hlsdemux", "tsdemux", "qtdemux"]
+  parser: "h264parse"
+input_method: { version: "", global_text_edit: untested, textarea_soft_input: untested }
+package: { appid: "8001812345678903", start_page: "player" }
+validation:
+  tested_at: "2026-08-30"
+  evidence:
+    - "adb: miniapp_cli 标准用法 install/uninstall/start --page"
+    - "adb: gst-launch-1.0 1.22.0 present"
+    - "adb: modetest -M rockchip → connector 125, crtc 68, plane 54 Primary"
+    - "adb: /dev/dri card0/card1 renderD128/129 present"
+    - "adb: libjsapi_gstplayer.so 及 mediaPlayer 服务已存在（佐证 KMS 播放器链路在该固件可行）"

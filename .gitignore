@@ -1,0 +1,7 @@
+node_modules/
+jsapi/build/
+*.amr
+.DS_Store
+Thumbs.db
+.nyc_output/
+dist/

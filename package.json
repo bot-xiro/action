@@ -1,0 +1,23 @@
+{
+  "name": "pvplayer-test",
+  "appid": "8001812345678903",
+  "version": "1.0.0",
+  "description": "PV Player 在线视频播放器测试（GStreamer KMS 播放器 JSAPI）",
+  "quickjs": { "version": "20200705", "bigNum": false },
+  "simulator": { "path": "../haas_sim", "page": "" },
+  "single-js-bundle": false,
+  "scripts": {
+    "start": "aiot-cli preview",
+    "build": "aiot-cli -p",
+    "build:dev": "aiot-cli",
+    "build:bin": "aiot-cli -q -p",
+    "build:prod": "aiot-cli -c -q -p",
+    "build:web": "aiot-cli build-web",
+    "build:simulator": "aiot-cli simulator ./",
+    "upload": "aiot-cli upload -n",
+    "check": "aiot-cli check"
+  },
+  "devDependencies": {
+    "aiot-vue-cli": "^1.0.32"
+  }
+}
