@@ -22,7 +22,7 @@
     <!-- 状态与时间 -->
     <div class="meta-row">
       <text class="meta-label">状态</text>
-      <text class="meta-value" :class="state === 'error' ? 'err' : 'ok'">{{ stateLabel }}</text>
+      <text class="meta-value" :class="state === 'error' ? 'state-err' : 'state-ok'">{{ stateLabel }}</text>
     </div>
     <div class="meta-row">
       <text class="meta-label">时间</text>
@@ -66,7 +66,7 @@
         v-for="(s, idx) in sources"
         :key="s.id"
         class="src-item"
-        :class="selectedIdx === idx ? 'selected' : ''"
+        :class="selectedIdx === idx ? 'src-item-selected' : ''"
         @click="selectSource(idx)"
       >
         <text class="src-label">{{ s.label }}</text>
@@ -446,11 +446,11 @@ function normalizeStatusForUI(raw) {
   color: #ffffff;
 }
 
-	ok {
+	.state-ok {
   color: #37d67a;
 }
 
-.err {
+.state-err {
   color: #ff5c5c;
 }
 
@@ -542,7 +542,7 @@ function normalizeStatusForUI(raw) {
   border-bottom-color: #2a333d;
 }
 
-.src-item.selected { background-color: #233446; }
+.src-item-selected { background-color: #233446; }
 
 .src-label {
   font-size: 26px;
