@@ -28,7 +28,8 @@ typedef int  GstSeekFlags;          // enum
 typedef long long gint64;
 typedef int gboolean;
 typedef void *gpointer;
-typedef struct _GError GError;
+// glib GError（ABI 稳定）：{ guint domain; gint code; gchar *message; }
+struct GError { unsigned int domain; int code; char *message; };
 typedef struct _GstQuery GstQuery;
 
 namespace gst_enums {
