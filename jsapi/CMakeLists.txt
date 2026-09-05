@@ -29,8 +29,10 @@ target_include_directories(jsapi_pvplayer PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_compile_options(jsapi_pvplayer PRIVATE
   -Wall -Wextra -Werror=return-type -Wno-psabi -fvisibility=hidden)
 # 只链接 SDK 与 pthread：播放走 gst-launch 子进程，不引入 GStreamer/curl/sqlite。
+# 静态链接 libstdc++/libgcc：设备 libstdc++.so.6 仅有 GLIBCXX_3.4.28(GCC10)，
+# 避免 Actions(GCC13/GLIBCXX_3.4.32) 产物因符号版本不匹配而 dlopen 失败。
 target_link_libraries(jsapi_pvplayer PRIVATE
-  iot_sdk pthread -Wl,-unresolved-symbols=ignore-all)
+  iot_sdk pthread -static-libstdc++ -static-libgcc -Wl,-unresolved-symbols=ignore-all)
 set_target_properties(jsapi_pvplayer PROPERTIES
   OUTPUT_NAME "jsapi_pvplayer"
   PREFIX "lib")
