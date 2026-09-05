@@ -66,5 +66,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: pvplayer-amr
-          path: 8001812345678903.amr
+          path: "*.amr"
           if-no-files-found: error
