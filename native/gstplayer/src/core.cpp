@@ -282,17 +282,18 @@ void PlayCore::onDemuxPadAdded(GstElement* demux, GstPad* pad, void* self)
                    !!queueV, !!parse, !!dec, !!sink);
             return;
         }
-        // 宿主矩形内等比适配 (自动信箱); rotate=identity: 全局空间横屏内容无需旋转.
-        // sync=false: 帧到即渲染, 不等视频时钟 (真机实测 sync=true 时首帧后停住,
-        //   拖动进度条触发 flush 才开始走; 与 kmssink 方案同因), 节奏由音频支路时钟驱动.
+        // 宿主矩形内等比适配 (自动信箱, 不裁切); rotate=identity: 全局空间
+        // 横屏内容无需旋转.
+        // sync 保持默认 true: 视频按音频时钟同步渲染 (0.7.5/0.7.6 实测
+        // sync=false 视频超前音频, 音画不同步). 0.7.5 的 "卡住不自动播放"
+        // 真因是音频支路从未预滚 (尾链元素状态未同步, ALSA state OPEN),
+        // 由音频尾链 sync_state 修复 + ASYNC_DONE 后 checkKick 兜底.
         // layer 保持默认 (normal): 本固件 patched waylandsink 的 layer=bottom
-        //   实现会 SIGSEGV (真机 gst-launch 实测), 不可用; 页面侧用动态 hole
-        //   对齐视频矩形, 视频面在 UI 上/下两种堆叠态视觉一致.
+        //   实现 SIGSEGV (真机 gst-launch 实测), 不可用.
         g_object_set(G_OBJECT(sink),
             "fill-mode", 1,            // fit: 保持宽高比
             "rotate-method", 0,        // identity
             "fullscreen", FALSE,
-            "sync", FALSE,
             NULL);
         gst_bin_add_many(GST_BIN(core->m_pipeline), queueV, parse, dec, sink, NULL);
         if (!gst_element_link_many(queueV, parse, dec, sink, NULL)) {
