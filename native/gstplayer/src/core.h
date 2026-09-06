@@ -55,6 +55,7 @@ private:
     static void onDemuxPadAdded(GstElement* demux, GstPad* pad, void* self);
     static void onAudioDecodePadAdded(GstElement* decodebin, GstPad* pad, void* self);
     static GstPadProbeReturn capsProbe(GstPad* pad, GstPadProbeInfo* info, void* self);
+    static GstPadProbeReturn audioSegProbe(GstPad* pad, GstPadProbeInfo* info, void* self);
     void checkKick();
     void busLoop();
 
@@ -72,6 +73,16 @@ private:
     // convert/resample/volume/sink: 添加进运行中管线的元素不会自动跟进状态,
     // decodebin 挂接后必须逐个 sync_state (旧版断声教训), 否则 alsasink
     // 停在 NULL, 数据流堵死, 管道永远停在 PAUSED (位置恒 0, 不自动播放).
+
+    // 音画起点对齐: 分别记录音频/视频支路 SEGMENT 的起始 running time;
+    // 两者都已知且偏移超阈值时, 对视频 sink pad 施加 pad offset 校正
+    // (B 站 MP4 视频轨起点常见 ~1s 滞后, 表现为起播声先出画面卡 1s、
+    //  暂停时画面比音频晚 1s).
+    double m_audioBaseMs = -1;
+    double m_videoBaseMs = -1;
+    bool m_avOffsetApplied = false;
+
+    void tryApplyAvOffset();
 
     // 自动播放踢一脚: ASYNC_DONE 后管道可能仍卡在 PAUSED (音频支路竞态等),
     // 1.5s/4s 后检查, 未到 PLAYING 就 flush seek 到 0 (等效用户手动拖进度条).

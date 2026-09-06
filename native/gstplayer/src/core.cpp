@@ -121,8 +121,9 @@ void PlayCore::start()
     std::lock_guard<std::mutex> lock(m_lock);
     if (!m_pipeline) return;
     GP_LOG("start");
+    // "play" 事件不再乐观发出: 由总线 STATE_CHANGED (管道真正到 PLAYING)
+    // 触发, 页面在预滚/起播等待期间如实显示 "缓冲中…"
     gst_element_set_state(m_pipeline, GST_STATE_PLAYING);
-    emit("play");
 }
 
 void PlayCore::pause()
@@ -130,8 +131,8 @@ void PlayCore::pause()
     std::lock_guard<std::mutex> lock(m_lock);
     if (!m_pipeline) return;
     GP_LOG("pause");
+    // 同 start: "pause" 由总线 STATE_CHANGED 到 PAUSED 触发
     gst_element_set_state(m_pipeline, GST_STATE_PAUSED);
-    emit("pause");
 }
 
 void PlayCore::seekMs(double ms)
@@ -192,6 +193,9 @@ void PlayCore::teardown()
         m_videoH = 0;
         m_kickAtMs = 0;
         m_kickCount = 0;
+        m_audioBaseMs = -1;
+        m_videoBaseMs = -1;
+        m_avOffsetApplied = false;
     }
     GP_LOG("teardown done");
 }
@@ -361,6 +365,11 @@ void PlayCore::onDemuxPadAdded(GstElement* demux, GstPad* pad, void* self)
         core->m_audioTail[1] = resample;
         core->m_audioTail[2] = volume;
         core->m_audioTail[3] = sink;
+        // SEGMENT 探针: 记录音频支路起点, 供音画起点对齐 (tryApplyAvOffset)
+        GstPad* asinkPad = gst_element_get_static_pad(sink, "sink");
+        gst_pad_add_probe(asinkPad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
+                          &PlayCore::audioSegProbe, core, NULL);
+        gst_object_unref(asinkPad);
         GstPad* qPad = gst_element_get_static_pad(queueA, "sink");
         GstPadLinkReturn ret = gst_pad_link(pad, qPad);
         gst_object_unref(qPad);
@@ -401,9 +410,77 @@ void PlayCore::onAudioDecodePadAdded(GstElement* decodebin, GstPad* pad, void* s
     if (sinkPad) gst_object_unref(sinkPad);
 }
 
+// SEGMENT 事件起始 running time (ms); 异常返回 -1
+static double segmentBaseMs(GstEvent* ev)
+{
+    const GstSegment* seg = NULL;
+    gst_event_parse_segment(ev, &seg);
+    if (!seg || seg->format != GST_FORMAT_TIME) return -1;
+    double ms = (seg->base + seg->start) / GST_MSECOND;
+    return ms;
+}
+
+GstPadProbeReturn PlayCore::audioSegProbe(GstPad* pad, GstPadProbeInfo* info, void* self)
+{
+    if (GST_EVENT_TYPE(GST_PAD_PROBE_INFO_EVENT(info)) != GST_EVENT_SEGMENT) {
+        return GST_PAD_PROBE_OK;
+    }
+    PlayCore* core = static_cast<PlayCore*>(self);
+    double ms = segmentBaseMs(GST_PAD_PROBE_INFO_EVENT(info));
+    if (ms < 0) return GST_PAD_PROBE_OK;
+    {
+        std::lock_guard<std::mutex> lock(core->m_lock);
+        if (core->m_audioBaseMs < 0) core->m_audioBaseMs = ms;
+    }
+    GP_LOG("audio segment base %.0f ms", ms);
+    core->tryApplyAvOffset();
+    return GST_PAD_PROBE_OK;
+}
+
+// 音画起点对齐: 视频支路起点比音频晚超过阈值时, 对视频 sink pad 施加
+// 负的 pad offset, 消除恒定的 "画面落后音频" (起播画面卡 1s / 暂停画面晚 1s).
+void PlayCore::tryApplyAvOffset()
+{
+    double deltaMs;
+    GstPad* sinkPad = NULL;
+    {
+        std::lock_guard<std::mutex> lock(m_lock);
+        if (m_avOffsetApplied || m_audioBaseMs < 0 || m_videoBaseMs < 0 || !m_sink) return;
+        deltaMs = m_videoBaseMs - m_audioBaseMs;
+        m_avOffsetApplied = true;  // 只测一次, 之后的 SEGMENT (seek) 不再改
+    }
+    if (deltaMs > 150) {
+        sinkPad = gst_element_get_static_pad(m_sink, "sink");
+        if (sinkPad) {
+            gst_pad_set_offset(sinkPad, -deltaMs * GST_MSECOND);
+            GP_LOG("av offset: video base %.0f ms vs audio %.0f ms -> shift video -%.0f ms",
+                   m_videoBaseMs, m_audioBaseMs, deltaMs);
+            gst_object_unref(sinkPad);
+        }
+    } else {
+        GP_LOG("av offset: video %.0f ms vs audio %.0f ms (delta %.0f, no shift)",
+               m_videoBaseMs, m_audioBaseMs, deltaMs);
+    }
+}
+
 GstPadProbeReturn PlayCore::capsProbe(GstPad* pad, GstPadProbeInfo* info, void* self)
 {
-    if (GST_EVENT_TYPE(GST_PAD_PROBE_INFO_EVENT(info)) != GST_EVENT_CAPS) {
+    GstEventType et = GST_EVENT_TYPE(GST_PAD_PROBE_INFO_EVENT(info));
+    if (et == GST_EVENT_SEGMENT) {
+        // 视频支路起点 running time (音频侧见 audioSegProbe)
+        PlayCore* core = static_cast<PlayCore*>(self);
+        double ms = segmentBaseMs(GST_PAD_PROBE_INFO_EVENT(info));
+        if (ms >= 0) {
+            {
+                std::lock_guard<std::mutex> lock(core->m_lock);
+                if (core->m_videoBaseMs < 0) core->m_videoBaseMs = ms;
+            }
+            GP_LOG("video segment base %.0f ms", ms);
+            core->tryApplyAvOffset();
+        }
+        return GST_PAD_PROBE_OK;
+    }
+    if (et != GST_EVENT_CAPS) {
         return GST_PAD_PROBE_OK;
     }
     GstCaps* caps = NULL;
@@ -487,7 +564,7 @@ void PlayCore::busLoop()
         if (!bus || !running) break;
         GstMessage* msg = gst_bus_timed_pop_filtered(bus, 100 * GST_MSECOND,
             (GstMessageType)(GST_MESSAGE_ERROR | GST_MESSAGE_EOS | GST_MESSAGE_WARNING
-                             | GST_MESSAGE_ASYNC_DONE));
+                             | GST_MESSAGE_ASYNC_DONE | GST_MESSAGE_STATE_CHANGED));
         if (!msg) {
             checkKick();
             continue;
@@ -508,6 +585,21 @@ void PlayCore::busLoop()
             if (dbg) g_free(dbg);
             break;
         }
+        case GST_MESSAGE_STATE_CHANGED:
+            // 真实播放状态: 仅认管道自身的状态变化 (子元素的不算).
+            // PLAYING -> "play" / PAUSED -> "pause", 页面据此显示/隐藏控制条.
+            if (GST_MESSAGE_SRC(msg) == G_OBJECT(m_pipeline)) {
+                GstState newState = GST_STATE_VOID_PENDING;
+                gst_message_parse_state_changed(msg, NULL, &newState, NULL);
+                if (newState == GST_STATE_PLAYING) {
+                    GP_LOG("bus PLAYING");
+                    emit("play");
+                } else if (newState == GST_STATE_PAUSED) {
+                    GP_LOG("bus PAUSED");
+                    emit("pause");
+                }
+            }
+            break;
         case GST_MESSAGE_ASYNC_DONE:
             GP_LOG("bus ASYNC_DONE");
             {
