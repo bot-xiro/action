@@ -85,9 +85,16 @@ public:
         GP_LOG("open uri(96)=%.96s", uri.c_str());
 
         std::string daemon = findDaemonPath();
-        if (daemon.empty() || access(daemon.c_str(), X_OK) != 0) {
-            GP_LOG("daemon not found/executable: %s", daemon.c_str());
+        if (daemon.empty()) {
+            GP_LOG("daemon path unknown");
             emitState("error: daemon not found");
+            return;
+        }
+        // 安装器会剥离可执行位 (真机实测 0644), 补 chmod 后再验
+        if (access(daemon.c_str(), X_OK) != 0 &&
+            (chmod(daemon.c_str(), 0755) != 0 || access(daemon.c_str(), X_OK) != 0)) {
+            GP_LOG("daemon not executable: %s errno=%d", daemon.c_str(), errno);
+            emitState("error: daemon not executable");
             return;
         }
 

@@ -245,17 +245,18 @@ export default {
       try {
         this.statusText = '缓冲中…'
         player.open(url)
-        this.opened = true
-        player.start()
-        this.playing = true
-        this.startPolling()
-        this.scheduleHideBar()
       } catch (e) {
         this.statusText = '打开失败: ' + (e && e.message ? e.message : String(e))
-        this.playing = false
-        this.opened = false
         this.showBar()
+        return
       }
+      // open 可能同步派发错误状态 (此时 onNativeState 已置错误提示);
+      // playing/控制条自动隐藏一律由原生 play 状态驱动, 不在此乐观置位,
+      // 否则 open 报错后 playing 残留 true, 控制条 5s 后自动隐藏.
+      if (this.statusText.indexOf('播放错误') === 0) return
+      this.opened = true
+      player.start()
+      this.startPolling()
     },
 
     // ---------------- 原生状态回调 ----------------
