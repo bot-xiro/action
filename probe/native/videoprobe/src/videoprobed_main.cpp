@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
   core.setHoleEnable(true);
 
   if (!core.open(uri)) {
-    O("E open fail")
+    O("E open fail");
     return 3;
   }
 
@@ -42,6 +42,6 @@ int main(int argc, char** argv) {
     else if (strcmp(buf, "CLOSE") == 0) break;
   }
   core.stop();
-  O("S bye")
+  O("S bye");
   return 0;
 }

@@ -4,6 +4,7 @@
 
 #include <dlfcn.h>
 #include <errno.h>
+#include <poll.h>
 #include <signal.h>
 #include <string.h>
 #include <sys/stat.h>
