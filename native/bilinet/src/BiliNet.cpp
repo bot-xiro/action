@@ -134,6 +134,18 @@ private:
     static const char* UA;
     static const char* REFERER;
 
+    // shell 单引号转义 (URL/header/data 内置引号、& 等必须引住)
+    static std::string shellQuote(const std::string& s)
+    {
+        std::string out = "'";
+        for (char c : s) {
+            if (c == '\'') out += "'\\''";
+            else out += c;
+        }
+        out += "'";
+        return out;
+    }
+
     static std::string drain(FILE* fp)
     {
         std::string body;
