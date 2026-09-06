@@ -119,10 +119,11 @@ jobs:
             'deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy main' \
             'deb [arch=amd64] http://archive.ubuntu.com/ubuntu jammy-updates main' | sudo tee /etc/apt/sources.list.d/amd64.list
           printf '%s\n' \
-            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main' \
-            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main' | sudo tee /etc/apt/sources.list.d/arm64.list
+            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy main restricted universe multiverse' \
+            'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-updates main restricted universe multiverse' | sudo tee /etc/apt/sources.list.d/arm64.list
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libglib2.0-dev:arm64 libgstreamer1.0-dev:arm64 libgstreamer-plugins-base1.0-dev:arm64
+          # libunwind-dev:arm64 是 libgstreamer1.0-dev:arm64 的硬依赖, 缺了会 broken packages
+          sudo apt-get install -y --no-install-recommends libunwind-dev:arm64 libglib2.0-dev:arm64 libgstreamer1.0-dev:arm64 libgstreamer-plugins-base1.0-dev:arm64
           sudo rm -rf /var/lib/apt/lists/*
 
       - name: Cross-compile videoprobe native (aarch64)

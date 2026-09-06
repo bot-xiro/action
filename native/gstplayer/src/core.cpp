@@ -14,10 +14,17 @@
 #include "core.h"
 
 #include <syslog.h>
+#include <chrono>
 #include <cstdio>
 #include <cstring>
 
 namespace gstplayer {
+
+static long long nowMs()
+{
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 #define GP_LOG(fmt, ...) do { \
     syslog(LOG_ERR, "[gstplayer] " fmt, ##__VA_ARGS__); \
@@ -178,10 +185,13 @@ void PlayCore::teardown()
         if (m_pipeline) { gst_object_unref(m_pipeline); m_pipeline = nullptr; }
         m_sink = nullptr;
         m_audioConv = nullptr;
+        for (int i = 0; i < 4; i++) m_audioTail[i] = nullptr;
         m_videoLinked = false;
         m_audioLinked = false;
         m_videoW = 0;
         m_videoH = 0;
+        m_kickAtMs = 0;
+        m_kickCount = 0;
     }
     GP_LOG("teardown done");
 }
@@ -332,7 +342,10 @@ void PlayCore::onDemuxPadAdded(GstElement* demux, GstPad* pad, void* self)
         }
         gst_bin_add_many(GST_BIN(core->m_pipeline), queueA, decode, convert,
                          resample, volume, sink, NULL);
-        // 尾链 (convert->...->sink) 静态链接; queueA->decodebin 单独链静态 sink
+        // 尾链 (convert->...->sink) 静态链接; queueA->decodebin 单独链静态 sink.
+        // 注意: 添加进运行中管线的元素不会自动跟进父状态, decodebin 挂接后
+        // 必须逐个 sync_state (见 onAudioDecodePadAdded), 否则 alsasink 停在
+        // NULL, 数据流堵死, 管道永远 PAUSED (位置恒 0, 不自动播放).
         if (!gst_element_link_many(convert, resample, volume, sink, NULL) ||
             !gst_element_link(queueA, decode)) {
             GP_LOG("audio link failed");
@@ -343,6 +356,10 @@ void PlayCore::onDemuxPadAdded(GstElement* demux, GstPad* pad, void* self)
         g_signal_connect(decode, "pad-added",
                          G_CALLBACK(&PlayCore::onAudioDecodePadAdded), core);
         core->m_audioConv = convert;
+        core->m_audioTail[0] = convert;
+        core->m_audioTail[1] = resample;
+        core->m_audioTail[2] = volume;
+        core->m_audioTail[3] = sink;
         GstPad* qPad = gst_element_get_static_pad(queueA, "sink");
         GstPadLinkReturn ret = gst_pad_link(pad, qPad);
         gst_object_unref(qPad);
@@ -369,7 +386,13 @@ void PlayCore::onAudioDecodePadAdded(GstElement* decodebin, GstPad* pad, void* s
     if (sinkPad && !gst_pad_is_linked(sinkPad)) {
         if (gst_pad_link(pad, sinkPad) == GST_PAD_LINK_OK) {
             GP_LOG("audio decodebin linked");
-            gst_element_sync_state_with_parent(convert);
+            // 逐个同步尾链状态: convert/resample/volume/alsasink 加入运行中
+            // 管线后不会自动跟进父状态, 不同步则数据流断在 convert.
+            for (int i = 0; i < 4; i++) {
+                if (core->m_audioTail[i]) {
+                    gst_element_sync_state_with_parent(core->m_audioTail[i]);
+                }
+            }
         } else {
             GP_LOG("audio decodebin link failed");
         }
@@ -422,6 +445,33 @@ GstPadProbeReturn PlayCore::capsProbe(GstPad* pad, GstPadProbeInfo* info, void* 
     return GST_PAD_PROBE_OK;
 }
 
+// 自动播放踢一脚: ASYNC_DONE 后管道可能仍卡在 PAUSED (音频支路竞态等),
+// 到点检查, 未到 PLAYING 就 flush seek 到 0 (等效用户手动拖进度条, 真机
+// 实测该操作能让数据流启动). 最多尝试 2 次, 每次 +2.5s.
+// 注意: 总线线程存活期间 m_pipeline 不会被释放 (teardown 先 join 本线程),
+// 锁外使用安全.
+void PlayCore::checkKick()
+{
+    {
+        std::lock_guard<std::mutex> lock(m_lock);
+        if (m_kickAtMs == 0 || !m_pipeline) return;
+        if (m_kickCount >= 2) return;
+        if (nowMs() < m_kickAtMs) return;
+        m_kickCount++;
+        m_kickAtMs = nowMs() + 2500;
+    }
+    GstState cur = GST_STATE_VOID_PENDING, pend = GST_STATE_VOID_PENDING;
+    gst_element_get_state(m_pipeline, &cur, &pend, 0);
+    if (cur == GST_STATE_PLAYING) {
+        std::lock_guard<std::mutex> lock(m_lock);
+        m_kickAtMs = 0;
+        GP_LOG("autoplay ok (PLAYING), kick cleared");
+        return;
+    }
+    GP_LOG("autoplay kick: state=%d pending=%d -> flush seek 0", (int)cur, (int)pend);
+    seekMs(0);
+}
+
 void PlayCore::busLoop()
 {
     GP_LOG("bus thread started");
@@ -437,7 +487,10 @@ void PlayCore::busLoop()
         GstMessage* msg = gst_bus_timed_pop_filtered(bus, 100 * GST_MSECOND,
             (GstMessageType)(GST_MESSAGE_ERROR | GST_MESSAGE_EOS | GST_MESSAGE_WARNING
                              | GST_MESSAGE_ASYNC_DONE));
-        if (!msg) continue;
+        if (!msg) {
+            checkKick();
+            continue;
+        }
         switch (GST_MESSAGE_TYPE(msg)) {
         case GST_MESSAGE_EOS:
             GP_LOG("bus EOS");
@@ -456,6 +509,11 @@ void PlayCore::busLoop()
         }
         case GST_MESSAGE_ASYNC_DONE:
             GP_LOG("bus ASYNC_DONE");
+            {
+                std::lock_guard<std::mutex> lock(m_lock);
+                m_kickAtMs = nowMs() + 1500;  // 1.5s 后开始自动播放检查
+                m_kickCount = 0;
+            }
             emit("ready");
             break;
         case GST_MESSAGE_WARNING: {
