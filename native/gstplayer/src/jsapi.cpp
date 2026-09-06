@@ -1,18 +1,16 @@
-// gstplayer: 播放器原生 JSAPI 模块
+// jsapi.cpp: gstplayer JSAPI 模块 (v2 全重写)
 //
-// 架构 (参照 media-kms.md "Native 进程生命周期": start/stop/status/独立日志/不残留):
-//   gstreamer 一律在独立子进程 gstplayerd 中运行, 与 miniapp 宿主进程隔离.
-//   实测(本设备): gstreamer 管线建到 miniapp 同进程内播放数秒后宿主被看门狗查杀,
-//   独立进程播放则稳定 (同 kmssink/plane 参数 gst-launch 全路径实测通过).
+// 架构: gstreamer 一律运行在独立子进程 gstplayerd 中 (与 miniapp 宿主隔离,
+// 同进程播放实测触发看门狗整机重启). 本模块只做子进程生命周期 + 行协议收发.
 //
-// JS 侧使用 (模块名 "gstplayer", 导出单例 gstPlayer):
-//   gstPlayer.open(url, rect)      // rect: "x,y,w,h" 逻辑坐标, 缺省全屏
+// JS 侧 (import { gstPlayer } from "gstplayer"):
+//   gstPlayer.open(url, rect?)        rect 缺省 "auto": 设备侧等比拟合 UI 带
 //   gstPlayer.start() / pause() / resume() / close()
 //   gstPlayer.seek(ms)
-//   gstPlayer.getPosition() / getDuration()   // 最近 QUERY 缓存, 毫秒
-//   gstPlayer.stateChanged.on(fn)  // "opening"/"ready"/"play"/"pause"/"eos"/"error: ..."/"closed"
-//
-// 守护进程行协议: 见 src/daemon.cpp; 模块侧周期性 QUERY, 结果行即 "P <posMs> <durMs>"
+//   gstPlayer.getPosition() / getDuration()     毫秒 (QUERY 轮询缓存)
+//   gstPlayer.getVideoWidth() / getVideoHeight() 视频分辨率 (V 行缓存)
+//   gstPlayer.stateChanged.on(fn)     "opening"/"ready"/"play"/"pause"/
+//                                     "eos"/"closed"/"error: ..."
 #include <dlfcn.h>
 #include <errno.h>
 #include <poll.h>
@@ -43,16 +41,11 @@ public:
 
     GstPlayer()
     {
-        GP_LOG("GstPlayer ctr (process-backed)");
-        // 守护进程退出后向已关闭管道写 QUERY 会触发 SIGPIPE 终止宿主进程
-        // (退出到一半整机看门狗重启的常见根因), 宿主层显式忽略.
+        GP_LOG("GstPlayer ctr (v2 process-backed)");
+        // 守护进程先退时, 向已关闭的命令管道写 QUERY 会触发 SIGPIPE 杀宿主
         signal(SIGPIPE, SIG_IGN);
     }
-    ~GstPlayer()
-    {
-        GP_LOG("GstPlayer dtr");
-        stopDaemon();
-    }
+    ~GstPlayer() { stopDaemon(); }
 
     void open(JQFunctionInfo& info)
     {
@@ -68,55 +61,47 @@ public:
         }
         std::string uri(c);
         JS_FreeCString(ctx, c);
-        int r[4];
-        std::string rect = "0,0,960,266";
+        std::string rect = "auto";
         if (info.Length() >= 2 && JS_IsString(info[1])) {
-            const char* rr = JS_ToCString(ctx, info[1]);
-            if (rr) { rect = rr; JS_FreeCString(ctx, rr); }
+            const char* r = JS_ToCString(ctx, info[1]);
+            if (r) { rect = r; JS_FreeCString(ctx, r); }
         }
-        // 校验 uri/rect (skill media-kms.md: 长度/ scheme / 控制字符校验).
-        // uri 经 execl(argv) 直传 gstplayerd, 不走 shell 也不走命令管道,
-        // 因此 & ? # 等 URL 保留字符必须放行; 之前黑名单含 & 会把
-        // bilibili playurl(必带 query 参数)全部误拒.
+        // uri 经 execl(argv) 直传 gstplayerd (不经 shell), URL 保留字符
+        // (& ? # 等) 必须放行; 仅拒控制字符与非法 scheme.
         bool badUri = uri.empty() || uri.size() > 2048;
         for (size_t i = 0; !badUri && i < uri.size(); i++) {
-            unsigned char uc = static_cast<unsigned char>(uri[i]);
+            unsigned char uc = (unsigned char)uri[i];
             if (uc < 0x20 || uc == 0x7f) badUri = true;
         }
-        if (!badUri && uri.rfind("http://", 0) != 0 && uri.rfind("https://", 0) != 0) badUri = true;
-        if (badUri ||
-            sscanf(rect.c_str(), "%d,%d,%d,%d", &r[0], &r[1], &r[2], &r[3]) != 4) {
-            info.GetReturnValue().ThrowInternalError("open: invalid uri/rect");
-            emitState("error: invalid uri/rect");
+        if (!badUri && uri.rfind("http://", 0) != 0 && uri.rfind("https://", 0) != 0 &&
+            uri.rfind("file://", 0) != 0) {
+            badUri = true;
+        }
+        if (badUri) {
+            info.GetReturnValue().ThrowInternalError("open: invalid uri");
+            emitState("error: invalid uri");
             return;
         }
-        GP_LOG("open uri=%s rect=%s", uri.c_str(), rect.c_str());
+        GP_LOG("open uri(96)=%.96s", uri.c_str());
 
         std::string daemon = findDaemonPath();
-        if (daemon.empty()) {
-            GP_LOG("daemon not found");
+        if (daemon.empty() || access(daemon.c_str(), X_OK) != 0) {
+            GP_LOG("daemon not found/executable: %s", daemon.c_str());
             emitState("error: daemon not found");
             return;
         }
-        if (access(daemon.c_str(), X_OK) != 0 && chmod(daemon.c_str(), 0755) != 0) {
-            GP_LOG("daemon not executable: %s errno=%d", daemon.c_str(), errno);
-            emitState("error: daemon not executable");
-            return;
-        }
 
-        stopDaemon();   // 幂等停旧守护进程 (无锁 join 版本)
+        stopDaemon();  // 幂等停旧实例
 
-        int inPipe[2];   // 我们写 -> 子进程 stdin
-        int outPipe[2];  // 子进程 stdout -> 我们读
+        int inPipe[2];   // 宿主写 -> 子进程 stdin
+        int outPipe[2];  // 子进程 stdout -> 宿主读
         if (pipe(inPipe) != 0 || pipe(outPipe) != 0) {
             GP_LOG("pipe failed errno=%d", errno);
             emitState("error: pipe failed");
             return;
         }
-
         pid_t pid = fork();
         if (pid == 0) {
-            // 子进程
             dup2(inPipe[0], 0);
             dup2(outPipe[1], 1);
             ::close(inPipe[0]); ::close(inPipe[1]);
@@ -125,19 +110,24 @@ public:
             _exit(127);
         }
         if (pid < 0) {
-            GP_LOG("fork failed errno=%d", errno);
             ::close(inPipe[0]); ::close(inPipe[1]);
             ::close(outPipe[0]); ::close(outPipe[1]);
+            GP_LOG("fork failed errno=%d", errno);
             emitState("error: fork failed");
             return;
         }
         ::close(inPipe[0]);
         ::close(outPipe[1]);
-        m_pid = pid;
-        m_cmdFd = inPipe[1];
-        m_outFd = outPipe[0];
-        m_posMs = 0;
-        m_durMs = 0;
+        {
+            std::lock_guard<std::mutex> lock(m_lock);
+            m_pid = pid;
+            m_cmdFd = inPipe[1];
+            m_outFd = outPipe[0];
+            m_posMs = 0;
+            m_durMs = 0;
+            m_videoW = 0;
+            m_videoH = 0;
+        }
         GP_LOG("daemon spawned pid=%d", (int)pid);
         emitState("opening");
         m_running = true;
@@ -152,29 +142,8 @@ public:
     void close(JQFunctionInfo&)
     {
         GP_LOG("close");
-        stopDaemon();   // 不在 m_lock 下 join 读写线程, 见 stopDaemon 注释
+        stopDaemon();
         emitState("closed");
-    }
-
-    void setRect(JQFunctionInfo& info)
-    {
-        if (info.Length() < 1 || !JS_IsString(info[0])) {
-            info.GetReturnValue().ThrowTypeError("setRect: rect required");
-            return;
-        }
-        const char* r = JS_ToCString(info.GetContext(), info[0]);
-        if (!r) return;
-        // rect 走命令管道, 禁止换行/控制字符避免注入多条指令
-        bool ok = true;
-        for (const char* p = r; *p; ++p) {
-            if (*p == '\n' || *p == '\r' || *p == '\t') { ok = false; break; }
-        }
-        char buf[64];
-        if (ok) {
-            snprintf(buf, sizeof(buf), "SETRECT %s\n", r);
-            sendCmd(buf);
-        }
-        JS_FreeCString(info.GetContext(), r);
     }
 
     void seek(JQFunctionInfo& info)
@@ -196,16 +165,24 @@ public:
         std::lock_guard<std::mutex> lock(m_lock);
         info.GetReturnValue().Set(m_posMs);
     }
-
     void getDuration(JQFunctionInfo& info)
     {
         std::lock_guard<std::mutex> lock(m_lock);
         info.GetReturnValue().Set(m_durMs);
     }
+    void getVideoWidth(JQFunctionInfo& info)
+    {
+        std::lock_guard<std::mutex> lock(m_lock);
+        info.GetReturnValue().Set(m_videoW);
+    }
+    void getVideoHeight(JQFunctionInfo& info)
+    {
+        std::lock_guard<std::mutex> lock(m_lock);
+        info.GetReturnValue().Set(m_videoH);
+    }
 
 private:
-    // 根据本 .so 的映射路径推导 gstplayerd 邻接路径
-    // (说明: 安装器会给 .so 改名成 libjsapi_gstplayer_<id>.so, 但 gstplayerd 非 .so 不改名)
+    // .so 安装后改名 libjsapi_gstplayer_<id>.so, 但 gstplayerd 不改名, 邻接同目录
     static std::string findDaemonPath()
     {
         Dl_info di;
@@ -223,12 +200,10 @@ private:
     {
         std::lock_guard<std::mutex> lock(m_lock);
         if (m_cmdFd < 0) return;
-        GP_LOG("cmd: %.*s", (int)strlen(cmd) - 1, cmd);
         ssize_t w = write(m_cmdFd, cmd, strlen(cmd));
         if (w < 0) GP_LOG("cmd write failed errno=%d", errno);
     }
 
-    // 读子进程 stdout 行: S/P/L 三类
     void readerLoop()
     {
         std::string acc;
@@ -243,39 +218,52 @@ private:
             acc.append(buf, (size_t)n);
             size_t nl;
             while ((nl = acc.find('\n')) != std::string::npos) {
-                std::string line = acc.substr(0, nl);
+                std::string lineStr = acc.substr(0, nl);
                 acc.erase(0, nl + 1);
-                handleLine(line);
+                handleLine(lineStr);
             }
         }
-        // EOF: 子进程死了
-        handleLine(std::string("S error: daemon exited"));
+        if (m_running) {
+            GP_LOG("reader EOF (daemon exited)");
+            emitState("error: daemon exited");
+        }
     }
 
-    void handleLine(const std::string& line)
+    void handleLine(const std::string& lineStr)
     {
-        if (line.rfind("S ", 0) == 0) {
-            std::string s = line.substr(2);
-            { std::lock_guard<std::mutex> lock(m_lock); if (s == "play") m_lastState = s; }
+        if (lineStr.rfind("S ", 0) == 0) {
+            std::string s = lineStr.substr(2);
             GP_LOG("state: %s", s.c_str());
             emitState(s);
-        } else if (line.rfind("P ", 0) == 0) {
+        } else if (lineStr.rfind("P ", 0) == 0) {
             double pos = 0, dur = 0;
-            if (sscanf(line.c_str(), "P %lf %lf", &pos, &dur) == 2) {
+            if (sscanf(lineStr.c_str(), "P %lf %lf", &pos, &dur) == 2) {
                 std::lock_guard<std::mutex> lock(m_lock);
                 m_posMs = pos;
-                m_durMs = dur > 0 ? dur : m_durMs;
+                if (dur > 0) m_durMs = dur;
             }
-        } else if (line.rfind("L ", 0) == 0) {
-            GP_LOG("daemon: %s", line.c_str() + 2);
+        } else if (lineStr.rfind("V ", 0) == 0) {
+            int w = 0, h = 0;
+            if (sscanf(lineStr.c_str(), "V %d %d", &w, &h) == 2 && w > 0 && h > 0) {
+                std::lock_guard<std::mutex> lock(m_lock);
+                m_videoW = w;
+                m_videoH = h;
+            }
+            GP_LOG("video size: %s", lineStr.c_str() + 2);
+        } else if (lineStr.rfind("L ", 0) == 0) {
+            GP_LOG("daemon: %s", lineStr.c_str() + 2);
         }
     }
 
-    // 每 700ms 向子进程发 QUERY, 拿回 position/duration
+    // 每 700ms QUERY 一次 position/duration (结果走 P 行)
     void pollLoop()
     {
         while (m_running) {
-            int fd = m_cmdFd;
+            int fd;
+            {
+                std::lock_guard<std::mutex> lock(m_lock);
+                fd = m_cmdFd;
+            }
             if (fd < 0) break;
             if (write(fd, "QUERY\n", 6) < 0) break;
             for (int i = 0; i < 7 && m_running; i++) usleep(100000);
@@ -284,16 +272,12 @@ private:
 
     void emitState(const std::string& s)
     {
-        try {
-            stateChanged.emit(s);
-        } catch (...) {}
+        try { stateChanged.emit(s); } catch (...) {}
     }
 
-    // 停掉守护进程. 绝不在调用方持有的 m_lock 内 join reader/poller:
-    // reader 线程可能正 emit 状态回 JS, 若 JS 线程持锁等待 join 而 emit
-    // 又要同线程派发, 两方互等即死锁 -> 退出卡死 -> 看门狗重启整机.
-    // 顺序: 跑锁外设置标志 -> 闭 stdin (daemon teardown, ~1.5s 超时强杀)
-    //       -> 闭 stdout -> join.
+    // 停守护进程. 红线: 绝不在持锁状态下 join reader/poller —— reader 线程可能
+    // 正 emit 状态回 JS 线程, 若 JS 线程持锁 join 即互等死锁 -> 看门狗重启整机.
+    // 顺序: 标志位 -> 闭 stdin (daemon 自动退) -> waitpid 兜底 SIGKILL -> 闭 stdout.
     void stopDaemon()
     {
         m_running = false;
@@ -301,30 +285,36 @@ private:
             std::lock_guard<std::mutex> lock(m_lock);
             if (m_cmdFd >= 0) { ::close(m_cmdFd); m_cmdFd = -1; }
         }
+        pid_t pid;
         {
             std::lock_guard<std::mutex> lock(m_lock);
-            if (m_pid > 0) {
-                for (int i = 0; i < 30; i++) {
-                    if (waitpid(m_pid, NULL, WNOHANG) > 0) break;
-                    usleep(50000);
-                }
-                if (waitpid(m_pid, NULL, WNOHANG) <= 0) {
-                    GP_LOG("daemon alive after EOF, SIGKILL pid=%d", (int)m_pid);
-                    kill(m_pid, SIGKILL);
-                    waitpid(m_pid, NULL, 0);
-                }
-                m_pid = -1;
+            pid = m_pid;
+            m_pid = -1;
+        }
+        if (pid > 0) {
+            // stdin EOF 后 daemon ~1.5s 内自行退出; 超时强杀, 不留僵尸
+            for (int i = 0; i < 30; i++) {
+                if (waitpid(pid, NULL, WNOHANG) != 0) { pid = -1; break; }
+                usleep(50000);
+            }
+            if (pid > 0) {
+                GP_LOG("daemon alive after EOF, SIGKILL pid=%d", (int)pid);
+                kill(pid, SIGKILL);
+                waitpid(pid, NULL, 0);
             }
         }
         {
             std::lock_guard<std::mutex> lock(m_lock);
             if (m_outFd >= 0) { ::close(m_outFd); m_outFd = -1; }
         }
-        // reader 可能正阻塞在 stateChanged.emit (向 JS 线程投递); 若 JS 线程在
-        // close()->join 里等它就互锁. detach 替代 join, 靠 m_running/fd 关闭让任务
-        // 自然结束 (GstPlayer 是单例且生命周期贯穿进程, detach 无悬挂对象风险).
-        if (m_reader.joinable() && std::this_thread::get_id() != m_reader.get_id()) m_reader.detach();
-        if (m_poller.joinable() && std::this_thread::get_id() != m_poller.get_id()) m_poller.detach();
+        // detach 替代 join: m_running=false + fd 关闭保证线程随即退出;
+        // GstPlayer 单例贯穿进程生命周期, 无悬挂对象风险.
+        if (m_reader.joinable() && std::this_thread::get_id() != m_reader.get_id()) {
+            m_reader.detach();
+        }
+        if (m_poller.joinable() && std::this_thread::get_id() != m_poller.get_id()) {
+            m_poller.detach();
+        }
     }
 
     std::mutex m_lock;
@@ -336,7 +326,8 @@ private:
     std::thread m_poller;
     double m_posMs = 0;
     double m_durMs = 0;
-    std::string m_lastState;
+    int m_videoW = 0;
+    int m_videoH = 0;
 };
 
 static JSValue createGstPlayer(JQModuleEnv* env)
@@ -356,9 +347,10 @@ static JSValue createGstPlayer(JQModuleEnv* env)
     tpl->SetProtoMethod("resume", &GstPlayer::resume);
     tpl->SetProtoMethod("close", &GstPlayer::close);
     tpl->SetProtoMethod("seek", &GstPlayer::seek);
-    tpl->SetProtoMethod("setRect", &GstPlayer::setRect);
     tpl->SetProtoMethod("getPosition", &GstPlayer::getPosition);
     tpl->SetProtoMethod("getDuration", &GstPlayer::getDuration);
+    tpl->SetProtoMethod("getVideoWidth", &GstPlayer::getVideoWidth);
+    tpl->SetProtoMethod("getVideoHeight", &GstPlayer::getVideoHeight);
     tpl->InstanceTemplate()->Set("stateChanged", &GstPlayer::stateChanged);
     return tpl->CallConstructor();
 }
@@ -369,3 +361,32 @@ void gstplayer_init(JQModuleEnv* env)
 }
 
 }  // namespace gstplayer
+
+// ---- 模块注册 (三名一致: libjsapi_gstplayer.so / "gstplayer" / import gstPlayer) ----
+#include "jsmodules/JSCModuleExtension.h"
+#include "jquick_config.h"
+
+using namespace JQUTIL_NS;
+
+namespace gstplayer {
+
+extern void gstplayer_init(JQModuleEnv* env);  // 定义于上方
+
+static std::vector<std::string> exportList = { "gstPlayer" };
+
+static int module_init(JSContext *ctx, JSModuleDef *m)
+{
+    JQuick::sp<JQModuleEnv> env = JQModuleEnv::CreateModule(ctx, m, "gstplayer");
+    gstplayer_init(env.get());
+    env->setModuleExportDone(JS_UNDEFINED, exportList);
+    return 0;
+}
+
+DEF_MODULE_LOAD_FUNC_EXPORT(gstplayer, module_init, exportList)
+
+}  // namespace gstplayer
+
+extern "C" JQUICK_EXPORT void custom_init_jsapis()
+{
+    registerCModuleLoader("gstplayer", &gstplayer::gstplayer_module_load);
+}

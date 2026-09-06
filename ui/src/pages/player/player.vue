@@ -1,14 +1,13 @@
 <template>
   <div class="page">
-    <!-- hole: 中间 44..222 视频带挖透, 下层 Weston 视频 surface 透出;
-         顶栏/底栏在 hole 之外保持可见 (references/transparent.md;
-         native 侧走 waylandsink 合成). -->
+    <!-- hole: 全屏挖透, Weston 视频 surface 从 UI 之下透出 (references/transparent.md).
+         视频矩形由设备侧按分辨率等比拟合 UI 带, 本页不再关心几何. -->
     <hole class="hole"></hole>
 
-    <!-- 点击空白区域 显示/隐藏控制条; 控制条上按钮各自拦截, Falcon 点击不冒泡 -->
+    <!-- 点击空白区域 显示/隐藏控制条; 控制条自身按钮拦截点击 -->
     <div class="stage" @click="toggleBar">
 
-      <!-- 顶栏: 返回 + 标题 -->
+      <!-- 顶部悬浮栏: 返回 + 标题 (悬浮于视频上方) -->
       <div v-if="barVisible" class="top-bar">
         <div class="back" @click="goBack">
           <text class="back-text">‹ 返回</text>
@@ -21,7 +20,7 @@
         <text class="status">{{ statusText }}</text>
       </div>
 
-      <!-- 底部控制条: 单行 44px -->
+      <!-- 底部悬浮控制条: 播放/快进退 + 进度条 + 时间 (悬浮于视频上方) -->
       <div v-if="barVisible" class="ctrl">
         <div class="btn btn-mini" @click="seekBack">
           <text class="btn-text">«10s</text>
@@ -32,7 +31,7 @@
         <div class="btn btn-mini" @click="seekForward">
           <text class="btn-text">10s»</text>
         </div>
-        <!-- 进度条: 底部为按 width% 渲染的播放位置, 上面叠 N 个隐形点击分段实现点击调节 -->
+        <!-- 进度条: 按 width% 渲染播放位置, 叠 N 个隐形点击分段实现点击调节 -->
         <div class="seek">
           <div class="track">
             <div class="fill" :style="fillStyle"></div>
@@ -49,18 +48,19 @@
 </template>
 
 <script>
-// 播放页
-// - 视频画面由 gstplayer 原生层走 GStreamer + KMS 平面输出, 本页只负责 UI 与控制
-// - 页面 timer 一律走 $page(BasePage) 的托管版本: onUnload 兜底释放, 见 skill falcon-runtime.md
+// 播放页 v2 (全重写)
+// - 视频由 gstplayer 原生层 (gstplayerd 守护进程) 播放: waylandsink 进 Weston
+//   合成, 在 UI 之下; 本页全屏 <hole> 透出视频, 控制条悬浮在视频上方.
+// - 视频尺寸自动适配: 设备侧按视频分辨率等比拟合屏幕 UI 带 (信箱式), 页面零几何.
 // - 生命周期契约:
 //     首次 onShow        读 options -> 取流地址 -> open/start, 订阅原生状态
 //     onNewOptions       同一 player 页被 navTo 重开 -> 换源重播
-//     onHide             暂停播放并停轮询 (回前台后由用户手动恢复, 不自动续播)
+//     onHide             暂停播放并停轮询 (回前台由用户手动恢复)
 //     onUnload           单一 stop 路径: generation++ -> 停 timer/订阅 -> close native
 import * as player from '../../services/player.js'
 import { getVideoDetail, getPlayUrl } from '../../services/bili.js'
 
-var SEG_COUNT = 24       // 进度条点击分段数, 逻辑坐标 760px 按 24 段切
+var SEG_COUNT = 24       // 进度条点击分段数
 var POLL_MS = 500        // 进度轮询周期
 var BAR_HIDE_MS = 5000   // 播放中控制条自动隐藏延时
 var SEEK_STEP_MS = 10000 // 快退/快进步长
@@ -76,8 +76,6 @@ function fmtMs(ms) {
   return m + ':' + pad2(s)
 }
 
-// BasePage 托管 timer 包装; 运行时不提供该 API 时退回全局函数,
-// 但页面侧仍统一持句并在 onHide/onUnload 中显式清, 保证没有孤儿 timer.
 function setTimer(vm, ms, fn) {
   var p = vm.$page
   if (p && p.setTimeout) return p.setTimeout(fn, ms)
@@ -103,15 +101,12 @@ export default {
   name: 'player',
   data: function () {
     return {
-      // 入参
       bvid: '',
       pageNo: 1,
       directUrl: '',       // 调试直链, 由 options.url 传入
-      // 运行状态
-      inited: false,       // 是否已完成首次初始化 (防止后台回前台时重开流)
-      opened: false,       // native 管道是否已 open
+      inited: false,
+      opened: false,
       playing: false,
-      // UI
       titleText: '',
       statusText: '加载中…',
       barVisible: true,
@@ -122,9 +117,7 @@ export default {
         for (var i = 0; i < SEG_COUNT; i++) a.push(i)
         return a
       })(),
-      // 异步世代: 换源/离开页面后, 过期回调不得再写界面
-      generation: 0,
-      // timer 句柄 (BasePage 兜底之外的显式管理)
+      generation: 0,       // 异步世代: 换源/离开后过期回调不写界面
       pollTimer: null,
       hideTimer: null
     }
@@ -137,21 +130,16 @@ export default {
       if (pct > 100) return 100
       return pct
     },
-    fillStyle: function () {
-      return { width: this.fillPct + '%' }
-    },
-    // 进度条圆点: left 百分比, 负 margin 自行居中
-    thumbStyle: function () {
-      return { left: this.fillPct + '%' }
-    },
+    fillStyle: function () { return { width: this.fillPct + '%' } },
+    thumbStyle: function () { return { left: this.fillPct + '%' } },
     curText: function () { return fmtMs(this.curMs) },
     durText: function () { return fmtMs(this.durMs) }
   },
   methods: {
-    // ---------------- 生命周期 (由 BasePage 代理到根组件) ----------------
+    // ---------------- 生命周期 ----------------
     onShow: function () {
       if (!this.inited) {
-        // 同页 navTo 的 onNewOptions 只发到 Page 实例, 需要显式挂钩到组件
+        // 同页 navTo 的 onNewOptions 只发到 Page 实例, 需显式挂钩到组件
         if (this.$page && !this._newOptionsBound) {
           this._newOptionsBound = true
           var self = this
@@ -161,13 +149,11 @@ export default {
         this.loadAndPlay()
         return
       }
-      // 后台回前台: 保持在暂停态并确保控制条可见, 由用户决定是否恢复
       if (this.opened && !this.playing) this.showBar()
       this.startPolling()
     },
 
     onNewOptions: function (options) {
-      // 同页重开 = 换视频: 走完整换源路径
       console.log('[player] onNewOptions bvid=' + (options && options.bvid))
       this.generation++
       this.stopPolling()
@@ -184,7 +170,6 @@ export default {
     },
 
     onHide: function () {
-      // 进入后台: 暂停播放、停轮询、展示控制条, 不销毁管道; 回前台由用户恢复
       this.stopPolling()
       this.cancelHideBar()
       if (this.opened && this.playing) {
@@ -195,7 +180,6 @@ export default {
     },
 
     onUnload: function () {
-      // 单一 stop 路径: 递增 generation 使所有在途回调失效 -> 清 timer/订阅 -> 关 native
       this.generation++
       this.stopPolling()
       this.cancelHideBar()
@@ -212,7 +196,7 @@ export default {
       this.bvid = options.bvid || ''
       this.pageNo = parseInt(options.page || '1', 10) || 1
       this.titleText = options.title || ''
-      this.directUrl = options.url || ''   // 调试直链: miniapp_cli start <appid> --player? url 透传
+      this.directUrl = options.url || ''
     },
 
     loadAndPlay: function () {
@@ -221,7 +205,6 @@ export default {
         this.statusText = '当前固件不支持视频播放 (缺少 gstplayer 模块)'
         return
       }
-      // 原生状态订阅 (services/player.js 内部去重; onUnload 时 offState 与之成对)
       player.onState(this.onNativeState)
       this.inited = true
 
@@ -260,7 +243,6 @@ export default {
     openStream: function (url, gen) {
       if (gen !== this.generation) return
       try {
-        // rect 默认值定义在 services/player.js (logical 坐标, 原生层负责换算到 KMS)
         this.statusText = '缓冲中…'
         player.open(url)
         this.opened = true
@@ -281,7 +263,7 @@ export default {
       if (!this.$page) return
       var s = String(state || '').toLowerCase()
       console.log('[player] stateChanged: ' + s)
-      if (s.indexOf('err') === 0) {
+      if (s.indexOf('error') === 0) {
         this.statusText = '播放错误: ' + state
         this.playing = false
         this.stopPolling()
@@ -307,8 +289,7 @@ export default {
         this.showBar()
         return
       }
-      // ready/buffering/loading 等过渡态只在尚未开播时显示为加载中;
-      // duration/closed 等事件不落界面, 避免屏幕中间闪英文
+      // ready/buffering 过渡态只在未开播时显示; closed/duration 不落界面
       if (s === 'ready' || s === 'buffering' || s === 'loading') {
         if (!this.playing) this.statusText = '加载中…'
       }
@@ -337,16 +318,11 @@ export default {
       if (this.playing) this.scheduleHideBar()
     },
     toggleBar: function () {
-      if (this.barVisible) {
-        this.hideBar()
-      } else {
-        this.showBar()
-      }
+      if (this.barVisible) this.hideBar(); else this.showBar()
     },
     hideBar: function () {
       this.cancelHideBar()
       this.barVisible = false
-      // 视频始终全屏 (UI 在视频平面上方, 由 <hole> 透出), 控制条只控制自己显隐
     },
     scheduleHideBar: function () {
       this.cancelHideBar()
@@ -390,7 +366,7 @@ export default {
       this.applySeek(player.getPosition() + deltaMs)
     },
 
-    // 进度条分段点击: segIndex 0..23 -> 跳到 (i+0.5)/SEG_COUNT 处
+    // 进度条分段点击: segIndex 0..N-1 -> 跳到 (i+0.5)/SEG_COUNT 处
     seekBySeg: function (segIndex) {
       if (!this.opened) return
       this.showBar()
@@ -422,18 +398,20 @@ export default {
 
 <style scoped>
 .page {
+  position: absolute;
+  left: 0px;
+  top: 0px;
   width: 960px;
   height: 266px;
   background-color: transparent;
 }
-/* <hole>: UI surface 帧缓冲上挖透明区, 下层 Weston 视频 surface 透出.
-   只挖中间视频带 (顶/底 44px 控制条仍在 UI 上, 不受 hole 影响). */
+/* 全屏挖透: 视频在 UI 之下透出; 控制条以半透明底悬浮于视频上方 */
 .hole {
   position: absolute;
   left: 0px;
-  top: 44px;
+  top: 0px;
   width: 960px;
-  height: 178px;
+  height: 266px;
 }
 .stage {
   position: absolute;
@@ -476,7 +454,7 @@ export default {
 .center {
   position: absolute;
   left: 0px;
-  top: 100px;
+  top: 111px;
   width: 960px;
   height: 44px;
   align-items: center;
