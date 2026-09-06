@@ -92,8 +92,8 @@ bool PlayCore::open(const std::string& uri, const std::string& rect)
             m_rectIn[0] = r[0]; m_rectIn[1] = r[1];
             m_rectIn[2] = r[2]; m_rectIn[3] = r[3];
         } else {
-            m_rectIn[0] = 0; m_rectIn[1] = UI_BAND_Y;
-            m_rectIn[2] = GLOBAL_W; m_rectIn[3] = UI_BAND_H;
+            m_rectIn[0] = 0; m_rectIn[1] = UI_BAND_Y + BAR_H;
+            m_rectIn[2] = GLOBAL_W; m_rectIn[3] = UI_BAND_H - 2 * BAR_H;
         }
     }
     GP_LOG("open uri(96)=%.96s rect=%s", uri.c_str(), m_rectAuto ? "auto" : rect.c_str());

@@ -137,17 +137,19 @@ export default {
     thumbStyle: function () { return { left: this.fillPct + '%' } },
     curText: function () { return fmtMs(this.curMs) },
     durText: function () { return fmtMs(this.durMs) },
-    // 动态 hole 矩形: 与 native fitRect 完全相同的整数拟合 (等比信箱居中),
-    // 逻辑坐标 (0,0,960,266); 视频分辨率未知时退回全带.
+    // 动态 hole 矩形: 与 native fitRect 完全相同的整数拟合 (等比信箱居中).
+    // 视频带内缩到上下控制条之间 (44..222 逻辑), 任何堆叠态视频都不遮挡控制条;
+    // 视频分辨率未知时退回该带全宽.
     holeStyle: function () {
       var vw = this.videoW, vh = this.videoH
-      if (!vw || !vh) return {}
+      var bandY = 44, bandH = 178
+      if (!vw || !vh) return { left: '0px', top: bandY + 'px', width: '960px', height: bandH + 'px' }
       var ar = vw / vh
       var fw = 960
       var fh = Math.round(fw / ar)
-      if (fh > 266) { fh = 266; fw = Math.round(fh * ar) }
+      if (fh > bandH) { fh = bandH; fw = Math.round(fh * ar) }
       var x = Math.floor((960 - fw) / 2)
-      var y = Math.floor((266 - fh) / 2)
+      var y = bandY + Math.floor((bandH - fh) / 2)
       return { left: x + 'px', top: y + 'px', width: fw + 'px', height: fh + 'px' }
     }
   },
@@ -432,13 +434,14 @@ export default {
      hole 矩形与视频矩形由同一公式给出, 两种堆叠态视觉一致 */
   background-color: #000000;
 }
-/* 全屏挖透: 视频在 UI 之下透出; 控制条以半透明底悬浮于视频上方 */
+/* 挖透显示视频: 默认为上下控制条之间的带区, 视频分辨率就绪后由
+   holeStyle 内联样式精确对齐视频拟合矩形 */
 .hole {
   position: absolute;
   left: 0px;
-  top: 0px;
+  top: 44px;
   width: 960px;
-  height: 266px;
+  height: 178px;
 }
 .stage {
   position: absolute;
