@@ -18,7 +18,7 @@
             <text class="reply-time">{{ r.timeText }}</text>
           </div>
           <text class="reply-msg">{{ r.message }}</text>
-          <text class="reply-meta">👍 {{ r.likeText }}<text v-if="r.replyCount > 0">   💬 {{ r.replyCount }}</text></text>
+          <text class="reply-meta">👍 {{ r.likeText }} · 💬 {{ r.replyCount }}</text>
         </div>
       </div>
       <text v-if="replies.length > 0 && hasMore" class="load-more" @click="loadMore">加载更多评论…</text>
@@ -28,7 +28,7 @@
     <!-- 底部发评栏: 登录后可发 -->
     <div class="postbar">
       <div class="post-input" @click="openPostInput">
-        <text class="post-input-text">{{ hasCookie() ? '说点什么…' : '登录后参与评论' }}</text>
+        <text class="post-input-text">{{ logged ? '说点什么…' : '登录后参与评论' }}</text>
       </div>
       <div class="post-btn" @click="openPostInput">
         <text class="post-btn-text">发送</text>
@@ -56,6 +56,7 @@ export default {
       pn: 1,
       hasMore: false,
       loading: false,
+      logged: false,
       status: '加载中…',
       posting: false,
       ime: null,
@@ -69,6 +70,7 @@ export default {
         const self = this
         this.$page.onNewOptions = function (options) { self.applyOptions(options) }
       }
+      this.logged = hasCookie()  // 模板不能直接调导入函数, 落到 data
       this.applyOptions((this.$page && this.$page.options) || {})
     },
 

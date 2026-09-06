@@ -716,6 +716,33 @@ export async function addReply(aid, message) {
   return true
 }
 
+/**
+ * 从电脑端 pc-cookie-server.py 拉取 Cookie (电脑同步登录)
+ * @param {string} ip 电脑局域网 IP, 如 "192.168.1.100"
+ * @returns {Promise<{sessdata,biliJct,dedeUserId}>}
+ */
+export async function fetchPcCookie(ip) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
+  const clean = String(ip || '').trim()
+  if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(clean)) throw new Error('IP 格式不正确')
+  const url = 'http://' + clean + ':9527/bilibilipan/cookie'
+  const s = bilinet.httpGet(url, 5)
+  console.log('[bili] PC cookie fetch ' + clean + ' -> ' + (s ? s.length : 0) + 'B')
+  if (!s) throw new Error('连不上电脑 (' + clean + '), 请确认已运行 pc-cookie-server.py 且同一 WiFi')
+  let body
+  try {
+    body = JSON.parse(s)
+  } catch (e) {
+    throw new Error('电脑返回的数据不是 JSON, 请确认端口为 9527')
+  }
+  if (!body.ok || !body.sessdata) throw new Error('电脑端还没有保存 Cookie')
+  return {
+    sessdata: body.sessdata,
+    biliJct: body.bili_jct || '',
+    dedeUserId: body.dedeuserid || ''
+  }
+}
+
 // 相对时间 (评论发布时间): N分钟前/N小时前/N天前/日期
 function formatRelative(epochSec) {
   if (!epochSec) return ''

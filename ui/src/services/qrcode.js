@@ -106,10 +106,12 @@ function maskFn(pattern, r, c) {
  */
 export function makeQR(text) {
   var bytes = toUtf8(String(text))
-  // 选版本 (EC L 容量: v1 17 ... v6 134)
+  // 选版本 (EC L 总数据码字 = 块数 x 每块数据码字, 容量 = 总数据码字 - 2)
+  // 注意: v4+ 为多块, 容量必须按块数 x 每块数据码字算 (v6-L: 2x68-2=134)
   var version = 0
   for (var v = 1; v <= 6; v++) {
-    var cap = RS_L[v - 1][2] - 2  // 模式 4bit + 计数 8bit
+    var blk = RS_L[v - 1]
+    var cap = blk[0] * blk[2] - 2
     if (bytes.length <= cap) { version = v; break }
   }
   if (version === 0) throw new Error('内容过长, 无法生成二维码 (' + bytes.length + ' 字节)')

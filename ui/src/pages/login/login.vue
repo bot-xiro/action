@@ -12,8 +12,8 @@
         <div :class="['mode-tab', mode === 'qr' ? 'mode-active' : '']" @click="switchMode('qr')">
           <text :class="['mode-text', mode === 'qr' ? 'mode-text-active' : '']">扫码登录</text>
         </div>
-        <div :class="['mode-tab', mode === 'cookie' ? 'mode-active' : '']" @click="switchMode('cookie')">
-          <text :class="['mode-text', mode === 'cookie' ? 'mode-text-active' : '']">Cookie导入</text>
+        <div :class="['mode-tab', mode === 'pc' ? 'mode-active' : '']" @click="switchMode('pc')">
+          <text :class="['mode-text', mode === 'pc' ? 'mode-text-active' : '']">电脑同步</text>
         </div>
       </div>
 
@@ -34,18 +34,18 @@
         </div>
       </div>
 
-      <!-- Cookie 导入 -->
-      <div v-else class="cookie-wrap">
-        <text class="cookie-tip">电脑浏览器登录 B 站后, F12 → Network → 任一 api.bilibili.com 请求 → Request Headers, 复制整行 Cookie (需含 SESSDATA), 在此粘贴导入</text>
-        <div class="cookie-input" @click="inputCookie">
-          <text class="cookie-text">{{ cookieInput ? cookieInput : '点击输入 Cookie…' }}</text>
+      <!-- 电脑同步 -->
+      <div v-else class="pc-wrap">
+        <text class="pc-tip">1. 电脑运行 tools/pc-cookie-server.py (同一 WiFi)　2. 电脑浏览器打开 http://127.0.0.1:9527 粘贴 Cookie 并保存　3. 下面输入电脑 IP 获取</text>
+        <div class="pc-input" @click="inputIp">
+          <text class="pc-input-text">{{ pcIp ? pcIp : '点击输入电脑 IP (如 192.168.1.100)' }}</text>
         </div>
         <div class="btn-row">
-          <div class="btn" @click="importCookie">
-            <text class="btn-text">导入并登录</text>
+          <div class="btn" @click="fetchFromPc">
+            <text class="btn-text">{{ fetching ? '获取中…' : '获取并登录' }}</text>
           </div>
         </div>
-        <text v-if="cookieStatus !== ''" :class="['cookie-status', cookieOk ? 'st-ok' : 'st-err']">{{ cookieStatus }}</text>
+        <text v-if="pcStatus !== ''" :class="['pc-status', pcOk ? 'st-ok' : 'st-err']">{{ pcStatus }}</text>
       </div>
     </div>
 
@@ -68,12 +68,11 @@
 
 <script>
 // 登录页: ① 扫码登录 (二维码本地生成 + 2s 轮询; 成功后 Cookie 在响应体
-// redirect url 中) ② Cookie 导入 (电脑浏览器整行 Cookie 粘贴, nav 校验).
-// 二维码: services/qrcode.js 纯 JS 生成 (V1-6/L, 110 字符 url -> V6 41x41),
-// 模块 5px + 22px 静默区, 行游程渲染减少节点; 右区全高 266 保证码面尺寸.
+// redirect url 中) ② 电脑同步 (电脑运行 tools/pc-cookie-server.py,
+// 浏览器粘贴 Cookie, 笔端按 IP 拉取, 免在笔上输入长文本).
 import { createIME } from '../../services/ime.js'
-import { qrcodeGenerate, qrcodePoll, getMyInfo } from '../../services/bili.js'
-import { saveLogin, parseCookieText } from '../../services/auth.js'
+import { qrcodeGenerate, qrcodePoll, getMyInfo, fetchPcCookie } from '../../services/bili.js'
+import { saveLogin } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
 import { makeQR } from '../../services/qrcode.js'
 
@@ -98,9 +97,10 @@ export default {
       pollState: 'generating',  // generating/waiting/scanned/expired/ok/error
       pollError: '',
       pollTimer: null,
-      cookieInput: '',
-      cookieStatus: '',
-      cookieOk: false,
+      pcIp: '',
+      pcStatus: '',
+      pcOk: false,
+      fetching: false,
       ime: null
     }
   },
@@ -224,48 +224,47 @@ export default {
       }
     },
 
-    // ---- Cookie 导入 ----
-    async inputCookie() {
+    // ---- 电脑同步 ----
+    async inputIp() {
       if (this.ime == null) this.ime = createIME()
-      const self = this
       try {
         const text = await this.ime.open({
-          text: this.cookieInput,
-          placeholder: '粘贴 Cookie (需含 SESSDATA)',
-          maxlength: 2048,
+          text: this.pcIp,
+          placeholder: '输入电脑 IP, 如 192.168.1.100',
+          maxlength: 15,
           inputType: 'EnUSPreferred',
           enterButtonText: '确定',
           confirmText: '确定'
         })
         if (text === null) return
-        self.cookieInput = text.trim()
+        this.pcIp = text.trim()
       } catch (err) {
-        this.cookieStatus = '输入法打开失败: ' + (err && err.message ? err.message : err)
-        this.cookieOk = false
+        this.pcStatus = '输入法打开失败: ' + (err && err.message ? err.message : err)
+        this.pcOk = false
       }
     },
 
-    async importCookie() {
-      const parsed = parseCookieText(this.cookieInput)
-      if (!parsed) {
-        this.cookieStatus = '未识别到 SESSDATA, 请复制包含 SESSDATA 的 Cookie'
-        this.cookieOk = false
-        return
-      }
-      saveLogin(parsed.sessdata, parsed.biliJct, parsed.dedeUserId)
-      // 校验: nav 接口带 Cookie 应返回 isLogin=true
-      this.cookieStatus = '校验中…'
-      this.cookieOk = false
+    async fetchFromPc() {
+      if (this.fetching) return
+      this.pcStatus = ''
+      this.pcOk = false
+      this.fetching = true
       try {
+        const cookies = await fetchPcCookie(this.pcIp)
+        saveLogin(cookies.sessdata, cookies.biliJct, cookies.dedeUserId)
+        // 校验: nav 接口带 Cookie 应返回 isLogin=true
+        this.pcStatus = '已获取, 校验登录态…'
         const info = await getMyInfo()
         if (info.isLogin) {
-          this.cookieOk = true
-          this.cookieStatus = '✓ 登录成功: ' + info.uname + ' (Lv' + info.level + ')'
+          this.pcOk = true
+          this.pcStatus = '✓ 登录成功: ' + info.uname + ' (Lv' + info.level + ')'
         } else {
-          this.cookieStatus = 'Cookie 无效或已过期 (isLogin=false)'
+          this.pcStatus = 'Cookie 无效或已过期 (isLogin=false)'
         }
       } catch (err) {
-        this.cookieStatus = '校验失败: ' + (err && err.message ? err.message : err)
+        this.pcStatus = err && err.message ? err.message : String(err)
+      } finally {
+        this.fetching = false
       }
     }
   }
@@ -400,29 +399,28 @@ function toRuns(m) {
   font-size: 21px;
   color: #ffffff;
 }
-.cookie-wrap {
+.pc-wrap {
   position: absolute;
   left: 12px;
   top: 116px;
   width: 656px;
   height: 140px;
 }
-.cookie-tip {
-  font-size: 17px;
+.pc-tip {
+  font-size: 16px;
   color: #8a94a6;
   margin-bottom: 10px;
 }
-.cookie-input {
+.pc-input {
   width: 656px;
-  height: 46px;
+  height: 42px;
   border-radius: 10px;
   background-color: #21242b;
   justify-content: center;
   padding-left: 14px;
-  padding-right: 14px;
 }
-.cookie-text {
-  font-size: 19px;
+.pc-input-text {
+  font-size: 20px;
   color: #aab3bf;
   max-lines: 1;
   text-overflow: ellipsis;
@@ -432,7 +430,7 @@ function toRuns(m) {
   flex-direction: row;
   margin-top: 10px;
 }
-.cookie-status {
+.pc-status {
   margin-top: 8px;
   font-size: 19px;
 }
