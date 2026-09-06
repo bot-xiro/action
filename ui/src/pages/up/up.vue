@@ -34,6 +34,7 @@
 
 <script>
 import { getUpInfo, getUpFans, getUpVideos } from '../../services/bili.js'
+import { afterPaint } from '../../base-page.js'
 
 export default {
   name: 'up',
@@ -97,36 +98,39 @@ export default {
       this.videos = []
       this.upStatus = '加载中…'
 
-      // 基本信息 (失败直接报整体错误)
-      try {
-        const info = await getUpInfo(this.mid)
-        if (gen !== this.generation) return
-        this.info = info
-        this.upStatus = ''
-        // 粉丝数异步补充, 失败静默
+      // 先让首帧画出加载态再发请求: bilinet.httpGet 同步阻塞 JS 线程
+      afterPaint(async () => {
+        // 基本信息 (失败直接报整体错误)
         try {
-          const fans = await getUpFans(this.mid)
+          const info = await getUpInfo(this.mid)
           if (gen !== this.generation) return
-          this.fansText = fans || ''
-        } catch (e) {}
-      } catch (err) {
-        if (gen !== this.generation) return
-        console.log('[bili] up info error: ' + (err && err.message ? err.message : err))
-        this.upStatus = err && err.message ? err.message : String(err)
-      }
+          this.info = info
+          this.upStatus = ''
+          // 粉丝数异步补充, 失败静默
+          try {
+            const fans = await getUpFans(this.mid)
+            if (gen !== this.generation) return
+            this.fansText = fans || ''
+          } catch (e) {}
+        } catch (err) {
+          if (gen !== this.generation) return
+          console.log('[bili] up info error: ' + (err && err.message ? err.message : err))
+          this.upStatus = err && err.message ? err.message : String(err)
+        }
 
-      // 视频列表独立加载, 互不影响
-      this.videosStatus = '加载视频…'
-      try {
-        const videos = await getUpVideos(this.mid, 1)
-        if (gen !== this.generation) return
-        this.videos = videos
-        this.videosStatus = videos.length === 0 ? 'TA 还没有投稿视频' : ''
-      } catch (err) {
-        if (gen !== this.generation) return
-        console.log('[bili] up videos error: ' + (err && err.message ? err.message : err))
-        this.videosStatus = err && err.message ? err.message : String(err)
-      }
+        // 视频列表独立加载, 互不影响
+        this.videosStatus = '加载视频…'
+        try {
+          const videos = await getUpVideos(this.mid, 1)
+          if (gen !== this.generation) return
+          this.videos = videos
+          this.videosStatus = videos.length === 0 ? 'TA 还没有投稿视频' : ''
+        } catch (err) {
+          if (gen !== this.generation) return
+          console.log('[bili] up videos error: ' + (err && err.message ? err.message : err))
+          this.videosStatus = err && err.message ? err.message : String(err)
+        }
+      })
     },
 
     openVideo(item) {

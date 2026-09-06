@@ -70,6 +70,7 @@
 
 <script>
 import { getVideoDetail, getRelatedVideos } from '../../services/bili.js'
+import { afterPaint } from '../../base-page.js'
 
 export default {
   name: 'page',
@@ -155,28 +156,32 @@ export default {
       const gen = ++this.generation
       this.loading = true
       this.error = ''
-      try {
-        const d = await getVideoDetail(this.bvid)
-        if (gen !== this.generation) return
-        this.detail = d
-        // 分 P 详情: 若指定 page, 需要选中的分 P 标题覆盖展示
-        if (d.pages.length > 1 && this.currentPage >= 1 && this.currentPage <= d.pages.length) {
-          const p = d.pages[this.currentPage - 1]
-          if (p && p.part) this.detail.title = d.title + '（' + p.part + '）'
+      // 先让首帧画出「加载中…」再发请求: bilinet.httpGet 同步阻塞 JS 线程,
+      // 不延迟的话网络差时加载态画不出来, 表现为页面卡死
+      afterPaint(async () => {
+        try {
+          const d = await getVideoDetail(this.bvid)
+          if (gen !== this.generation) return
+          this.detail = d
+          // 分 P 详情: 若指定 page, 需要选中的分 P 标题覆盖展示
+          if (d.pages.length > 1 && this.currentPage >= 1 && this.currentPage <= d.pages.length) {
+            const p = d.pages[this.currentPage - 1]
+            if (p && p.part) this.detail.title = d.title + '（' + p.part + '）'
+          }
+        } catch (err) {
+          if (gen !== this.generation) return
+          console.log('[bili] detail error: ' + (err && err.message ? err.message : err))
+          this.error = err && err.message ? err.message : String(err)
+        } finally {
+          if (gen === this.generation) this.loading = false
         }
-      } catch (err) {
-        if (gen !== this.generation) return
-        console.log('[bili] detail error: ' + (err && err.message ? err.message : err))
-        this.error = err && err.message ? err.message : String(err)
-      } finally {
-        if (gen === this.generation) this.loading = false
-      }
-      // 推荐失败容忍, 与主详情并行
-      try {
-        const rel = await getRelatedVideos(this.bvid)
-        if (gen !== this.generation) return
-        this.related = rel
-      } catch (e) {}
+        // 推荐失败容忍, 与主详情并行
+        try {
+          const rel = await getRelatedVideos(this.bvid)
+          if (gen !== this.generation) return
+          this.related = rel
+        } catch (e) {}
+      })
     },
 
     // 分 P: 同稿件内部切换, 不重新请求接口 (数据已在 pages 中)

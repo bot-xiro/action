@@ -16,6 +16,14 @@
 // along with miniapp.  If not, see <https://www.gnu.org/licenses/>.
 
 const DEBUG = false
+
+// 在首帧绘制之后执行 fn (默认 30ms).
+// 背景: bilinet.httpGet 是同步原生调用, 会阻塞 JS 线程; 若在页面加载入口
+// 直接发起请求, 「加载中…」来不及绘制, 网络差时表现为上一页面冻结 (卡死).
+// 全 App 统一约定: 页面入口先同步置好加载态 -> afterPaint -> 再发网络请求.
+export function afterPaint(fn, ms) {
+  setTimeout(fn, ms || 30)
+}
 function _collectFalconEventIds(name, callback)
 {
   const evtList = $falcon.eventMap[name]

@@ -59,6 +59,7 @@
 //     onUnload           单一 stop 路径: generation++ -> 停 timer/订阅 -> close native
 import * as player from '../../services/player.js'
 import { getVideoDetail, getPlayUrl } from '../../services/bili.js'
+import { afterPaint } from '../../base-page.js'
 
 var SEG_COUNT = 24       // 进度条点击分段数
 var POLL_MS = 500        // 进度轮询周期
@@ -208,9 +209,18 @@ export default {
       player.onState(this.onNativeState)
       this.inited = true
 
+      // 先让首帧画出「加载中…」再取流地址: bilinet.httpGet 同步阻塞 JS 线程,
+      // 不延迟的话网络差时加载态画不出来, 表现为上一页面冻结 (卡死)
+      var self = this
+      afterPaint(function () { self.fetchAndOpen(gen) })
+    },
+
+    // 网络取流 (首帧绘制后执行): 取详情/播放地址 -> 打开流
+    fetchAndOpen: function (gen) {
+      if (gen !== this.generation || !this.$page) return
       var self = this
       if (this.directUrl !== '') {
-        this.statusText = '加载中…'
+        this.statusText = '缓冲中…'
         this.openStream(this.directUrl, gen)
         return
       }

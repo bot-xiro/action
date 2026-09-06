@@ -68,6 +68,7 @@
 <script>
 import { createIME } from '../../services/ime.js'
 import { searchVideos, getPopular } from '../../services/bili.js'
+import { afterPaint } from '../../base-page.js'
 import pm from 'pm'
 
 export default {
@@ -131,21 +132,24 @@ export default {
       const gen = ++this.recGeneration
       this.recLoading = true
       this.recStatus = '加载中…'
-      try {
-        const videos = await getPopular(1)
-        if (gen !== this.recGeneration) return
-        this.recResults = videos
-        this.recLoaded = true
-        this.recStatus = ''
-      } catch (err) {
-        if (gen !== this.recGeneration) return
-        console.log('[bili] recommend error: ' + (err && err.message ? err.message : err))
-        this.recStatus = err && err.message ? err.message : String(err)
-        this.recResults = []
-        this.recLoaded = true
-      } finally {
-        if (gen === this.recGeneration) this.recLoading = false
-      }
+      // 先让首帧画出加载态再发请求: bilinet.httpGet 同步阻塞 JS 线程
+      afterPaint(async () => {
+        try {
+          const videos = await getPopular(1)
+          if (gen !== this.recGeneration) return
+          this.recResults = videos
+          this.recLoaded = true
+          this.recStatus = ''
+        } catch (err) {
+          if (gen !== this.recGeneration) return
+          console.log('[bili] recommend error: ' + (err && err.message ? err.message : err))
+          this.recStatus = err && err.message ? err.message : String(err)
+          this.recResults = []
+          this.recLoaded = true
+        } finally {
+          if (gen === this.recGeneration) this.recLoading = false
+        }
+      })
     },
 
     async openKeyboard() {
@@ -173,21 +177,24 @@ export default {
       const gen = ++this.generation
       this.loading = true
       this.status = '搜索中…'
-      try {
-        const videos = await searchVideos(keyword.trim(), 1)
-        if (gen !== this.generation) return
-        this.results = videos
-        this.searched = true
-        this.status = ''
-      } catch (err) {
-        if (gen !== this.generation) return
-        console.log('[bili] search error: ' + (err && err.message ? err.message : err))
-        this.status = err && err.message ? err.message : String(err)
-        this.results = []
-        this.searched = true
-      } finally {
-        if (gen === this.generation) this.loading = false
-      }
+      // 先让首帧画出加载态再发请求: bilinet.httpGet 同步阻塞 JS 线程
+      afterPaint(async () => {
+        try {
+          const videos = await searchVideos(keyword.trim(), 1)
+          if (gen !== this.generation) return
+          this.results = videos
+          this.searched = true
+          this.status = ''
+        } catch (err) {
+          if (gen !== this.generation) return
+          console.log('[bili] search error: ' + (err && err.message ? err.message : err))
+          this.status = err && err.message ? err.message : String(err)
+          this.results = []
+          this.searched = true
+        } finally {
+          if (gen === this.generation) this.loading = false
+        }
+      })
     },
 
     openVideo(item) {
