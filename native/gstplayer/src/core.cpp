@@ -588,7 +588,7 @@ void PlayCore::busLoop()
         case GST_MESSAGE_STATE_CHANGED:
             // 真实播放状态: 仅认管道自身的状态变化 (子元素的不算).
             // PLAYING -> "play" / PAUSED -> "pause", 页面据此显示/隐藏控制条.
-            if (GST_MESSAGE_SRC(msg) == G_OBJECT(m_pipeline)) {
+            if ((GstObject*)GST_MESSAGE_SRC(msg) == (GstObject*)m_pipeline) {
                 GstState newState = GST_STATE_VOID_PENDING;
                 gst_message_parse_state_changed(msg, NULL, &newState, NULL);
                 if (newState == GST_STATE_PLAYING) {
