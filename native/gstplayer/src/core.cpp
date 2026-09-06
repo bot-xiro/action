@@ -273,15 +273,15 @@ void PlayCore::onDemuxPadAdded(GstElement* demux, GstPad* pad, void* self)
             return;
         }
         // 宿主矩形内等比适配 (自动信箱); rotate=identity: 全局空间横屏内容无需旋转.
-        // layer=2(bottom): 视频面压到最底层, 置于所有 miniapp UI 之下, 页面 <hole>
-        //   立即透出 (默认 stacking 会把后映射的视频面浮到 UI 上, 需点一次 UI 才下沉).
         // sync=false: 帧到即渲染, 不等视频时钟 (真机实测 sync=true 时首帧后停住,
         //   拖动进度条触发 flush 才开始走; 与 kmssink 方案同因), 节奏由音频支路时钟驱动.
+        // layer 保持默认 (normal): 本固件 patched waylandsink 的 layer=bottom
+        //   实现会 SIGSEGV (真机 gst-launch 实测), 不可用; 页面侧用动态 hole
+        //   对齐视频矩形, 视频面在 UI 上/下两种堆叠态视觉一致.
         g_object_set(G_OBJECT(sink),
             "fill-mode", 1,            // fit: 保持宽高比
             "rotate-method", 0,        // identity
             "fullscreen", FALSE,
-            "layer", 2,                // bottom
             "sync", FALSE,
             NULL);
         gst_bin_add_many(GST_BIN(core->m_pipeline), queueV, parse, dec, sink, NULL);
