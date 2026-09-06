@@ -139,6 +139,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             probe
           cmake --build build/probe --config Release --parallel $(nproc)
+          mkdir -p probe/ui/libs
           cp -f build/probe/libjsapi_videoprobe.so probe/ui/libs/libjsapi_videoprobe.so
           cp -f build/probe/videoprobed probe/ui/libs/videoprobed
           chmod +x probe/ui/libs/videoprobed
