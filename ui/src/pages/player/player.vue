@@ -1,9 +1,8 @@
 <template>
   <div class="page">
-    <!-- hole: 挖透显示视频. 视频面在本页之下或之上由 Weston 堆叠决定, 页面用与
-         native 相同的拟合公式动态设置 hole 矩形, 两种堆叠态视觉一致
-         (references/transparent.md). -->
-    <hole class="hole" :style="holeStyle"></hole>
+    <!-- hole: 全带挖透, 视频由设备侧等比拟合全带 (信箱居中, 不裁切不变形),
+         Weston 视频 surface 在 UI 之下透出 (references/transparent.md) -->
+    <hole class="hole"></hole>
 
     <!-- 点击空白区域 显示/隐藏控制条; 控制条自身按钮拦截点击 -->
     <div class="stage" @click="toggleBar">
@@ -119,8 +118,6 @@ export default {
         return a
       })(),
       generation: 0,       // 异步世代: 换源/离开后过期回调不写界面
-      videoW: 0,           // 原生上报的视频分辨率 (驱动动态 hole)
-      videoH: 0,
       pollTimer: null,
       hideTimer: null
     }
@@ -136,22 +133,7 @@ export default {
     fillStyle: function () { return { width: this.fillPct + '%' } },
     thumbStyle: function () { return { left: this.fillPct + '%' } },
     curText: function () { return fmtMs(this.curMs) },
-    durText: function () { return fmtMs(this.durMs) },
-    // 动态 hole 矩形: 与 native fitRect 完全相同的整数拟合 (等比信箱居中).
-    // 视频带内缩到上下控制条之间 (44..222 逻辑), 任何堆叠态视频都不遮挡控制条;
-    // 视频分辨率未知时退回该带全宽.
-    holeStyle: function () {
-      var vw = this.videoW, vh = this.videoH
-      var bandY = 44, bandH = 178
-      if (!vw || !vh) return { left: '0px', top: bandY + 'px', width: '960px', height: bandH + 'px' }
-      var ar = vw / vh
-      var fw = 960
-      var fh = Math.round(fw / ar)
-      if (fh > bandH) { fh = bandH; fw = Math.round(fh * ar) }
-      var x = Math.floor((960 - fw) / 2)
-      var y = bandY + Math.floor((bandH - fh) / 2)
-      return { left: x + 'px', top: y + 'px', width: fw + 'px', height: fh + 'px' }
-    }
+    durText: function () { return fmtMs(this.durMs) }
   },
   methods: {
     // ---------------- 生命周期 ----------------
@@ -183,8 +165,6 @@ export default {
       this.playing = false
       this.curMs = 0
       this.durMs = 0
-      this.videoW = 0
-      this.videoH = 0
       this.applyOptions(options || {})
       this.loadAndPlay()
     },
@@ -325,12 +305,6 @@ export default {
         var dur = player.getDuration()
         if (dur > 0) self.durMs = dur
         self.curMs = player.getPosition()
-        var vs = player.getVideoSize()
-        if (vs.width > 0 && vs.height > 0 &&
-            (vs.width !== self.videoW || vs.height !== self.videoH)) {
-          self.videoW = vs.width
-          self.videoH = vs.height
-        }
       })
     },
     stopPolling: function () {
@@ -434,14 +408,13 @@ export default {
      hole 矩形与视频矩形由同一公式给出, 两种堆叠态视觉一致 */
   background-color: #000000;
 }
-/* 挖透显示视频: 默认为上下控制条之间的带区, 视频分辨率就绪后由
-   holeStyle 内联样式精确对齐视频拟合矩形 */
+/* 全带挖透: 视频由 native 等比拟合全带 (信箱居中, 不裁切), UI 之下透出 */
 .hole {
   position: absolute;
   left: 0px;
-  top: 44px;
+  top: 0px;
   width: 960px;
-  height: 178px;
+  height: 266px;
 }
 .stage {
   position: absolute;

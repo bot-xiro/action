@@ -25,12 +25,6 @@ static const int GLOBAL_H = 480;   // Weston 全局横屏高
 static const int UI_BAND_Y = 107;  // UI 带在全局空间中的 y 偏移
 static const int UI_BAND_H = 266;  // UI 带高 (逻辑屏高)
 
-// 悬浮控制条高度 (与 pages/player/player.vue 的 .top-bar/.ctrl 一致).
-// 视频带内缩到上下控制条之间: 本固件视频面初始会被 Weston 抬到 UI 之上
-// (layer=bottom 的 patched 实现又 SIGSEGV 不可用), 内缩后视频在任何堆叠态
-// 都不会遮挡控制条, 控制条无需 "点击下沉" 即始终可见可点.
-static const int BAR_H = 44;
-
 class PlayCore {
 public:
     using EventFn = void (*)(const std::string&, void*);
@@ -74,7 +68,7 @@ private:
     bool m_audioLinked = false;
     GstElement* m_audioConv = nullptr; // decodebin pad-added 的挂接点
 
-    int m_rectIn[4] = {0, UI_BAND_Y + BAR_H, GLOBAL_W, UI_BAND_H - 2 * BAR_H}; // 宿主矩形 (全局坐标)
+    int m_rectIn[4] = {0, UI_BAND_Y, GLOBAL_W, UI_BAND_H}; // 宿主矩形 (全局坐标)
     bool m_rectAuto = true;
     int m_videoW = 0;
     int m_videoH = 0;
