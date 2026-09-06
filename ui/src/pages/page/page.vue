@@ -19,8 +19,13 @@
           <text class="author" @click="openUp">{{ detail ? (detail.author + ' › · ') : '' }}{{ detail ? detail.pubdateText : '' }}</text>
           <text v-if="detail" class="stat">播放 {{ detail.playText }} · 弹幕 {{ detail.danmakuText }} · {{ detail.duration }}</text>
           <text v-if="detail" class="stat">赞 {{ detail.likeText }} · 币 {{ detail.coinText }} · 藏 {{ detail.favText }} · 转 {{ detail.shareText }}</text>
-          <div v-if="detail" class="playbtn" @click="openPlayer">
-            <text class="play-text">▶ 播放</text>
+          <div v-if="detail" class="btnrow">
+            <div class="playbtn" @click="openPlayer">
+              <text class="play-text">▶ 播放</text>
+            </div>
+            <div class="playbtn playbtn-ghost" @click="openComments">
+              <text class="play-text">💬 评论</text>
+            </div>
           </div>
         </div>
       </div>
@@ -211,6 +216,16 @@ export default {
       $falcon.navTo('player', { bvid: this.bvid, page: String(this.currentPage), title: this.detail.title })
     },
 
+    openComments() {
+      if (!this.detail) return
+      // aid 为评论 oid; 无 aid (老数据) 不跳
+      if (!this.detail.aid) {
+        this.error = '暂无法打开评论 (缺少 aid)'
+        return
+      }
+      $falcon.navTo('comment', { aid: String(this.detail.aid), title: this.detail.title })
+    },
+
     openUp() {
       if (this.detail && this.detail.mid) {
         $falcon.navTo('up', { mid: String(this.detail.mid), name: this.detail.author })
@@ -328,14 +343,21 @@ export default {
   color: #888888;
   margin-top: 6px;
 }
+.btnrow {
+  flex-direction: row;
+  margin-top: 10px;
+}
 .playbtn {
   width: 160px;
   height: 40px;
-  margin-top: 10px;
   border-radius: 20px;
   background-color: #fb7299;
   justify-content: center;
   align-items: center;
+  margin-right: 12px;
+}
+.playbtn-ghost {
+  background-color: #2a2f38;
 }
 .play-text {
   font-size: 22px;

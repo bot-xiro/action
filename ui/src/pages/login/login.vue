@@ -1,0 +1,486 @@
+<template>
+  <div class="page" :class="entering ? 'page-enter' : ''">
+    <!-- 左区: 顶栏 + 模式切换 + 状态 -->
+    <div class="left">
+      <div class="topbar">
+        <div class="back" @click="goBack">
+          <text class="back-text">‹ 返回</text>
+        </div>
+        <text class="title">登录哔哩哔哩</text>
+      </div>
+      <div class="modes">
+        <div :class="['mode-tab', mode === 'qr' ? 'mode-active' : '']" @click="switchMode('qr')">
+          <text :class="['mode-text', mode === 'qr' ? 'mode-text-active' : '']">扫码登录</text>
+        </div>
+        <div :class="['mode-tab', mode === 'cookie' ? 'mode-active' : '']" @click="switchMode('cookie')">
+          <text :class="['mode-text', mode === 'cookie' ? 'mode-text-active' : '']">Cookie导入</text>
+        </div>
+      </div>
+
+      <!-- 扫码状态 -->
+      <div v-if="mode === 'qr'" class="qr-status">
+        <text v-if="pollState === 'ok'" class="st st-ok">✓ 登录成功</text>
+        <text v-else-if="pollState === 'scanned'" class="st st-ok">已扫描, 请在手机上确认</text>
+        <text v-else-if="pollState === 'expired'" class="st st-err">二维码已过期</text>
+        <text v-else-if="pollState === 'error'" class="st st-err">{{ pollError }}</text>
+        <text v-else class="st">用手机 B 站 App 扫右侧二维码</text>
+        <text class="st2">App → 扫一扫 → 确认登录 · 码 3 分钟内有效</text>
+        <text v-if="pollState === 'waiting'" class="st2">等待扫描中…</text>
+        <div v-if="pollState === 'expired' || pollState === 'error'" class="btn" @click="startQr">
+          <text class="btn-text">刷新二维码</text>
+        </div>
+        <div v-if="pollState === 'ok'" class="btn" @click="goBack">
+          <text class="btn-text">完成, 返回</text>
+        </div>
+      </div>
+
+      <!-- Cookie 导入 -->
+      <div v-else class="cookie-wrap">
+        <text class="cookie-tip">电脑浏览器登录 B 站后, F12 → Network → 任一 api.bilibili.com 请求 → Request Headers, 复制整行 Cookie (需含 SESSDATA), 在此粘贴导入</text>
+        <div class="cookie-input" @click="inputCookie">
+          <text class="cookie-text">{{ cookieInput ? cookieInput : '点击输入 Cookie…' }}</text>
+        </div>
+        <div class="btn-row">
+          <div class="btn" @click="importCookie">
+            <text class="btn-text">导入并登录</text>
+          </div>
+        </div>
+        <text v-if="cookieStatus !== ''" :class="['cookie-status', cookieOk ? 'st-ok' : 'st-err']">{{ cookieStatus }}</text>
+      </div>
+    </div>
+
+    <!-- 右区: 二维码 (白底含静默区) -->
+    <div v-if="mode === 'qr'" class="qr-zone">
+      <div v-if="qr.size > 0" class="qr-box" :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px' }">
+        <div v-for="(row, r) in qrRows" :key="r" class="qr-row" :style="{ top: (r * MOD + QPAD) + 'px' }">
+          <div v-for="(seg, s) in row" :key="s"
+               class="qr-dark"
+               :style="{ left: (seg.x * MOD + QPAD) + 'px', width: (seg.w * MOD) + 'px' }"></div>
+        </div>
+        <div v-if="pollState === 'ok' || pollState === 'expired'" class="qr-mask">
+          <text class="qr-mask-text">{{ pollState === 'ok' ? '✓' : '过期' }}</text>
+        </div>
+      </div>
+      <text v-else class="qr-ph">{{ qrError !== '' ? '生成失败' : '生成中…' }}</text>
+    </div>
+  </div>
+</template>
+
+<script>
+// 登录页: ① 扫码登录 (二维码本地生成 + 2s 轮询; 成功后 Cookie 在响应体
+// redirect url 中) ② Cookie 导入 (电脑浏览器整行 Cookie 粘贴, nav 校验).
+// 二维码: services/qrcode.js 纯 JS 生成 (V1-6/L, 110 字符 url -> V6 41x41),
+// 模块 5px + 22px 静默区, 行游程渲染减少节点; 右区全高 266 保证码面尺寸.
+import { createIME } from '../../services/ime.js'
+import { qrcodeGenerate, qrcodePoll, getMyInfo } from '../../services/bili.js'
+import { saveLogin, parseCookieText } from '../../services/auth.js'
+import { afterPaint } from '../../base-page.js'
+import { makeQR } from '../../services/qrcode.js'
+
+const MOD = 5          // 二维码模块边长 px
+const QPAD = 22        // 静默区 (>= 4 模块)
+const POLL_MS = 2000   // 轮询周期
+const QR_TTL_MS = 180000
+
+export default {
+  name: 'login',
+  data() {
+    return {
+      MOD: MOD,
+      QPAD: QPAD,
+      mode: 'qr',
+      entering: true,
+      qr: { size: 0, rows: [] },
+      qrRows: [],
+      qrError: '',
+      qrcodeKey: '',
+      qrGeneratedAt: 0,
+      pollState: 'generating',  // generating/waiting/scanned/expired/ok/error
+      pollError: '',
+      pollTimer: null,
+      cookieInput: '',
+      cookieStatus: '',
+      cookieOk: false,
+      ime: null
+    }
+  },
+  methods: {
+    onShow() {
+      if (this.entering) {
+        const self = this
+        if (this.$page && this.$page.setTimeout) {
+          this.$page.setTimeout(function () { self.entering = false }, 60)
+        } else {
+          setTimeout(function () { self.entering = false }, 60)
+        }
+      }
+      if (this.mode === 'qr' && this.pollState === 'generating' && !this.pollTimer) {
+        this.startQr()
+      }
+    },
+
+    onHide() {
+      this.stopPoll()
+    },
+
+    onUnload() {
+      this.stopPoll()
+      if (this.ime) { try { this.ime.destroy() } catch (e) {} }
+    },
+
+    goBack() {
+      this.$page.finish()
+    },
+
+    switchMode(m) {
+      if (this.mode === m) return
+      this.mode = m
+      if (m === 'qr') {
+        this.startQr()
+      } else {
+        this.stopPoll()
+      }
+    },
+
+    // ---- 扫码登录 ----
+    startQr() {
+      this.stopPoll()
+      this.pollState = 'generating'
+      this.pollError = ''
+      this.qr = { size: 0, rows: [] }
+      this.qrRows = []
+      var self = this
+      // 网络请求延后到首帧之后 (同步 httpGet 阻塞 JS 线程)
+      afterPaint(async function () {
+        try {
+          const r = await qrcodeGenerate()
+          if (!self.$page) return
+          self.qrcodeKey = r.qrcodeKey
+          self.qrGeneratedAt = Date.now()
+          self.renderQr(r.qrUrl)
+          self.pollState = 'waiting'
+          self.startPoll()
+        } catch (err) {
+          if (!self.$page) return
+          self.qrError = err && err.message ? err.message : String(err)
+          self.pollState = 'error'
+          self.pollError = '生成失败: ' + self.qrError
+        }
+      })
+    },
+
+    renderQr(url) {
+      try {
+        const mod = makeQR(url)
+        this.qr = mod
+        this.qrRows = toRuns(mod)
+      } catch (err) {
+        this.qrError = err && err.message ? err.message : String(err)
+        this.pollState = 'error'
+        this.pollError = '渲染失败: ' + this.qrError
+      }
+    },
+
+    startPoll() {
+      this.stopPoll()
+      var self = this
+      const p = this.$page
+      this.pollTimer = (p && p.setInterval)
+        ? p.setInterval(function () { self.pollOnce() }, POLL_MS)
+        : setInterval(function () { self.pollOnce() }, POLL_MS)
+    },
+
+    stopPoll() {
+      if (this.pollTimer == null) return
+      const p = this.$page
+      if (p && p.clearInterval) p.clearInterval(this.pollTimer)
+      else clearInterval(this.pollTimer)
+      this.pollTimer = null
+    },
+
+    async pollOnce() {
+      if (this.pollState !== 'waiting' && this.pollState !== 'scanned') return
+      if (this.qrcodeKey === '') return
+      if (Date.now() - this.qrGeneratedAt > QR_TTL_MS) {
+        this.pollState = 'expired'
+        this.stopPoll()
+        return
+      }
+      try {
+        const r = await qrcodePoll(this.qrcodeKey)
+        if (r.state === 'ok') {
+          this.stopPoll()
+          saveLogin(r.cookies.sessdata, r.cookies.biliJct, r.cookies.dedeUserId)
+          this.pollState = 'ok'
+        } else if (r.state === 'expired') {
+          this.stopPoll()
+          this.pollState = 'expired'
+        } else if (r.state === 'scanned') {
+          this.pollState = 'scanned'
+        }
+      } catch (err) {
+        // 单次轮询失败容忍 (网络抖动), 连续失败由过期时间兜底
+        console.log('[login] poll error: ' + (err && err.message ? err.message : err))
+      }
+    },
+
+    // ---- Cookie 导入 ----
+    async inputCookie() {
+      if (this.ime == null) this.ime = createIME()
+      const self = this
+      try {
+        const text = await this.ime.open({
+          text: this.cookieInput,
+          placeholder: '粘贴 Cookie (需含 SESSDATA)',
+          maxlength: 2048,
+          inputType: 'EnUSPreferred',
+          enterButtonText: '确定',
+          confirmText: '确定'
+        })
+        if (text === null) return
+        self.cookieInput = text.trim()
+      } catch (err) {
+        this.cookieStatus = '输入法打开失败: ' + (err && err.message ? err.message : err)
+        this.cookieOk = false
+      }
+    },
+
+    async importCookie() {
+      const parsed = parseCookieText(this.cookieInput)
+      if (!parsed) {
+        this.cookieStatus = '未识别到 SESSDATA, 请复制包含 SESSDATA 的 Cookie'
+        this.cookieOk = false
+        return
+      }
+      saveLogin(parsed.sessdata, parsed.biliJct, parsed.dedeUserId)
+      // 校验: nav 接口带 Cookie 应返回 isLogin=true
+      this.cookieStatus = '校验中…'
+      this.cookieOk = false
+      try {
+        const info = await getMyInfo()
+        if (info.isLogin) {
+          this.cookieOk = true
+          this.cookieStatus = '✓ 登录成功: ' + info.uname + ' (Lv' + info.level + ')'
+        } else {
+          this.cookieStatus = 'Cookie 无效或已过期 (isLogin=false)'
+        }
+      } catch (err) {
+        this.cookieStatus = '校验失败: ' + (err && err.message ? err.message : err)
+      }
+    }
+  }
+}
+
+// 矩阵 -> 按行暗色游程 [{x, w}], 减少渲染节点 (v6 约 450 个 vs 1681)
+function toRuns(m) {
+  var out = []
+  for (var r = 0; r < m.size; r++) {
+    var segs = []
+    var c = 0
+    while (c < m.size) {
+      if (m.rows[r][c]) {
+        var x = c
+        while (c < m.size && m.rows[r][c]) c++
+        segs.push({ x: x, w: c - x })
+      } else {
+        c++
+      }
+    }
+    out.push(segs)
+  }
+  return out
+}
+</script>
+
+<style scoped>
+.page {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 960px;
+  height: 266px;
+  background-color: #16181c;
+}
+.left {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 680px;
+  height: 266px;
+}
+.topbar {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 680px;
+  height: 44px;
+  flex-direction: row;
+  align-items: center;
+  background-color: #21242b;
+}
+.back {
+  width: 100px;
+  height: 34px;
+  margin-left: 12px;
+  border-radius: 17px;
+  background-color: #37404a;
+  justify-content: center;
+  align-items: center;
+}
+.back-text {
+  font-size: 22px;
+  color: #ffffff;
+}
+.title {
+  font-size: 24px;
+  color: #ffffff;
+  margin-left: 14px;
+}
+.modes {
+  position: absolute;
+  left: 12px;
+  top: 58px;
+  width: 656px;
+  height: 40px;
+  flex-direction: row;
+}
+.mode-tab {
+  height: 40px;
+  padding-left: 20px;
+  padding-right: 20px;
+  border-radius: 20px;
+  margin-right: 12px;
+  background-color: #2a2f38;
+  justify-content: center;
+  align-items: center;
+}
+.mode-active {
+  background-color: #fb7299;
+}
+.mode-text {
+  font-size: 21px;
+  color: #aab3bf;
+}
+.mode-text-active {
+  color: #ffffff;
+}
+.qr-status {
+  position: absolute;
+  left: 12px;
+  top: 116px;
+  width: 656px;
+  height: 140px;
+}
+.st {
+  font-size: 25px;
+  color: #ffffff;
+  margin-bottom: 10px;
+}
+.st-ok {
+  color: #3fd67a;
+}
+.st-err {
+  color: #ff7a7a;
+}
+.st2 {
+  font-size: 19px;
+  color: #8a94a6;
+  margin-bottom: 8px;
+}
+.btn {
+  margin-top: 14px;
+  width: 220px;
+  height: 42px;
+  border-radius: 21px;
+  background-color: #fb7299;
+  justify-content: center;
+  align-items: center;
+}
+.btn-text {
+  font-size: 21px;
+  color: #ffffff;
+}
+.cookie-wrap {
+  position: absolute;
+  left: 12px;
+  top: 116px;
+  width: 656px;
+  height: 140px;
+}
+.cookie-tip {
+  font-size: 17px;
+  color: #8a94a6;
+  margin-bottom: 10px;
+}
+.cookie-input {
+  width: 656px;
+  height: 46px;
+  border-radius: 10px;
+  background-color: #21242b;
+  justify-content: center;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+.cookie-text {
+  font-size: 19px;
+  color: #aab3bf;
+  max-lines: 1;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.btn-row {
+  flex-direction: row;
+  margin-top: 10px;
+}
+.cookie-status {
+  margin-top: 8px;
+  font-size: 19px;
+}
+/* 右区二维码: 266 全高, 白盒 249x249 (41 模块 x 5px + 22px x2 静默区) */
+.qr-zone {
+  position: absolute;
+  left: 680px;
+  top: 0px;
+  width: 280px;
+  height: 266px;
+  background-color: #21242b;
+  justify-content: center;
+  align-items: center;
+}
+.qr-box {
+  position: absolute;
+  left: 15px;
+  top: 8px;
+  background-color: #ffffff;
+}
+.qr-row {
+  position: absolute;
+  left: 0px;
+  width: 249px;
+  height: 5px;
+}
+.qr-dark {
+  position: absolute;
+  top: 0px;
+  height: 5px;
+  background-color: #16181c;
+}
+.qr-mask {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 249px;
+  height: 249px;
+  background-color: rgba(255, 255, 255, 0.9);
+  justify-content: center;
+  align-items: center;
+}
+.qr-mask-text {
+  font-size: 40px;
+  color: #16181c;
+}
+.qr-ph {
+  font-size: 20px;
+  color: #6a7684;
+}
+</style>

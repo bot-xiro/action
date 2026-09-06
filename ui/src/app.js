@@ -20,6 +20,9 @@ try {
   console.warn('[app] gstplayer import check failed: ' + (e && e.message ? e.message : e))
 }
 
+// 启动即载入登录态到内存 (storage -> memory), 各页面同步读取
+import { initAuth } from './services/auth.js'
+
 class App extends $falcon.App {
   constructor() {
     super()
@@ -33,6 +36,7 @@ class App extends $falcon.App {
     super.onLaunch(options)
     // 设置页面基类,应用全局的$falcon.Page将被替换成此处指定的BasePage.
     $falcon.useDefaultBasePageClass(BasePage)
+    try { initAuth() } catch (e) { console.warn('[app] initAuth failed: ' + e) }
   }
 
   /**

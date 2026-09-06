@@ -49,16 +49,37 @@
     </div>
 
     <!-- 动态 -->
-    <div v-else-if="activeTab === 'dynamic'" class="tabbody center">
-      <text class="ph-title">动态</text>
-      <text class="ph-desc">登录后可查看关注 UP 主的更新</text>
-      <text class="ph-desc2">扫码登录将在后续版本支持</text>
+    <div v-else-if="activeTab === 'dynamic'" class="tabbody">
+      <text v-if="dynStatus !== ''" class="status">{{ dynStatus }}</text>
+      <div v-if="dynStatus !== '' && dynStatus.indexOf('未登录') >= 0" class="login-cta" @click="openLogin">
+        <text class="login-cta-text">去登录</text>
+      </div>
+      <scroller v-if="dynStatus === '' || dynItems.length > 0" class="results-full" scroll-direction="vertical" :show-scrollbar="true">
+        <div v-for="item in dynItems" :key="item.bvid" class="item" @click="openVideo(item)">
+          <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
+          <div class="meta">
+            <text class="title">{{ item.title }}</text>
+            <text class="up">{{ item.author }} · {{ item.pubText }}</text>
+            <text class="stat">▶{{ item.playText }}  {{ item.duration }}</text>
+          </div>
+        </div>
+        <text v-if="dynHasMore" class="loadmore" @click="loadDynamic(dynOffset)">加载更多…</text>
+        <text v-if="dynLoaded && dynItems.length === 0" class="empty">关注的 UP 主暂无视频动态</text>
+      </scroller>
     </div>
 
     <!-- 我的 -->
     <div v-else-if="activeTab === 'mine'" class="tabbody center">
-      <text class="ph-title">我的</text>
-      <text class="ph-desc">扫码登录后可查看个人中心</text>
+      <image v-if="myInfo.isLogin && myInfo.face" class="myface" :src="myInfo.face" resize="cover"></image>
+      <text v-if="myInfo.isLogin" class="ph-title">{{ myInfo.uname }}</text>
+      <text v-if="myInfo.isLogin" class="ph-desc">Lv{{ myInfo.level }} · 硬币 {{ myInfo.coin }} · B币 {{ myInfo.money }}</text>
+      <div v-if="!myInfo.isLogin && myLoaded" class="login-cta" @click="openLogin">
+        <text class="login-cta-text">扫码登录 / Cookie 导入</text>
+      </div>
+      <div v-if="myInfo.isLogin" class="login-cta" @click="logout">
+        <text class="login-cta-text">退出登录</text>
+      </div>
+      <text v-if="myStatus !== ''" class="ph-desc2">{{ myStatus }}</text>
       <text class="ph-desc2">bilibilipan v{{ appVersion }}</text>
       <text class="ph-desc2">appid {{ appid }} · 词典笔 mini-app</text>
     </div>
@@ -67,8 +88,9 @@
 
 <script>
 import { createIME } from '../../services/ime.js'
-import { searchVideos, getPopular } from '../../services/bili.js'
+import { searchVideos, getPopular, getDynamicFeed, getMyInfo } from '../../services/bili.js'
 import { afterPaint } from '../../base-page.js'
+import { clearLogin, hasCookie } from '../../services/auth.js'
 import pm from 'pm'
 
 export default {
@@ -96,6 +118,19 @@ export default {
       recLoaded: false,
       recLoading: false,
       recGeneration: 0,
+      // 动态
+      dynItems: [],
+      dynStatus: '',
+      dynOffset: '',
+      dynHasMore: false,
+      dynLoaded: false,
+      dynLoading: false,
+      dynGeneration: 0,
+      // 我的
+      myInfo: { isLogin: false, uname: '', face: '', mid: 0, level: 0, coin: 0, money: 0 },
+      myStatus: '',
+      myLoaded: false,
+      myGeneration: 0,
       // 我的 (版本号运行时从包管理器读取, 不硬编码)
       appVersion: '',
       appid: '8001812345678901',
@@ -126,6 +161,86 @@ export default {
       if (key === 'recommend' && !this.recLoaded && !this.recLoading) {
         this.loadRecommend()
       }
+      if (key === 'dynamic' && !this.dynLoaded && !this.dynLoading) {
+        this.loadDynamic('')
+      }
+      if (key === 'mine' && !this.myLoaded && !this.myLoading) {
+        this.loadMine()
+      }
+    },
+
+    openLogin() {
+      $falcon.navTo('login', {})
+    },
+
+    // 动态视频流 (需登录; 未登录给出去登录入口)
+    async loadDynamic(offset) {
+      const gen = ++this.dynGeneration
+      if (this.dynLoading) return
+      this.dynLoading = true
+      this.dynStatus = '加载中…'
+      afterPaint(async () => {
+        try {
+          const r = await getDynamicFeed(offset)
+          if (gen !== this.dynGeneration) return
+          if (offset) {
+            for (let i = 0; i < r.items.length; i++) this.dynItems.push(r.items[i])
+          } else {
+            this.dynItems = r.items
+          }
+          this.dynOffset = r.offset
+          this.dynHasMore = r.hasMore
+          this.dynLoaded = true
+          this.dynStatus = r.items.length === 0 && !offset ? '暂无动态, 去关注一些 UP 主吧' : ''
+        } catch (err) {
+          if (gen !== this.dynGeneration) return
+          const msg = err && err.message ? err.message : String(err)
+          console.log('[bili] dynamic error: ' + msg)
+          if (msg.indexOf('未登录') >= 0) {
+            this.dynStatus = '未登录, 登录后可查看关注 UP 主的动态'
+          } else {
+            this.dynStatus = msg
+          }
+          if (!offset) this.dynItems = []
+          this.dynLoaded = true
+        } finally {
+          if (gen === this.dynGeneration) this.dynLoading = false
+        }
+      })
+    },
+
+    // 我的: 登录态 + 账号信息
+    async loadMine() {
+      const gen = ++this.myGeneration
+      this.myLoading = true
+      this.myStatus = ''
+      afterPaint(async () => {
+        try {
+          const info = await getMyInfo()
+          if (gen !== this.myGeneration) return
+          this.myInfo = info
+          if (!info.isLogin) this.myStatus = '未登录'
+        } catch (err) {
+          if (gen !== this.myGeneration) return
+          const msg = err && err.message ? err.message : String(err)
+          this.myStatus = msg
+          this.myInfo.isLogin = false
+        } finally {
+          if (gen === this.myGeneration) {
+            this.myLoading = false
+            this.myLoaded = true
+          }
+        }
+      })
+    },
+
+    logout() {
+      clearLogin()
+      this.myInfo = { isLogin: false, uname: '', face: '', mid: 0, level: 0, coin: 0, money: 0 }
+      this.myStatus = '已退出登录'
+      // 动态缓存态作废, 下次进入重新按登录态加载
+      this.dynLoaded = false
+      this.dynItems = []
     },
 
     async loadRecommend() {
@@ -203,6 +318,16 @@ export default {
     },
 
     // 页面生命周期 (由 base-page.js 代理调用)
+    onShow() {
+      // 从登录页返回: 登录态可能已变化 (有 Cookie 但界面未登录 -> 刷新)
+      try {
+        if (hasCookie() && !this.myInfo.isLogin) {
+          this.myLoaded = false
+          this.dynLoaded = false
+        }
+      } catch (e) {}
+    },
+
     onHide() {
       // 输入法弹出可能触发 onHide, 不能在这里销毁 IME 会话
     },
@@ -379,5 +504,33 @@ export default {
   font-size: 20px;
   color: #666666;
   margin-top: 10px;
+}
+
+.login-cta {
+  margin-top: 18px;
+  padding-left: 28px;
+  padding-right: 28px;
+  height: 46px;
+  border-radius: 23px;
+  background-color: #fb7299;
+  justify-content: center;
+  align-items: center;
+}
+.login-cta-text {
+  font-size: 22px;
+  color: #ffffff;
+}
+.myface {
+  width: 72px;
+  height: 72px;
+  border-radius: 36px;
+  margin-bottom: 10px;
+}
+.loadmore {
+  font-size: 20px;
+  color: #fb7299;
+  text-align: center;
+  margin-top: 12px;
+  margin-bottom: 12px;
 }
 </style>

@@ -14,7 +14,9 @@
     "page11": "pages/page11/page11.vue",
     "page12": "pages/page12/page12.vue",
     "up": "pages/up/up.vue",
-    "player": "pages/player/player.vue"
+    "player": "pages/player/player.vue",
+    "login": "pages/login/login.vue",
+    "comment": "pages/comment/comment.vue"
   },
   "options": {
     "external": ["bilinet", "gstplayer"],

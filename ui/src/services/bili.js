@@ -8,14 +8,19 @@
 //   - 无 Cookie 态 (无 buvid3) 反而绕开部分风控, 故不再取手指纹
 
 import { bilinet } from 'bilinet'
+import * as auth from './auth.js'
 
 function hasHttp() {
   return !!(bilinet && typeof bilinet.httpGet === 'function')
 }
 
-// 同步原生 GET -> JSON body; 服务器返回什么就透传什么, 业务 code 由调用方判断
+// 同步原生 GET -> JSON body; 服务器返回什么就透传什么, 业务 code 由调用方判断.
+// 登录态存在时自动携带 Cookie 头 (动态/评论/用户信息等登录接口依赖).
 function getJson(url, timeoutSec) {
-  const s = bilinet.httpGet(url, timeoutSec || 15)
+  const headers = auth.hasCookie() ? [auth.cookieHeader()] : undefined
+  const s = headers
+    ? bilinet.httpGet(url, timeoutSec || 15, headers)
+    : bilinet.httpGet(url, timeoutSec || 15)
   console.log('[bili] GET ' + url.replace(/(&|\?)w_rid=[^&]+/, '').replace(/(&|\?)wts=[^&]+/, '') + ' -> ' + (s ? s.length : 0) + 'B')
   if (!s) { console.log('[bili] GET 空响应'); throw new Error('请求失败 (空响应)') }
   try {
@@ -26,6 +31,20 @@ function getJson(url, timeoutSec) {
     if (String(s).indexOf('<!DOCTYPE') === 0 || String(s).indexOf('<html') === 0) {
       throw new Error('接口被风控拦截 (风控验证页)')
     }
+    throw new Error('接口返回非 JSON: ' + String(s).substring(0, 120))
+  }
+}
+
+// 同步原生 POST 表单 -> JSON body (评论发送等需要登录 + csrf 的接口)
+function postJson(url, data, timeoutSec) {
+  const headers = ['Content-Type: application/x-www-form-urlencoded']
+  if (auth.hasCookie()) headers.push(auth.cookieHeader())
+  const s = bilinet.httpPost(url, data, timeoutSec || 15, headers)
+  console.log('[bili] POST ' + url.substring(0, 80) + ' -> ' + (s ? s.length : 0) + 'B')
+  if (!s) throw new Error('请求失败 (空响应)')
+  try {
+    return JSON.parse(s)
+  } catch (e) {
     throw new Error('接口返回非 JSON: ' + String(s).substring(0, 120))
   }
 }
@@ -514,4 +533,198 @@ export async function getUpVideos(mid, page) {
   }
   cacheSet(ckey, videos2)
   return videos2
+}
+
+// ================= 登录 (二维码 + Cookie) / 我的 / 动态 / 评论 =================
+
+/**
+ * 生成登录二维码. 返回 {qrcodeKey, qrUrl}:
+ *   qrcodeKey 用于轮询, qrUrl 需编码为二维码供 B 站 App 扫描.
+ */
+export async function qrcodeGenerate() {
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
+  const body = getJson('https://passport.bilibili.com/x/passport-login/web/qrcode/generate', 10)
+  if (body.code !== 0 || !body.data || !body.data.qrcode_key) {
+    throw new Error(body.message || ('二维码接口错误 code=' + body.code))
+  }
+  return { qrcodeKey: body.data.qrcode_key, qrUrl: body.data.url }
+}
+
+/**
+ * 轮询二维码状态. 返回:
+ *   {state: 'waiting'|'scanned'|'expired'|'ok', cookies?: {sessdata,biliJct,dedeUserId}}
+ * 成功时 cookie 参数直接在响应体 redirect url 中 (无需解析 Set-Cookie 头).
+ */
+export async function qrcodePoll(qrcodeKey) {
+  const body = getJson('https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key='
+    + encodeURIComponent(qrcodeKey), 10)
+  if (body.code !== 0 || !body.data) {
+    throw new Error(body.message || ('轮询接口错误 code=' + body.code))
+  }
+  const c = body.data.code
+  if (c === 0) {
+    const url = body.data.url || ''
+    const cookies = parseLoginUrlParams(url)
+    if (!cookies || !cookies.sessdata) throw new Error('登录成功但未取到 Cookie')
+    return { state: 'ok', cookies: cookies }
+  }
+  if (c === 86090) return { state: 'scanned' }
+  if (c === 86038) return { state: 'expired' }
+  return { state: 'waiting' }  // 86039 未扫描
+}
+
+// 从跨域跳转 url 的 query 里解析登录 Cookie 参数
+function parseLoginUrlParams(url) {
+  if (!url) return null
+  const out = { sessdata: '', biliJct: '', dedeUserId: '' }
+  const qs = url.indexOf('?') >= 0 ? url.substring(url.indexOf('?') + 1) : ''
+  const pairs = qs.split('&')
+  for (let i = 0; i < pairs.length; i++) {
+    const eq = pairs[i].indexOf('=')
+    if (eq <= 0) continue
+    const k = pairs[i].substring(0, eq)
+    let v = pairs[i].substring(eq + 1)
+    try { v = decodeURIComponent(v) } catch (e) {}
+    if (k === 'SESSDATA') out.sessdata = v
+    else if (k === 'bili_jct') out.biliJct = v
+    else if (k === 'DedeUserID') out.dedeUserId = v
+  }
+  return out.sessdata ? out : null
+}
+
+/**
+ * 我的账号信息 (x/web-interface/nav, 带 Cookie; 匿名返回 isLogin=false)
+ */
+export async function getMyInfo() {
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
+  const body = getJson('https://api.bilibili.com/x/web-interface/nav', 10)
+  if (!body || !body.data) throw new Error('nav 接口错误')
+  const d = body.data
+  let face = d.face || ''
+  if (face.indexOf('//') === 0) face = 'https:' + face
+  return {
+    isLogin: d.isLogin === true,
+    uname: d.uname || '',
+    face: face,
+    mid: d.mid || 0,
+    level: (d.levelInfo && d.levelInfo.current_level) || 0,
+    money: d.money || 0,
+    coin: d.coin || 0
+  }
+}
+
+/**
+ * 动态视频流 (x/polymer/web-dynamic/v1/feed/all, 需登录 Cookie)
+ * @param {string} offset 分页游标 (首次传 '')
+ * @returns {Promise<{items:Array, offset:string, hasMore:boolean}>}
+ */
+export async function getDynamicFeed(offset) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
+  if (!auth.hasCookie()) throw new Error('未登录')
+  const url = 'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?timezone_offset=-480&type=video'
+    + (offset ? '&offset=' + encodeURIComponent(offset) : '')
+  const body = getJson(url, 15)
+  if (body.code === -101) throw new Error('未登录或登录已过期')
+  if (body.code !== 0 || !body.data) {
+    throw new Error(body.message || ('动态接口错误 code=' + body.code))
+  }
+  const list = body.data.items || []
+  const items = []
+  for (let i = 0; i < list.length; i++) {
+    const it = list[i]
+    if (!it || it.type !== 'DYNAMIC_TYPE_AV') continue  // 只取视频动态
+    const md = (it.modules && it.modules.module_dynamic) || {}
+    const ma = (it.modules && it.modules.module_author) || {}
+    const arc = (md.major && md.major.archive) || {}
+    if (!arc.bvid) continue
+    let pic = arc.pic || ''
+    if (pic.indexOf('//') === 0) pic = 'https:' + pic
+    const st = arc.stat || {}
+    items.push({
+      bvid: arc.bvid,
+      aid: arc.aid || 0,
+      title: stripTags(arc.title),
+      author: ma.name || '',
+      playText: formatPlay(st.play),
+      duration: arc.duration_text || '',
+      pic: thumb(pic, 400, 250),
+      pubText: ma.pub_time || ''
+    })
+  }
+  return {
+    items: items,
+    offset: body.data.offset || '',
+    hasMore: body.data.has_more === 1
+  }
+}
+
+/**
+ * 视频评论列表 (x/v2/reply, 匿名可读; type=1 视频评论区)
+ * @param {number} aid 视频 aid
+ * @param {number} pn 页码 (从 1 开始)
+ * @returns {Promise<{total:number, replies:Array}>}
+ */
+export async function getReplies(aid, pn) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
+  const url = 'https://api.bilibili.com/x/v2/reply?type=1&oid=' + encodeURIComponent(aid)
+    + '&pn=' + (pn || 1) + '&ps=20&jsonp=json'
+  const body = getJson(url, 15)
+  if (body.code !== 0 || !body.data) {
+    if (body.code === 12009) throw new Error('评论区已关闭')
+    throw new Error(body.message || ('评论接口错误 code=' + body.code))
+  }
+  const page = body.data.page || {}
+  const list = body.data.replies || []
+  const replies = []
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i]
+    if (!r) continue
+    const member = r.member || {}
+    const content = r.content || {}
+    let face = member.avatar || ''
+    if (face.indexOf('//') === 0) face = 'https:' + face
+    const upperMid = body.data.upper ? body.data.upper.mid : 0
+    replies.push({
+      rpid: r.rpid || 0,
+      author: (member.uname || '用户') + (r.mid === upperMid ? ' (UP)' : ''),
+      face: thumb(face, 60, 60),
+      message: stripTags(content.message),
+      likeText: formatPlay(r.like),
+      timeText: formatRelative(r.ctime),
+      replyCount: r.rcount || 0
+    })
+  }
+  return { total: page.count || 0, replies: replies }
+}
+
+/**
+ * 发表评论 (x/v2/reply/add, 需登录 Cookie + csrf)
+ */
+export async function addReply(aid, message) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
+  if (!auth.hasCookie()) throw new Error('登录后才能评论')
+  const csrf = auth.getCsrf()
+  if (!csrf) throw new Error('Cookie 缺少 bili_jct (请重新登录)')
+  const data = 'oid=' + encodeURIComponent(aid) + '&type=1&message='
+    + encodeURIComponent(message) + '&csrf=' + encodeURIComponent(csrf)
+  const body = postJson('https://api.bilibili.com/x/v2/reply/add', data, 15)
+  if (body.code !== 0) {
+    if (body.code === -101) throw new Error('登录已过期, 请重新登录')
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('评论发送失败 code=' + body.code))
+  }
+  return true
+}
+
+// 相对时间 (评论发布时间): N分钟前/N小时前/N天前/日期
+function formatRelative(epochSec) {
+  if (!epochSec) return ''
+  const dt = new Date(epochSec * 1000)
+  function pad(n) { return n < 10 ? '0' + n : '' + n }
+  const diff = Date.now() / 1000 - epochSec
+  if (diff < 60) return '刚刚'
+  if (diff < 3600) return Math.floor(diff / 60) + '分钟前'
+  if (diff < 86400) return Math.floor(diff / 3600) + '小时前'
+  if (diff < 86400 * 30) return Math.floor(diff / 86400) + '天前'
+  return dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' + pad(dt.getDate())
 }
