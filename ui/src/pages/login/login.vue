@@ -58,10 +58,11 @@
       <text class="qr-cap">{{ qrCapText }}</text>
       <div v-if="qr.size > 0" class="qr-box"
            :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px', left: ((280 - (qr.size * MOD + QPAD * 2)) / 2) + 'px' }">
-        <div v-for="(row, r) in qrRows" :key="r" class="qr-row" :style="{ top: (r * MOD + QPAD) + 'px' }">
+        <div v-for="(row, r) in qrRows" :key="r" class="qr-row"
+             :style="{ top: (r * MOD + QPAD) + 'px', width: (qr.size * MOD + QPAD * 2) + 'px', height: MOD + 'px' }">
           <div v-for="(seg, s) in row" :key="s"
                class="qr-dark"
-               :style="{ left: (seg.x * MOD + QPAD) + 'px', width: (seg.w * MOD) + 'px' }"></div>
+               :style="{ left: (seg.x * MOD + QPAD) + 'px', width: (seg.w * MOD) + 'px', height: MOD + 'px' }"></div>
         </div>
         <!-- 覆盖层: 过期/出错时可直接点按刷新 (电脑同步模式下左侧无刷新入口) -->
         <div v-if="pollState === 'expired' || pollState === 'error'"
@@ -502,15 +503,16 @@ function toRuns(m) {
   top: 18px;
   background-color: #ffffff;
 }
+/* 每行: 必须是「整个二维码宽度」, 否则绝对定位的 .qr-dark 子元素
+   会被行盒裁剪 / 无法定位 (曾因删掉 width 导致二维码整片空白).
+   宽度与高度随 MOD 动态给出. */
 .qr-row {
   position: absolute;
   left: 0px;
-  height: 5px;
 }
 .qr-dark {
   position: absolute;
   top: 0px;
-  height: 5px;
   background-color: #16181c;
 }
 /* 宽高由 :style 动态给出 (随二维码版本变化) */
