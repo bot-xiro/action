@@ -10,19 +10,28 @@
 
     <scroller class="list" scroll-direction="vertical" :show-scrollbar="true">
       <text v-if="status !== ''" class="status">{{ status }}</text>
-      <div v-for="r in replies" :key="r.rpid" class="reply">
-        <image class="face" :src="r.face" resize="cover"></image>
-        <div class="reply-main">
-          <div class="reply-head">
-            <text class="reply-author">{{ r.author }}</text>
-            <text class="reply-time">{{ r.timeText }}</text>
-          </div>
-          <text class="reply-msg">{{ r.message }}</text>
-          <text class="reply-meta">👍 {{ r.likeText }} · 💬 {{ r.replyCount }}</text>
+      <!-- 未登录: 明确给出登录引导 (用户反馈: 未登录状态无法获取评论) -->
+      <div v-if="!logged && !loading" class="gate">
+        <text class="gate-text">评论需要登录后查看</text>
+        <div class="gate-btn" @click="goLogin">
+          <text class="gate-btn-text">去登录 (扫码 / 电脑同步)</text>
         </div>
       </div>
-      <text v-if="replies.length > 0 && hasMore" class="load-more" @click="loadMore">加载更多评论…</text>
-      <text v-if="!loading && replies.length === 0 && status === ''" class="empty">还没有评论, 抢首评</text>
+      <div v-else>
+        <div v-for="r in replies" :key="r.rpid" class="reply">
+          <image class="face" :src="r.face" resize="cover"></image>
+          <div class="reply-main">
+            <div class="reply-head">
+              <text class="reply-author">{{ r.author }}</text>
+              <text class="reply-time">{{ r.timeText }}</text>
+            </div>
+            <text class="reply-msg">{{ r.message }}</text>
+            <text class="reply-meta">👍 {{ r.likeText }} · 💬 {{ r.replyCount }}</text>
+          </div>
+        </div>
+      </div>
+      <text v-if="logged && replies.length > 0 && hasMore" class="load-more" @click="loadMore">加载更多评论…</text>
+      <text v-if="logged && !loading && replies.length === 0 && status === ''" class="empty">还没有评论, 抢首评</text>
     </scroller>
 
     <!-- 底部发评栏: 登录后可发 -->
@@ -70,8 +79,19 @@ export default {
         const self = this
         this.$page.onNewOptions = function (options) { self.applyOptions(options) }
       }
+      const wasLogged = this.logged
       this.logged = hasCookie()  // 模板不能直接调导入函数, 落到 data
+      // 从登录页返回后已登录: 之前被门禁挡住, 现在补一次加载
+      if (this.logged && !wasLogged && this.aid && this.replies.length === 0) {
+        this.status = '加载中…'
+        this.load(true)
+        return
+      }
       this.applyOptions((this.$page && this.$page.options) || {})
+    },
+
+    goLogin() {
+      this.$page.navTo({ page: 'login' })
     },
 
     onUnload() {
@@ -87,6 +107,13 @@ export default {
       this.total = 0
       this.pn = 1
       this.hasMore = false
+      this.generation++   // 作废在途请求
+      this.loading = false
+      // 未登录: 不发请求, 直接展示登录引导
+      if (!this.logged) {
+        this.status = ''
+        return
+      }
       this.status = '加载中…'
       this.load(true)
     },
@@ -138,7 +165,7 @@ export default {
 
     async openPostInput() {
       if (!hasCookie()) {
-        this.status = '请先在「我的」页登录后再评论'
+        this.goLogin()
         return
       }
       if (this.ime == null) this.ime = createIME()
@@ -295,6 +322,31 @@ export default {
   color: #6a7684;
   margin-top: 20px;
   text-align: center;
+}
+/* 未登录门禁 */
+.gate {
+  width: 936px;
+  height: 160px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.gate-text {
+  font-size: 22px;
+  color: #8a94a6;
+  margin-bottom: 14px;
+}
+.gate-btn {
+  width: 300px;
+  height: 44px;
+  border-radius: 22px;
+  background-color: #fb7299;
+  justify-content: center;
+  align-items: center;
+}
+.gate-btn-text {
+  font-size: 21px;
+  color: #ffffff;
 }
 .postbar {
   position: absolute;

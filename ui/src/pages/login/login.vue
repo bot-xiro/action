@@ -36,22 +36,26 @@
 
       <!-- 电脑同步 -->
       <div v-else class="pc-wrap">
-        <text class="pc-tip">1. 电脑运行 tools/pc-cookie-server.py (同一 WiFi)　2. 电脑浏览器打开 http://127.0.0.1:9527 粘贴 Cookie 并保存　3. 下面输入电脑 IP 获取</text>
-        <div class="pc-input" @click="inputIp">
-          <text class="pc-input-text">{{ pcIp ? pcIp : '点击输入电脑 IP (如 192.168.1.100)' }}</text>
-        </div>
-        <div class="btn-row">
-          <div class="btn" @click="fetchFromPc">
-            <text class="btn-text">{{ fetching ? '获取中…' : '获取并登录' }}</text>
+        <scroller class="pc-scroll" scroll-direction="vertical" :show-scrollbar="true">
+          <text class="pc-tip">使用方法: ① 电脑运行本仓库 tools/pc-cookie-server.py (需同一 WiFi)　② 电脑浏览器打开 http://127.0.0.1:9527 , 粘贴 B 站 Cookie 并保存　③ 下方输入电脑 IP, 点「获取并登录」</text>
+          <div class="pc-input" @click="inputIp">
+            <text class="pc-input-text">{{ pcIp ? pcIp : '点击输入电脑 IP (如 192.168.1.100)' }}</text>
           </div>
-        </div>
-        <text v-if="pcStatus !== ''" :class="['pc-status', pcOk ? 'st-ok' : 'st-err']">{{ pcStatus }}</text>
+          <div class="btn-row">
+            <div class="btn" @click="fetchFromPc">
+              <text class="btn-text">{{ fetching ? '获取中…' : '获取并登录' }}</text>
+            </div>
+          </div>
+          <text v-if="pcStatus !== ''" :class="['pc-status', pcOk ? 'st-ok' : 'st-err']">{{ pcStatus }}</text>
+        </scroller>
       </div>
     </div>
 
-    <!-- 右区: 二维码 (白底含静默区) -->
+    <!-- 右区: 二维码 (国内 API 生成图片, 失败降级本地编码) -->
     <div v-if="mode === 'qr'" class="qr-zone">
-      <div v-if="qr.size > 0" class="qr-box" :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px' }">
+      <image v-if="qrUrl !== '' && !useLocalQr" class="qr-img" :src="qrImgUrl"
+             resize="stretch" @error="onQrImgError"></image>
+      <div v-else-if="qr.size > 0" class="qr-box" :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px' }">
         <div v-for="(row, r) in qrRows" :key="r" class="qr-row" :style="{ top: (r * MOD + QPAD) + 'px' }">
           <div v-for="(seg, s) in row" :key="s"
                class="qr-dark"
@@ -76,10 +80,17 @@ import { saveLogin } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
 import { makeQR } from '../../services/qrcode.js'
 
-const MOD = 5          // 二维码模块边长 px
+const MOD = 5          // 二维码模块边长 px (本地编码兜底用)
 const QPAD = 22        // 静默区 (>= 4 模块)
 const POLL_MS = 2000   // 轮询周期
 const QR_TTL_MS = 180000
+
+// 国内二维码图片 API (依次降级; 全部失败再用本地编码器).
+// 注意: 二维码内容 (含 qrcode_key) 会经过该 API, key 3 分钟过期.
+const QR_APIS = [
+  { name: 'liantu', build: (u) => 'https://qr.liantu.com/api.php?text=' + encodeURIComponent(u) },
+  { name: 'vvhan', build: (u) => 'https://api.vvhan.com/api/qrcode?text=' + encodeURIComponent(u) }
+]
 
 export default {
   name: 'login',
@@ -92,6 +103,9 @@ export default {
       qr: { size: 0, rows: [] },
       qrRows: [],
       qrError: '',
+      qrUrl: '',           // 待编码的登录 url (轮询 key 与其绑定)
+      qrApiIdx: 0,         // 当前使用的国内 API 下标
+      useLocalQr: false,   // API 全部失败 -> 本地编码兜底
       qrcodeKey: '',
       qrGeneratedAt: 0,
       pollState: 'generating',  // generating/waiting/scanned/expired/ok/error
@@ -104,7 +118,26 @@ export default {
       ime: null
     }
   },
+  computed: {
+    // 当前 API 生成的二维码图片地址; API 链走完后由本地编码兜底
+    qrImgUrl() {
+      const api = QR_APIS[this.qrApiIdx]
+      if (api == null) return ''
+      return api.build(this.qrUrl)
+    }
+  },
   methods: {
+    // 图片加载失败 -> 换下一个国内 API; 全部失败 -> 本地编码器兜底
+    onQrImgError() {
+      if (this.qrApiIdx + 1 < QR_APIS.length) {
+        this.qrApiIdx += 1
+        console.log('[login] QR API 降级 -> ' + QR_APIS[this.qrApiIdx].name)
+      } else {
+        console.log('[login] QR API 全部失败, 使用本地编码器')
+        this.useLocalQr = true
+      }
+    },
+
     onShow() {
       if (this.entering) {
         const self = this
@@ -147,8 +180,12 @@ export default {
       this.stopPoll()
       this.pollState = 'generating'
       this.pollError = ''
+      this.qrError = ''
       this.qr = { size: 0, rows: [] }
       this.qrRows = []
+      this.qrUrl = ''
+      this.qrApiIdx = 0
+      this.useLocalQr = false
       var self = this
       // 网络请求延后到首帧之后 (同步 httpGet 阻塞 JS 线程)
       afterPaint(async function () {
@@ -157,6 +194,8 @@ export default {
           if (!self.$page) return
           self.qrcodeKey = r.qrcodeKey
           self.qrGeneratedAt = Date.now()
+          self.qrUrl = r.qrUrl
+          // 本地也先编一份: API 图片失败时立即可用, 无需再等
           self.renderQr(r.qrUrl)
           self.pollState = 'waiting'
           self.startPoll()
@@ -175,9 +214,13 @@ export default {
         this.qr = mod
         this.qrRows = toRuns(mod)
       } catch (err) {
+        // 本地编码失败不致命: API 图片路径仍可展示, 只有 API 也失败时才提示
         this.qrError = err && err.message ? err.message : String(err)
-        this.pollState = 'error'
-        this.pollError = '渲染失败: ' + this.qrError
+        console.log('[login] 本地编码失败: ' + this.qrError)
+        if (this.useLocalQr) {
+          this.pollState = 'error'
+          this.pollError = '渲染失败: ' + this.qrError
+        }
       }
     },
 
@@ -406,6 +449,11 @@ function toRuns(m) {
   width: 656px;
   height: 140px;
 }
+/* 电脑同步内容超出可视高度, 需可上下滑动 (用户反馈: cookie 页面无法上下滑动) */
+.pc-scroll {
+  width: 656px;
+  height: 140px;
+}
 .pc-tip {
   font-size: 16px;
   color: #8a94a6;
@@ -450,6 +498,11 @@ function toRuns(m) {
   left: 15px;
   top: 8px;
   background-color: #ffffff;
+}
+/* 国内 API 生成的二维码图片 (白底方图, 249x249 对齐本地编码尺寸) */
+.qr-img {
+  width: 249px;
+  height: 249px;
 }
 .qr-row {
   position: absolute;
