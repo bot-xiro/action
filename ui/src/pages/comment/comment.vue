@@ -91,7 +91,8 @@ export default {
     },
 
     goLogin() {
-      this.$page.navTo({ page: 'login' })
+      // 与本项目其它页面一致: 页面跳转走 $falcon.navTo($page 无此方法)
+      $falcon.navTo('login', {})
     },
 
     onUnload() {

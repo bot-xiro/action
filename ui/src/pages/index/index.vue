@@ -1,5 +1,5 @@
 <template>
-  <div class="page" :class="entering ? 'page-enter' : ''">
+  <div class="page">
     <div class="tabs">
       <div v-for="t in tabs" :key="t.key"
            :class="['tab', activeTab === t.key ? 'tab-active' : '']"
@@ -133,18 +133,10 @@ export default {
       myGeneration: 0,
       // 我的 (版本号运行时从包管理器读取, 不硬编码)
       appVersion: '',
-      appid: '8001812345678901',
-      entering: true   // 页面进入动画
+      appid: '8001812345678901'
     }
   },
   mounted() {
-    // 进入动画: 首帧后翻转折射滑入; timer 走 BasePage 托管, 页面卸载自动清理
-    const self = this
-    try {
-      const p = this.$page
-      if (p && p.setTimeout) p.setTimeout(function () { self.entering = false }, 60)
-      else setTimeout(function () { self.entering = false }, 60)
-    } catch (e) { self.entering = false }
     this.ime = createIME()
     // 版本号: 从包管理器读当前安装包信息 (haasui-docs jsapi/system/falcon/pm)
     try {
@@ -350,12 +342,6 @@ export default {
   background-color: #141414;
   display: flex;
   flex-direction: column;
-  transition-property: transform;
-  transition-duration: 260ms;
-  transition-timing-function: ease-out;
-}
-.page-enter {
-  transform: translateX(960px);
 }
 .tabs {
   width: 960px;

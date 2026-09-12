@@ -20,8 +20,17 @@ var RS_L = [
   [2, 86, 68]    // v6 (134)
 ]
 
-// 校正图形中心坐标 (v2-v6, 除寻像图形外各 1 个)
-var ALIGN_CENTERS = [0, 0, 18, 22, 26, 30, 34]
+// 校正图形中心坐标列表 (按版本 v1-v6). 每个版本给出所有候选中心,
+// 两两组合出校正图形位置, 与寻像图形重叠的角落由生成逻辑跳过.
+// 依据 ISO/IEC 18004 Table E.1: v2=[6,18] v3=[6,22] v4=[6,26] v5=[6,30] v6=[6,34]
+var ALIGN_CENTERS = [
+  null,           // v1: 无校正图形
+  [6, 18],        // v2
+  [6, 22],        // v3
+  [6, 26],        // v4
+  [6, 30],        // v5
+  [6, 34]         // v6
+]
 
 var FORMAT_EC_L_BITS = 1  // 01 (L)
 var MASK_PATTERN = 2      // 固定掩码 2: c % 3 == 0 取反
@@ -46,15 +55,17 @@ function gmul(a, b) {
 }
 
 // RS 纠错码字 (生成多项式次数 = ecCount)
+// 生成多项式 g(x) = ∏_{i=0}^{ecCount-1} (x - α^i), 系数按「最高次在前」存放:
+//   gen[0] 为 x^ecCount 的系数 (恒为 1), gen[ecCount] 为常数项.
+// 每步乘 (x - α^i): 乘 x 使次数+1 (结果下标不变), 乘 α^i 使下标+1.
 function rsEc(data, ecCount) {
-  // 生成多项式 (x-α^0)...(x-α^(n-1))
   var gen = [1]
   for (var i = 0; i < ecCount; i++) {
     var next = new Array(gen.length + 1)
     for (var j = 0; j < next.length; j++) next[j] = 0
     for (var j = 0; j < gen.length; j++) {
-      next[j] ^= gmul(gen[j], EXP[i])
-      next[j + 1] ^= gen[j]
+      next[j] ^= gen[j]                       // gen[j] * x
+      next[j + 1] ^= gmul(gen[j], EXP[i])     // gen[j] * α^i
     }
     gen = next
   }
@@ -191,13 +202,25 @@ export function makeQR(text) {
     if (modules[i][6] === null) modules[i][6] = i % 2 === 0
   }
 
-  // 校正图形 (v2-v6)
-  var ac = ALIGN_CENTERS[version]
-  if (ac) {
-    for (var r = -2; r <= 2; r++) {
-      for (var c = -2; c <= 2; c++) {
-        modules[ac + r][ac + c] =
-          Math.abs(r) === 2 || Math.abs(c) === 2 || (r === 0 && c === 0)
+  // 校正图形 (v2-v6): 标准中心坐标组合, 与寻像图形重叠的位置跳过.
+  // 注意: 同类图形必须「全部」画出 —— 只画一个会让解码器无法校正网格,
+  // 表现为二维码肉眼正常但扫不出来 (真机 + OpenCV 实测).
+  var acCenters = ALIGN_CENTERS[version - 1]
+  if (acCenters) {
+    for (var ai = 0; ai < acCenters.length; ai++) {
+      for (var aj = 0; aj < acCenters.length; aj++) {
+        var ar = acCenters[ai], acc = acCenters[aj]
+        // 跳过与三个寻像图形重叠的角落
+        var nearTL = (ar <= 8 && acc <= 8)
+        var nearTR = (ar <= 8 && acc >= moduleCount - 9)
+        var nearBL = (ar >= moduleCount - 9 && acc <= 8)
+        if (nearTL || nearTR || nearBL) continue
+        for (var r2 = -2; r2 <= 2; r2++) {
+          for (var c2 = -2; c2 <= 2; c2++) {
+            modules[ar + r2][acc + c2] =
+              Math.abs(r2) === 2 || Math.abs(c2) === 2 || (r2 === 0 && c2 === 0)
+          }
+        }
       }
     }
   }
@@ -205,19 +228,24 @@ export function makeQR(text) {
   // 固定暗模块
   modules[moduleCount - 8][8] = true
 
-  // format info (两份)
+  // format info (两份). 位序按标准: fmt bit14..bit0 依次写入下列坐标.
   var fmt = bchFormatInfo((FORMAT_EC_L_BITS << 3) | MASK_PATTERN)
+  // 第一份: 沿左上寻像图形两侧的 L 形 (bit14 -> bit0)
+  var FORMAT_POS_A = [
+    [8, 0], [8, 1], [8, 2], [8, 3], [8, 4], [8, 5], [8, 7], [8, 8],
+    [7, 8], [5, 8], [4, 8], [3, 8], [2, 8], [1, 8], [0, 8]
+  ]
   for (var i = 0; i < 15; i++) {
-    var mod = ((fmt >> i) & 1) === 1
-    if (i < 6) modules[i][8] = mod
-    else if (i < 8) modules[i + 1][8] = mod
-    else modules[moduleCount - 15 + i][8] = mod
+    modules[FORMAT_POS_A[i][0]][FORMAT_POS_A[i][1]] = ((fmt >> (14 - i)) & 1) === 1
   }
-  for (var i = 0; i < 15; i++) {
-    var mod = ((fmt >> i) & 1) === 1
-    if (i < 8) modules[8][moduleCount - i - 1] = mod
-    else if (i < 9) modules[8][15 - i - 1 + 1] = mod
-    else modules[8][15 - i - 1] = mod
+  // 第二份: 右上横条 + 左下竖条.
+  // 标准位序: (8,n-1) 放 bit0, 向左递增到 (8,n-8) 放 bit7;
+  //           (n-7,8) 放 bit8, 向下递增到 (n-1,8) 放 bit14.
+  for (var i = 0; i < 8; i++) {
+    modules[8][moduleCount - 1 - i] = ((fmt >> i) & 1) === 1
+  }
+  for (var i = 0; i < 7; i++) {
+    modules[moduleCount - 7 + i][8] = ((fmt >> (8 + i)) & 1) === 1
   }
 
   // ---- 数据放置 (zigzag, 自右下角, 跳过第 6 列) ----

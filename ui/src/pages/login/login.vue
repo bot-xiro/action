@@ -51,11 +51,9 @@
       </div>
     </div>
 
-    <!-- 右区: 二维码 (国内 API 生成图片, 失败降级本地编码) -->
+    <!-- 右区: 二维码 (本地编码器渲染, 不依赖外部图片服务) -->
     <div v-if="mode === 'qr'" class="qr-zone">
-      <image v-if="qrUrl !== '' && !useLocalQr" class="qr-img" :src="qrImgUrl"
-             resize="stretch" @error="onQrImgError"></image>
-      <div v-else-if="qr.size > 0" class="qr-box" :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px' }">
+      <div v-if="qr.size > 0" class="qr-box" :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px' }">
         <div v-for="(row, r) in qrRows" :key="r" class="qr-row" :style="{ top: (r * MOD + QPAD) + 'px' }">
           <div v-for="(seg, s) in row" :key="s"
                class="qr-dark"
@@ -80,17 +78,10 @@ import { saveLogin } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
 import { makeQR } from '../../services/qrcode.js'
 
-const MOD = 5          // 二维码模块边长 px (本地编码兜底用)
+const MOD = 5          // 二维码模块边长 px (本地编码渲染)
 const QPAD = 22        // 静默区 (>= 4 模块)
 const POLL_MS = 2000   // 轮询周期
 const QR_TTL_MS = 180000
-
-// 国内二维码图片 API (依次降级; 全部失败再用本地编码器).
-// 注意: 二维码内容 (含 qrcode_key) 会经过该 API, key 3 分钟过期.
-const QR_APIS = [
-  { name: 'liantu', build: (u) => 'https://qr.liantu.com/api.php?text=' + encodeURIComponent(u) },
-  { name: 'vvhan', build: (u) => 'https://api.vvhan.com/api/qrcode?text=' + encodeURIComponent(u) }
-]
 
 export default {
   name: 'login',
@@ -104,8 +95,6 @@ export default {
       qrRows: [],
       qrError: '',
       qrUrl: '',           // 待编码的登录 url (轮询 key 与其绑定)
-      qrApiIdx: 0,         // 当前使用的国内 API 下标
-      useLocalQr: false,   // API 全部失败 -> 本地编码兜底
       qrcodeKey: '',
       qrGeneratedAt: 0,
       pollState: 'generating',  // generating/waiting/scanned/expired/ok/error
@@ -118,26 +107,7 @@ export default {
       ime: null
     }
   },
-  computed: {
-    // 当前 API 生成的二维码图片地址; API 链走完后由本地编码兜底
-    qrImgUrl() {
-      const api = QR_APIS[this.qrApiIdx]
-      if (api == null) return ''
-      return api.build(this.qrUrl)
-    }
-  },
   methods: {
-    // 图片加载失败 -> 换下一个国内 API; 全部失败 -> 本地编码器兜底
-    onQrImgError() {
-      if (this.qrApiIdx + 1 < QR_APIS.length) {
-        this.qrApiIdx += 1
-        console.log('[login] QR API 降级 -> ' + QR_APIS[this.qrApiIdx].name)
-      } else {
-        console.log('[login] QR API 全部失败, 使用本地编码器')
-        this.useLocalQr = true
-      }
-    },
-
     onShow() {
       if (this.entering) {
         const self = this
@@ -184,8 +154,6 @@ export default {
       this.qr = { size: 0, rows: [] }
       this.qrRows = []
       this.qrUrl = ''
-      this.qrApiIdx = 0
-      this.useLocalQr = false
       var self = this
       // 网络请求延后到首帧之后 (同步 httpGet 阻塞 JS 线程)
       afterPaint(async function () {
@@ -195,7 +163,9 @@ export default {
           self.qrcodeKey = r.qrcodeKey
           self.qrGeneratedAt = Date.now()
           self.qrUrl = r.qrUrl
-          // 本地也先编一份: API 图片失败时立即可用, 无需再等
+          // 二维码用本地编码器渲染成<div>矩阵: 不依赖任何外部图片服务.
+          // (真机实测 qr.liantu.com / api.vvhan.com 均 DNS NXDOMAIN,
+          //  外链图片永远加载不出来 -> 扫码区空白. 本地编码 100% 可用)
           self.renderQr(r.qrUrl)
           self.pollState = 'waiting'
           self.startPoll()
@@ -214,13 +184,10 @@ export default {
         this.qr = mod
         this.qrRows = toRuns(mod)
       } catch (err) {
-        // 本地编码失败不致命: API 图片路径仍可展示, 只有 API 也失败时才提示
         this.qrError = err && err.message ? err.message : String(err)
         console.log('[login] 本地编码失败: ' + this.qrError)
-        if (this.useLocalQr) {
-          this.pollState = 'error'
-          this.pollError = '渲染失败: ' + this.qrError
-        }
+        this.pollState = 'error'
+        this.pollError = '渲染失败: ' + this.qrError
       }
     },
 
@@ -498,11 +465,6 @@ function toRuns(m) {
   left: 15px;
   top: 8px;
   background-color: #ffffff;
-}
-/* 国内 API 生成的二维码图片 (白底方图, 249x249 对齐本地编码尺寸) */
-.qr-img {
-  width: 249px;
-  height: 249px;
 }
 .qr-row {
   position: absolute;
