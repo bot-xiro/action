@@ -95,6 +95,7 @@ import { createIME } from '../../services/ime.js'
 import { qrcodeGenerate, qrcodePoll, getMyInfo, fetchPcCookie } from '../../services/bili.js'
 import { saveLogin } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
+import { log } from '../../services/log.js'
 import { makeQR } from '../../services/qrcode.js'
 
 const MOD = 5          // 二维码模块边长 px (本地编码渲染)
@@ -243,6 +244,7 @@ export default {
         if (r.state === 'ok') {
           this.stopPoll()
           saveLogin(r.cookies.sessdata, r.cookies.biliJct, r.cookies.dedeUserId)
+          log('登录', '扫码登录成功 uid=' + r.cookies.dedeUserId)
           this.pollState = 'ok'
         } else if (r.state === 'expired') {
           this.stopPoll()
@@ -284,6 +286,7 @@ export default {
       try {
         const cookies = await fetchPcCookie(this.pcIp)
         saveLogin(cookies.sessdata, cookies.biliJct, cookies.dedeUserId)
+        log('登录', '电脑同步登录 uid=' + cookies.dedeUserId)
         // 校验: nav 接口带 Cookie 应返回 isLogin=true
         this.pcStatus = '已获取, 校验登录态…'
         const info = await getMyInfo()

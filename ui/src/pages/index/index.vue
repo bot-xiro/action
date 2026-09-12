@@ -68,20 +68,44 @@
       </scroller>
     </div>
 
-    <!-- 我的 -->
-    <div v-else-if="activeTab === 'mine'" class="tabbody center">
-      <image v-if="myInfo.isLogin && myInfo.face" class="myface" :src="myInfo.face" resize="cover"></image>
-      <text v-if="myInfo.isLogin" class="ph-title">{{ myInfo.uname }}</text>
-      <text v-if="myInfo.isLogin" class="ph-desc">Lv{{ myInfo.level }} · 硬币 {{ myInfo.coin }} · B币 {{ myInfo.money }}</text>
-      <div v-if="!myInfo.isLogin && myLoaded" class="login-cta" @click="openLogin">
-        <text class="login-cta-text">扫码登录 / Cookie 导入</text>
-      </div>
-      <div v-if="myInfo.isLogin" class="login-cta" @click="logout">
-        <text class="login-cta-text">退出登录</text>
-      </div>
-      <text v-if="myStatus !== ''" class="ph-desc2">{{ myStatus }}</text>
-      <text class="ph-desc2">bilibilipan v{{ appVersion }}</text>
-      <text class="ph-desc2">appid {{ appid }} · 词典笔 mini-app</text>
+    <!-- 我的 (内容高于可视区, 必须用 scroller 才能上下滑动) -->
+    <div v-else-if="activeTab === 'mine'" class="tabbody">
+      <scroller class="mine-scroll" scroll-direction="vertical" :show-scrollbar="true">
+        <div class="mine-inner">
+          <image v-if="myInfo.isLogin && myInfo.face" class="myface" :src="myInfo.face" resize="cover"></image>
+          <div v-else-if="myInfo.isLogin" class="myface-ph">
+            <text class="myface-txt">{{ myInfo.uname ? myInfo.uname.charAt(0) : '?' }}</text>
+          </div>
+          <text v-if="myInfo.isLogin" class="ph-title">{{ myInfo.uname }}</text>
+          <text v-if="myInfo.isLogin" class="ph-desc">UID {{ myInfo.mid }}</text>
+          <!-- 等级 / 硬币 / B币: 三列统计, 数值在上标签在下 -->
+          <div v-if="myInfo.isLogin" class="stat-row">
+            <div class="stat-cell">
+              <text class="stat-num">Lv{{ myInfo.level }}</text>
+              <text class="stat-lab">等级</text>
+            </div>
+            <div class="stat-cell">
+              <text class="stat-num">{{ myInfo.coin }}</text>
+              <text class="stat-lab">硬币</text>
+            </div>
+            <div class="stat-cell">
+              <text class="stat-num">{{ myInfo.money }}</text>
+              <text class="stat-lab">B币</text>
+            </div>
+          </div>
+          <text v-if="myInfo.isLogin && myInfo.vip" class="ph-desc2">{{ myInfo.vip }}</text>
+          <div v-if="!myInfo.isLogin && myLoaded" class="login-cta" @click="openLogin">
+            <text class="login-cta-text">扫码登录 / Cookie 导入</text>
+          </div>
+          <div v-if="myInfo.isLogin" class="login-cta" @click="logout">
+            <text class="login-cta-text">退出登录</text>
+          </div>
+          <text v-if="myStatus !== ''" class="ph-desc2">{{ myStatus }}</text>
+          <text class="ph-desc2">bilibilipan v{{ appVersion }}</text>
+          <text class="ph-desc2">appid {{ appid }} · 词典笔 mini-app</text>
+          <text class="ph-desc2">{{ storeHint }}</text>
+        </div>
+      </scroller>
     </div>
   </div>
 </template>
@@ -90,7 +114,9 @@
 import { createIME } from '../../services/ime.js'
 import { searchVideos, getPopular, getDynamicFeed, getMyInfo } from '../../services/bili.js'
 import { afterPaint } from '../../base-page.js'
-import { clearLogin, hasCookie } from '../../services/auth.js'
+import { clearLogin, hasCookie, saveProfile } from '../../services/auth.js'
+import { log, logStatus } from '../../services/log.js'
+import { storeStatus } from '../../services/store.js'
 import pm from 'pm'
 
 export default {
@@ -127,13 +153,14 @@ export default {
       dynLoading: false,
       dynGeneration: 0,
       // 我的
-      myInfo: { isLogin: false, uname: '', face: '', mid: 0, level: 0, coin: 0, money: 0 },
+      myInfo: { isLogin: false, uname: '', face: '', mid: 0, level: 0, coin: 0, money: 0, vip: '' },
       myStatus: '',
       myLoaded: false,
       myGeneration: 0,
       // 我的 (版本号运行时从包管理器读取, 不硬编码)
       appVersion: '',
-      appid: '8001812345678901'
+      appid: '8001812345678901',
+      storeHint: ''
     }
   },
   mounted() {
@@ -145,6 +172,13 @@ export default {
     } catch (e) {
       console.log('[index] getPackageInfo failed: ' + (e && e.message ? e.message : e))
     }
+    // 底部状态: 日志与数据库的落盘位置 (便于排查)
+    try {
+      this.storeHint = logStatus() + ' · ' + storeStatus()
+    } catch (e) {
+      this.storeHint = ''
+    }
+    log('页面', '首页挂载 ' + this.storeHint)
     this.loadRecommend()
   },
   methods: {
@@ -211,12 +245,21 @@ export default {
           const info = await getMyInfo()
           if (gen !== this.myGeneration) return
           this.myInfo = info
-          if (!info.isLogin) this.myStatus = '未登录'
+          if (!info.isLogin) {
+            this.myStatus = '未登录'
+            log('我的', '未登录')
+          } else {
+            // 账号快照落库 (昵称/头像/等级/硬币/B币)
+            saveProfile(info)
+            log('我的', info.uname + ' uid=' + info.mid + ' Lv' + info.level +
+              ' 硬币=' + info.coin + ' B币=' + info.money)
+          }
         } catch (err) {
           if (gen !== this.myGeneration) return
           const msg = err && err.message ? err.message : String(err)
           this.myStatus = msg
           this.myInfo.isLogin = false
+          log('我的', '获取失败: ' + msg)
         } finally {
           if (gen === this.myGeneration) {
             this.myLoading = false
@@ -228,7 +271,7 @@ export default {
 
     logout() {
       clearLogin()
-      this.myInfo = { isLogin: false, uname: '', face: '', mid: 0, level: 0, coin: 0, money: 0 }
+      this.myInfo = { isLogin: false, uname: '', face: '', mid: 0, level: 0, coin: 0, money: 0, vip: '' }
       this.myStatus = '已退出登录'
       // 动态缓存态作废, 下次进入重新按登录态加载
       this.dynLoaded = false
@@ -479,12 +522,12 @@ export default {
 .ph-title {
   font-size: 28px;
   color: #ffffff;
-  margin-top: 50px;
+  margin-top: 8px;
 }
 .ph-desc {
   font-size: 22px;
   color: #999999;
-  margin-top: 16px;
+  margin-top: 6px;
 }
 .ph-desc2 {
   font-size: 20px;
@@ -511,6 +554,51 @@ export default {
   height: 72px;
   border-radius: 36px;
   margin-bottom: 10px;
+}
+.myface-ph {
+  width: 72px;
+  height: 72px;
+  border-radius: 36px;
+  background-color: #fb7299;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.myface-txt {
+  font-size: 34px;
+  color: #ffffff;
+}
+/* 我的: 内容比可视区高, 需要整块可滚动 */
+.mine-scroll {
+  width: 960px;
+  height: 222px;
+  flex-direction: column;
+}
+.mine-inner {
+  width: 960px;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 4px;
+  padding-bottom: 20px;
+}
+.stat-row {
+  flex-direction: row;
+  margin-top: 16px;
+  margin-bottom: 4px;
+}
+.stat-cell {
+  width: 200px;
+  flex-direction: column;
+  align-items: center;
+}
+.stat-num {
+  font-size: 26px;
+  color: #ffffff;
+}
+.stat-lab {
+  font-size: 20px;
+  color: #999999;
+  margin-top: 4px;
 }
 .loadmore {
   font-size: 20px;

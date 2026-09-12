@@ -20,8 +20,11 @@ try {
   console.warn('[app] gstplayer import check failed: ' + (e && e.message ? e.message : e))
 }
 
-// 启动即载入登录态到内存 (storage -> memory), 各页面同步读取
+// 启动即载入登录态到内存 (数据库 -> KV -> memory), 各页面同步读取
 import { initAuth } from './services/auth.js'
+
+// 运行日志: 落盘到 /userdisk/xiro/bilibili.log
+import { initLog, log } from './services/log.js'
 
 class App extends $falcon.App {
   constructor() {
@@ -34,9 +37,19 @@ class App extends $falcon.App {
    */
   onLaunch(options) {
     super.onLaunch(options)
+    try {
+      initLog('appid=8001812345678901')
+    } catch (e) {
+      console.warn('[app] initLog failed: ' + e)
+    }
     // 设置页面基类,应用全局的$falcon.Page将被替换成此处指定的BasePage.
     $falcon.useDefaultBasePageClass(BasePage)
-    try { initAuth() } catch (e) { console.warn('[app] initAuth failed: ' + e) }
+    try {
+      initAuth()
+    } catch (e) {
+      console.warn('[app] initAuth failed: ' + e)
+      try { log('应用', 'initAuth 失败: ' + e) } catch (e2) {}
+    }
   }
 
   /**

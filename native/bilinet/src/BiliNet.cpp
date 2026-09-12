@@ -4,12 +4,117 @@
 #include <cstring>
 #include <string>
 #include <syslog.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <dlfcn.h>
 
 using namespace JQUTIL_NS;
 
 namespace bilinet {
 
 #define BN_LOG(fmt, ...) syslog(LOG_ERR, "[bilinet] " fmt, ##__VA_ARGS__)
+
+// ----------------------------------------------------------------------
+// sqlite3 动态绑定
+//
+// 为什么 dlopen 而不是直接链接 / 用系统的 sqlite3 JSAPI:
+//   1) 交叉编译工具链里没有 sqlite3.h, 直接链接无从下手;
+//   2) import 'sqlite3' 这个 JSAPI 是否存在无法在编译期确认, 一旦缺失整个
+//      app 会在模块解析阶段起不来 —— 风险太大;
+//   3) 设备 /usr/lib 下确实有 libsqlite3.so.0 (miniapp 进程本身就在用),
+//      dlopen 失败只是这一个能力不可用, 上层可以退回 JSON 文件兜底.
+// ----------------------------------------------------------------------
+struct sqlite3;
+
+namespace sql {
+    typedef int (*fn_open)(const char* filename, sqlite3** ppDb);
+    typedef int (*fn_exec)(sqlite3* db, const char* sql,
+                           int (*cb)(void*, int, char**, char**), void* arg, char** errmsg);
+    typedef int (*fn_close)(sqlite3* db);
+    typedef const char* (*fn_errmsg)(sqlite3* db);
+    typedef void (*fn_free)(void* p);
+
+    static void* handle = NULL;
+    static fn_open  p_open = NULL;
+    static fn_exec  p_exec = NULL;
+    static fn_close p_close = NULL;
+    static fn_errmsg p_errmsg = NULL;
+    static fn_free  p_free = NULL;
+    static bool tried = false;
+
+    static bool load()
+    {
+        if (handle) return true;
+        if (tried) return false;
+        tried = true;
+        const char* names[3] = { "libsqlite3.so.0", "libsqlite3.so", NULL };
+        for (int i = 0; names[i]; i++) {
+            void* h = dlopen(names[i], RTLD_NOW | RTLD_GLOBAL);
+            if (!h) continue;
+            fn_open o = (fn_open)dlsym(h, "sqlite3_open");
+            fn_exec e = (fn_exec)dlsym(h, "sqlite3_exec");
+            fn_close c = (fn_close)dlsym(h, "sqlite3_close");
+            fn_errmsg m = (fn_errmsg)dlsym(h, "sqlite3_errmsg");
+            fn_free  f = (fn_free)dlsym(h, "sqlite3_free");
+            if (o && e && c && m && f) {
+                handle = h; p_open = o; p_exec = e; p_close = c; p_errmsg = m; p_free = f;
+                return true;
+            }
+            dlclose(h);
+        }
+        BN_LOG("sqlite3 dlopen failed");
+        return false;
+    }
+
+    static sqlite3* db = NULL;
+
+    static void closeDb()
+    {
+        if (db && p_close) p_close(db);
+        db = NULL;
+    }
+
+    // JSON 字符串转义 (UTF-8 原样透传, 只处理控制字符与引号/反斜杠)
+    static std::string jsonStr(const char* s)
+    {
+        std::string out = "\"";
+        if (s) {
+            for (const char* p = s; *p; p++) {
+                unsigned char c = (unsigned char)*p;
+                if (c == '"' || c == '\\') { out += '\\'; out += (char)c; }
+                else if (c == '\n') out += "\\n";
+                else if (c == '\r') out += "\\r";
+                else if (c == '\t') out += "\\t";
+                else if (c < 0x20) out += ' ';
+                else out += (char)c;
+            }
+        }
+        out += "\"";
+        return out;
+    }
+
+    struct QueryCtx {
+        std::string out;
+        bool firstRow;
+        explicit QueryCtx() : firstRow(true) { out = "["; }
+    };
+
+    static int queryCb(void* arg, int argc, char** argv, char** colName)
+    {
+        QueryCtx* c = static_cast<QueryCtx*>(arg);
+        if (!c->firstRow) c->out += ",";
+        c->firstRow = false;
+        c->out += "{";
+        for (int i = 0; i < argc; i++) {
+            if (i) c->out += ",";
+            c->out += jsonStr(colName && colName[i] ? colName[i] : "");
+            c->out += ":";
+            c->out += jsonStr(argv && argv[i] ? argv[i] : "");
+        }
+        c->out += "}";
+        return 0;
+    }
+}  // namespace sql
 
 // bilinet: 极简网络模块（通用 HTTP GET/POST，不做播放器）
 //
@@ -207,6 +312,236 @@ private:
         }
         return out;
     }
+
+public:
+    // ------------------------------------------------------------------
+    // v3: 文件读写 —— 供运行日志与登录信息落盘使用
+    //
+    // 为什么需要: 系统 fs JSAPI 只暴露 readdir/stat/exists/readFile/mkdir/rm,
+    // 没有写入接口, 且限定在应用 data 目录; 而需求要求日志写到
+    // /userdisk/xiro/bilibili.log、数据库放 /userdisk/xiro/, 这里直接用
+    // libc 打开绝对路径, 不受该限制.
+    //
+    // JS 侧:
+    //   const text = bilinet.readFile(path)          // 失败返回 ''
+    //   const ok   = bilinet.writeFile(path, data)   // 覆盖写
+    //   const ok   = bilinet.writeFile(path, data, true)  // 追加写
+    //   const ok   = bilinet.mkdirs('/a/b/c')        // 逐级创建, 已存在算成功
+    //   const ex   = bilinet.fileExists(path)
+    // ------------------------------------------------------------------
+
+    // readFile(path) → 文本; 打不开返回空串
+    void readFile(JQUTIL_NS::JQFunctionInfo& info)
+    {
+        JSContext* ctx = info.GetContext();
+        if (info.Length() < 1 || !JS_IsString(info[0])) {
+            info.GetReturnValue().ThrowTypeError("readFile: path required");
+            return;
+        }
+        const char* p = JS_ToCString(ctx, info[0]);
+        if (!p) { info.GetReturnValue().Set(std::string()); return; }
+        std::string path(p);
+        JS_FreeCString(ctx, p);
+
+        std::string body;
+        FILE* fp = fopen(path.c_str(), "rb");
+        if (!fp) {
+            BN_LOG("readFile: open failed: %s", path.c_str());
+            info.GetReturnValue().Set(std::string());
+            return;
+        }
+        char buf[8192];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) body.append(buf, n);
+        fclose(fp);
+        info.GetReturnValue().Set(body);
+    }
+
+    // writeFile(path, data, append) → bool
+    void writeFile(JQUTIL_NS::JQFunctionInfo& info)
+    {
+        JSContext* ctx = info.GetContext();
+        if (info.Length() < 2 || !JS_IsString(info[0]) || !JS_IsString(info[1])) {
+            info.GetReturnValue().ThrowTypeError("writeFile: path/data required");
+            return;
+        }
+        const char* p = JS_ToCString(ctx, info[0]);
+        const char* d = JS_ToCString(ctx, info[1]);
+        if (!p || !d) {
+            if (p) JS_FreeCString(ctx, p);
+            if (d) JS_FreeCString(ctx, d);
+            info.GetReturnValue().Set(false);
+            return;
+        }
+        std::string path(p), data(d);
+        JS_FreeCString(ctx, p);
+        JS_FreeCString(ctx, d);
+
+        bool append = false;
+        if (info.Length() >= 3) append = (JS_ToBool(ctx, info[2]) != 0);
+
+        FILE* fp = fopen(path.c_str(), append ? "ab" : "wb");
+        if (!fp) {
+            BN_LOG("writeFile: open failed: %s", path.c_str());
+            info.GetReturnValue().Set(false);
+            return;
+        }
+        size_t w = fwrite(data.data(), 1, data.size(), fp);
+        fclose(fp);
+        info.GetReturnValue().Set(w == data.size());
+    }
+
+    // mkdirs(path) → bool; 逐级创建, 中间目录已存在不算失败
+    void mkdirs(JQUTIL_NS::JQFunctionInfo& info)
+    {
+        JSContext* ctx = info.GetContext();
+        if (info.Length() < 1 || !JS_IsString(info[0])) {
+            info.GetReturnValue().ThrowTypeError("mkdirs: path required");
+            return;
+        }
+        const char* p = JS_ToCString(ctx, info[0]);
+        if (!p) { info.GetReturnValue().Set(false); return; }
+        std::string path(p);
+        JS_FreeCString(ctx, p);
+        if (path.empty()) { info.GetReturnValue().Set(false); return; }
+
+        std::string cur;
+        for (size_t i = 0; i < path.size(); i++) {
+            if (path[i] == '/' && i > 0) {
+                if (mkdir(cur.c_str(), 0775) != 0 && errno != EEXIST) {
+                    BN_LOG("mkdirs: failed at %s (errno=%d)", cur.c_str(), errno);
+                    info.GetReturnValue().Set(false);
+                    return;
+                }
+            }
+            cur.push_back(path[i]);
+        }
+        if (mkdir(cur.c_str(), 0775) != 0 && errno != EEXIST) {
+            BN_LOG("mkdirs: failed at %s (errno=%d)", cur.c_str(), errno);
+            info.GetReturnValue().Set(false);
+            return;
+        }
+        info.GetReturnValue().Set(true);
+    }
+
+    // fileExists(path) → bool
+    void fileExists(JQUTIL_NS::JQFunctionInfo& info)
+    {
+        JSContext* ctx = info.GetContext();
+        if (info.Length() < 1 || !JS_IsString(info[0])) {
+            info.GetReturnValue().ThrowTypeError("fileExists: path required");
+            return;
+        }
+        const char* p = JS_ToCString(ctx, info[0]);
+        if (!p) { info.GetReturnValue().Set(false); return; }
+        std::string path(p);
+        JS_FreeCString(ctx, p);
+        struct stat st;
+        info.GetReturnValue().Set(stat(path.c_str(), &st) == 0);
+    }
+
+    // ------------------------------------------------------------------
+    // v4: sqlite3 —— 登录内容落库 (/userdisk/xiro/bilibili.db)
+    //
+    // JS 侧:
+    //   const ok  = bilinet.dbOpen('/userdisk/xiro/bilibili.db')
+    //   const ok  = bilinet.dbExec('CREATE TABLE IF NOT EXISTS ...')
+    //   const js  = bilinet.dbQuery('SELECT * FROM auth')   // JSON 数组字符串
+    //   bilinet.dbClose()
+    //
+    // 说明: 没有用预处理语句, SQL 由 JS 侧拼好后整体交给 sqlite3_exec;
+    // 字符串字面量里的单引号必须先替换成 '' (store.js 的 q() 会做这件事)。
+    // ------------------------------------------------------------------
+
+    static bool sqlReady()
+    {
+        return sql::load();
+    }
+
+    // dbOpen(path) → bool; 已打开会先关掉旧的
+    void dbOpen(JQUTIL_NS::JQFunctionInfo& info)
+    {
+        JSContext* ctx = info.GetContext();
+        if (info.Length() < 1 || !JS_IsString(info[0])) {
+            info.GetReturnValue().ThrowTypeError("dbOpen: path required");
+            return;
+        }
+        const char* p = JS_ToCString(ctx, info[0]);
+        if (!p) { info.GetReturnValue().Set(false); return; }
+        std::string path(p);
+        JS_FreeCString(ctx, p);
+
+        if (!sqlReady()) { info.GetReturnValue().Set(false); return; }
+        sql::closeDb();
+        int rc = sql::p_open(path.c_str(), &sql::db);
+        if (rc != 0) {
+            BN_LOG("dbOpen: rc=%d path=%s", rc, path.c_str());
+            sql::db = NULL;
+            info.GetReturnValue().Set(false);
+            return;
+        }
+        info.GetReturnValue().Set(true);
+    }
+
+    // dbExec(sql) → bool
+    void dbExec(JQUTIL_NS::JQFunctionInfo& info)
+    {
+        JSContext* ctx = info.GetContext();
+        if (info.Length() < 1 || !JS_IsString(info[0])) {
+            info.GetReturnValue().ThrowTypeError("dbExec: sql required");
+            return;
+        }
+        const char* s = JS_ToCString(ctx, info[0]);
+        if (!s) { info.GetReturnValue().Set(false); return; }
+        std::string sqlText(s);
+        JS_FreeCString(ctx, s);
+
+        if (!sqlReady() || !sql::db) { info.GetReturnValue().Set(false); return; }
+        char* err = NULL;
+        int rc = sql::p_exec(sql::db, sqlText.c_str(), NULL, NULL, &err);
+        if (rc != 0) {
+            BN_LOG("dbExec: rc=%d err=%s", rc, err ? err : "");
+            if (err && sql::p_free) sql::p_free(err);
+            info.GetReturnValue().Set(false);
+            return;
+        }
+        info.GetReturnValue().Set(true);
+    }
+
+    // dbQuery(sql) → JSON 数组字符串 (查询失败返回 '[]')
+    void dbQuery(JQUTIL_NS::JQFunctionInfo& info)
+    {
+        JSContext* ctx = info.GetContext();
+        if (info.Length() < 1 || !JS_IsString(info[0])) {
+            info.GetReturnValue().ThrowTypeError("dbQuery: sql required");
+            return;
+        }
+        const char* s = JS_ToCString(ctx, info[0]);
+        if (!s) { info.GetReturnValue().Set(std::string("[]")); return; }
+        std::string sqlText(s);
+        JS_FreeCString(ctx, s);
+
+        if (!sqlReady() || !sql::db) { info.GetReturnValue().Set(std::string("[]")); return; }
+        sql::QueryCtx c;
+        char* err = NULL;
+        int rc = sql::p_exec(sql::db, sqlText.c_str(), sql::queryCb, &c, &err);
+        if (rc != 0) {
+            BN_LOG("dbQuery: rc=%d err=%s", rc, err ? err : "");
+            if (err && sql::p_free) sql::p_free(err);
+            info.GetReturnValue().Set(std::string("[]"));
+            return;
+        }
+        c.out += "]";
+        info.GetReturnValue().Set(c.out);
+    }
+
+    // dbClose() → bool
+    void dbClose(JQUTIL_NS::JQFunctionInfo& info)
+    {
+        if (!sql::db) { info.GetReturnValue().Set(true); return; }
+        sql::closeDb();
+        info.GetReturnValue().Set(true);
+    }
 };
 
 const char* BiliNet::UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -225,6 +560,14 @@ static JSValue createBiliNet(JQModuleEnv* env)
     });
     tpl->SetProtoMethod("httpGet", &BiliNet::httpGet);
     tpl->SetProtoMethod("httpPost", &BiliNet::httpPost);
+    tpl->SetProtoMethod("readFile", &BiliNet::readFile);
+    tpl->SetProtoMethod("writeFile", &BiliNet::writeFile);
+    tpl->SetProtoMethod("mkdirs", &BiliNet::mkdirs);
+    tpl->SetProtoMethod("fileExists", &BiliNet::fileExists);
+    tpl->SetProtoMethod("dbOpen", &BiliNet::dbOpen);
+    tpl->SetProtoMethod("dbExec", &BiliNet::dbExec);
+    tpl->SetProtoMethod("dbQuery", &BiliNet::dbQuery);
+    tpl->SetProtoMethod("dbClose", &BiliNet::dbClose);
     return tpl->CallConstructor();
 }
 

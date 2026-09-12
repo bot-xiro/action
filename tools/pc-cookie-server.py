@@ -52,7 +52,10 @@ h1{font-size:24px;color:#fb7299;margin:0 0 4px}
 .card{background:#1d2027;border:1px solid #2b313a;border-radius:14px;padding:20px;margin-bottom:16px}
 .card h2{font-size:15px;margin:0 0 14px;color:#c9d3e0;font-weight:600}
 .row{display:flex;align-items:center;gap:14px}
-.face{width:52px;height:52px;border-radius:50%;background:#2b313a;object-fit:cover;flex:none}
+.face{width:52px;height:52px;border-radius:50%;background:#fb7299;flex:none;
+      position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.faceimg{width:52px;height:52px;border-radius:50%;object-fit:cover;display:block}
+.facetxt{display:none;font-size:24px;color:#fff;font-weight:600}
 .dot{width:10px;height:10px;border-radius:50%;background:#5a6472;flex:none}
 .dot.on{background:#3fd67a;box-shadow:0 0 8px #3fd67a88}
 .dot.off{background:#ff7a7a}
@@ -84,7 +87,8 @@ code{background:#21242b;padding:1px 6px;border-radius:4px;color:#fb7299}
 <div class="card">
   <h2>当前登录状态</h2>
   <div class="row">
-    <img class="face" id="face" alt="">
+    <div class="face" id="facebox"><img class="faceimg" id="face" alt=""
+      onerror="faceFallback()"><span class="facetxt" id="facetxt"></span></div>
     <div class="grow">
       <div><span class="dot" id="dot"></span> <span class="uname" id="uname">检查中…</span></div>
       <div class="meta" id="meta">正在校验 Cookie…</div>
@@ -148,12 +152,25 @@ code{background:#21242b;padding:1px 6px;border-radius:4px;color:#fb7299}
 <script>
 var lastSaved='';
 function set(el,t,cls){var e=document.getElementById(el);e.textContent=t;e.className='msg '+(cls||'');}
+// 头像加载不出来 (网络/防盗链) 时退回昵称首字, 至少能看出「已登录」
+function faceFallback(){
+  var img=document.getElementById('face'),tx=document.getElementById('facetxt');
+  img.style.display='none';tx.style.display='block';
+}
+function setFace(url,uname){
+  var img=document.getElementById('face'),tx=document.getElementById('facetxt');
+  if(!url){img.style.display='none';tx.style.display='block';
+           tx.textContent=(uname&&uname.charAt(0))||'?';return;}
+  tx.style.display='none';img.style.display='block';
+  tx.textContent=(uname&&uname.charAt(0))||'?';
+  img.src=url;
+}
 function check(){
   document.getElementById('uname').textContent='检查中…';
   document.getElementById('meta').textContent='正在校验 Cookie…';
   document.getElementById('dot').className='dot';
   fetch('/api/account').then(r=>r.json()).then(j=>{
-    document.getElementById('face').src=j.face||'';
+    setFace(j.face||'', j.uname||'');
     document.getElementById('dot').className='dot '+(j.ok?'on':'off');
     document.getElementById('uname').textContent=j.ok?j.uname:'未登录';
     document.getElementById('meta').textContent=j.ok?('UID '+j.mid+(j.level?' · LV'+j.level:'')):(j.message||'');
@@ -302,6 +319,26 @@ def get_local_ip():
     return '127.0.0.1'
 
 
+def face_url(f):
+    """把 nav 返回的头像地址整理成可直接 <img src> 用的形式。
+
+    实测 (真实账号):
+      data.face = https://i0.hdslb.com/bfs/face/xxxx.webp
+      原图 .webp                    -> 正常但很大
+      .webp@120w_120h_1c.jpg        -> 200, JPEG, 可直接显示
+      .jpg (去掉 .webp)             -> 404
+    所以必须**保留原扩展名**再追加参数。
+    """
+    u = (f or '').strip()
+    if not u:
+        return ''
+    if u.startswith('//'):
+        u = 'https:' + u
+    if '@' not in u:
+        u = u + '@120w_120h_1c.jpg'
+    return u
+
+
 def nav_check():
     """用当前 Cookie 调 B 站 nav 接口, 返回 (ok, uname, mid, face, level, message)"""
     p = state['parsed']
@@ -319,8 +356,10 @@ def nav_check():
         return False, '', '', '', '', str(e)
     if j.get('code') == 0 and j.get('data', {}).get('isLogin'):
         d = j['data']
-        return (True, d.get('uname', ''), str(d.get('mid', '')), d.get('face', ''),
-                d.get('level_info', {}).get('current_level', ''), 'ok')
+        # 实测: nav 返回的是 level_info (下划线), 不是 levelInfo
+        lv = (d.get('level_info') or {}).get('current_level', '')
+        return (True, d.get('uname', ''), str(d.get('mid', '')),
+                face_url(d.get('face', '')), lv, 'ok')
     return False, '', '', '', '', j.get('message') or 'Cookie 无效或已过期'
 
 

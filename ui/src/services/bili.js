@@ -602,14 +602,22 @@ export async function getMyInfo() {
   const d = body.data
   let face = d.face || ''
   if (face.indexOf('//') === 0) face = 'https:' + face
+  // 设备 image 组件不支持 webp, 借 B 站图片服务转成 jpg.
+  // 注意: 必须保留原扩展名再加参数, 写成 xxx@144w.jpg 会 404.
+  if (face && face.indexOf('@') < 0) face = face + '@144w_144h_1c.jpg'
+  // nav 返回的是 level_info (下划线), 不是 levelInfo —— 之前写错导致等级恒为 0
+  const li = d.level_info || d.levelInfo || {}
+  const wallet = d.wallet || {}
   return {
     isLogin: d.isLogin === true,
     uname: d.uname || '',
     face: face,
     mid: d.mid || 0,
-    level: (d.levelInfo && d.levelInfo.current_level) || 0,
-    money: d.money || 0,
-    coin: d.coin || 0
+    level: li.current_level || 0,
+    // 实测: nav 的 data.money 是「硬币」(如 1652.1), wallet.bcoin_balance 才是「B币」
+    coin: typeof d.money === 'number' ? Math.floor(d.money) : 0,
+    money: typeof wallet.bcoin_balance === 'number' ? wallet.bcoin_balance : 0,
+    vip: (d.vip && d.vip.status === 1) ? '大会员' : ''
   }
 }
 

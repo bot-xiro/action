@@ -5,9 +5,12 @@
 //      携带 DedeUserID/SESSDATA/bili_jct 参数, 无需解析 Set-Cookie 头.
 //   2. Cookie 导入: 用户从电脑浏览器复制 bilibili Cookie 字符串粘贴导入.
 //
-// 存储: 运行时 storage JSAPI 形态未知 (skill: 同名 API 也要验证参数/返回包装),
-// 适配多种形态, 全部失败降级内存态 (重启后需重新登录, 不影响功能验证).
-// 内存是运行期唯一事实来源; 写入即异步持久化 (fire and forget).
+// 存储: 主存储是 /userdisk/xiro/bilibili.db (sqlite, 见 store.js);
+// 同时保留 storage KV 作为副存储, 数据库不可用时仍能记住登录。
+// 内存是运行期唯一事实来源; 写入即同步持久化。
+
+import { initStore, writeAuth, clearAuthRow, writeProfile } from './store.js'
+import { log } from './log.js'
 
 const LOG = '[auth] '
 
@@ -60,23 +63,40 @@ function storageSet(key, value) {
   }
 }
 
+function apply(obj) {
+  memory.sessdata = typeof obj.sessdata === 'string' ? obj.sessdata : ''
+  memory.biliJct = typeof obj.biliJct === 'string' ? obj.biliJct : ''
+  memory.dedeUserId = typeof obj.dedeUserId === 'string' ? obj.dedeUserId : ''
+}
+
 export function initAuth() {
   if (memory.loaded) return
   memory.loaded = true
+  // 1) 数据库 (/userdisk/xiro/bilibili.db) 优先
+  let got = false
+  try {
+    const row = initStore()
+    if (row && row.sessdata) {
+      apply(row)
+      got = true
+      log('登录', '从数据库载入登录态 uid=' + row.dedeUserId)
+    }
+  } catch (e) {
+    console.log(LOG + 'initStore failed: ' + (e && e.message ? e.message : e))
+  }
+  if (got) return
+  // 2) 退回 storage KV
   const raw = storageGet(STORE_KEY)
   if (!raw) return
   try {
-    const obj = JSON.parse(raw)
-    memory.sessdata = typeof obj.sessdata === 'string' ? obj.sessdata : ''
-    memory.biliJct = typeof obj.biliJct === 'string' ? obj.biliJct : ''
-    memory.dedeUserId = typeof obj.dedeUserId === 'string' ? obj.dedeUserId : ''
-    console.log(LOG + 'loaded cookie from storage: ' + (memory.sessdata ? 'yes' : 'empty'))
+    apply(JSON.parse(raw))
+    log('登录', '从 KV 载入登录态 uid=' + memory.dedeUserId)
   } catch (e) {
     console.log(LOG + 'stored cookie parse failed')
   }
 }
 
-function persist() {
+function persist(profile) {
   const raw = JSON.stringify({
     sessdata: memory.sessdata,
     biliJct: memory.biliJct,
@@ -84,6 +104,11 @@ function persist() {
     v: 1
   })
   storageSet(STORE_KEY, raw)
+  try {
+    writeAuth(memory.sessdata, memory.biliJct, memory.dedeUserId, profile)
+  } catch (e) {
+    console.log(LOG + 'db write failed: ' + (e && e.message ? e.message : e))
+  }
 }
 
 export function hasCookie() {
@@ -103,21 +128,37 @@ export function getCsrf() {
   return memory.biliJct
 }
 
-export function saveLogin(sessdata, biliJct, dedeUserId) {
+export function saveLogin(sessdata, biliJct, dedeUserId, profile) {
   memory.sessdata = sessdata || ''
   memory.biliJct = biliJct || ''
   memory.dedeUserId = dedeUserId || ''
-  persist()
-  console.log(LOG + 'login saved (sessdata ' + (memory.sessdata ? 'ok' : 'empty') +
-    ', csrf ' + (memory.biliJct ? 'ok' : 'none') + ')')
+  persist(profile)
+  log('登录', '保存登录态 uid=' + memory.dedeUserId +
+    ' csrf=' + (memory.biliJct ? 'ok' : 'none'))
+}
+
+/** 账号快照落库 (昵称/头像/等级/硬币/B币), 不动 Cookie */
+export function saveProfile(info) {
+  if (!info) return
+  try {
+    writeProfile(info)
+  } catch (e) {
+    console.log(LOG + 'saveProfile failed: ' + (e && e.message ? e.message : e))
+  }
 }
 
 export function clearLogin() {
   memory.sessdata = ''
   memory.biliJct = ''
   memory.dedeUserId = ''
-  persist()
-  console.log(LOG + 'login cleared')
+  try {
+    clearAuthRow()
+  } catch (e) {
+    console.log(LOG + 'db clear failed: ' + (e && e.message ? e.message : e))
+  }
+  const raw = JSON.stringify({ sessdata: '', biliJct: '', dedeUserId: '', v: 1 })
+  storageSet(STORE_KEY, raw)
+  log('登录', '已清除登录态')
 }
 
 // 解析用户粘贴的 Cookie 文本. 兼容三种形态:
