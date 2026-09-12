@@ -645,7 +645,9 @@ export async function getDynamicFeed(offset) {
     const ma = (it.modules && it.modules.module_author) || {}
     const arc = (md.major && md.major.archive) || {}
     if (!arc.bvid) continue
-    let pic = arc.pic || ''
+    // 实测: 动态流的 archive 里封面字段叫 cover, 没有 pic (搜索/热门接口才是 pic)。
+    // 之前写 arc.pic 导致封面恒为空 -> 动态列表只有文字没有图。
+    let pic = arc.cover || arc.pic || ''
     if (pic.indexOf('//') === 0) pic = 'https:' + pic
     const st = arc.stat || {}
     items.push({
