@@ -1,8 +1,9 @@
 <template>
   <div class="page" :class="entering ? 'page-enter' : ''">
-    <!-- 左区: 顶栏 + 模式切换 + 状态 -->
-    <div class="left">
-      <div class="topbar">
+    <!-- 左区: 顶栏 + 模式切换 + 状态.
+         电脑同步模式下左区扩展到全宽 960px (该模式无二维码, 不留空白) -->
+    <div :class="['left', mode === 'pc' ? 'left-full' : '']">
+      <div :class="['topbar', mode === 'pc' ? 'topbar-full' : '']">
         <div class="back" @click="goBack">
           <text class="back-text">‹ 返回</text>
         </div>
@@ -34,10 +35,11 @@
         </div>
       </div>
 
-      <!-- 电脑同步 -->
+      <!-- 电脑同步: 左区全宽铺满, 无二维码、不留空白 -->
       <div v-else class="pc-wrap">
         <scroller class="pc-scroll" scroll-direction="vertical" :show-scrollbar="true">
-          <text class="pc-tip">使用方法: ① 电脑运行本仓库 tools/pc-cookie-server.py (需同一 WiFi)　② 电脑浏览器打开 http://127.0.0.1:9527 , 粘贴 B 站 Cookie 并保存　③ 下方输入电脑 IP, 点「获取并登录」</text>
+          <text class="pc-tip">首次使用? 在电脑上运行本仓库的 tools/pc-cookie-server.py (与词典笔连同一个 WiFi), 浏览器打开 http://127.0.0.1:9527 , 粘贴 B 站 Cookie 并保存。</text>
+          <text class="pc-tip">然后返回本页, 在下面输入电脑的局域网 IP, 点「获取并登录」即可把 Cookie 同步到词典笔。</text>
           <div class="pc-input" @click="inputIp">
             <text class="pc-input-text">{{ pcIp ? pcIp : '点击输入电脑 IP (如 192.168.1.100)' }}</text>
           </div>
@@ -51,11 +53,9 @@
       </div>
     </div>
 
-    <!-- 右区: 二维码常驻嵌入 (本地编码器渲染, 不依赖外部图片服务).
-         始终渲染, 不随模式切换隐藏 —— 电脑同步模式下同样可用手机扫码登录,
-         避免右侧出现空白区域. -->
-    <div class="qr-zone">
-      <text class="qr-cap">{{ qrCapText }}</text>
+    <!-- 右区: 二维码 (本地编码器渲染, 不依赖外部图片服务).
+         仅扫码登录模式渲染 —— 电脑同步模式无二维码且不留空白. -->
+    <div v-if="mode === 'qr'" class="qr-zone">
       <div v-if="qr.size > 0" class="qr-box"
            :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px', left: ((280 - (qr.size * MOD + QPAD * 2)) / 2) + 'px' }">
         <div v-for="(row, r) in qrRows" :key="r" class="qr-row"
@@ -64,7 +64,7 @@
                class="qr-dark"
                :style="{ left: (seg.x * MOD + QPAD) + 'px', width: (seg.w * MOD) + 'px', height: MOD + 'px' }"></div>
         </div>
-        <!-- 覆盖层: 过期/出错时可直接点按刷新 (电脑同步模式下左侧无刷新入口) -->
+        <!-- 覆盖层: 过期/出错时可直接点按刷新 -->
         <div v-if="pollState === 'expired' || pollState === 'error'"
              class="qr-mask qr-mask-tap"
              :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px' }"
@@ -121,17 +121,6 @@ export default {
       ime: null
     }
   },
-  computed: {
-    // 右侧二维码面板顶部说明: 随模式/状态变化
-    qrCapText() {
-      if (this.pollState === 'ok') return '✓ 已登录'
-      if (this.pollState === 'expired') return '二维码已过期'
-      if (this.pollState === 'error') return '生成失败'
-      if (this.pollState === 'scanned') return '已扫描, 请确认'
-      if (this.mode === 'pc') return '也可以直接扫码'
-      return '扫码登录'
-    }
-  },
   methods: {
     onShow() {
       if (this.entering) {
@@ -142,8 +131,8 @@ export default {
           setTimeout(function () { self.entering = false }, 60)
         }
       }
-      // 二维码常驻右侧, 与模式无关: 只要还没生成就补一次
-      if (this.pollState === 'generating' && !this.pollTimer) {
+      // 仅扫码登录模式生成二维码 (电脑同步模式无二维码区)
+      if (this.mode === 'qr' && this.pollState === 'generating' && !this.pollTimer) {
         this.startQr()
       }
     },
@@ -164,10 +153,12 @@ export default {
     switchMode(m) {
       if (this.mode === m) return
       this.mode = m
-      // 二维码常驻右侧显示, 两种模式下都可用 → 轮询不停.
-      // 仅在二维码尚未生成时补一次生成.
-      if (m === 'qr' && this.pollState === 'generating' && !this.pollTimer) {
+      if (m === 'qr') {
+        // 回到扫码登录: 二维码需要重新可见, 补一次生成/轮询
         this.startQr()
+      } else {
+        // 电脑同步: 二维码已隐藏, 停止轮询避免无谓请求
+        this.stopPoll()
       }
     },
 
@@ -343,6 +334,10 @@ function toRuns(m) {
   width: 680px;
   height: 266px;
 }
+/* 电脑同步: 无二维码区, 左区铺满全宽 960px, 不预留空白 */
+.left-full {
+  width: 960px;
+}
 .topbar {
   position: absolute;
   left: 0px;
@@ -352,6 +347,9 @@ function toRuns(m) {
   flex-direction: row;
   align-items: center;
   background-color: #21242b;
+}
+.topbar-full {
+  width: 960px;
 }
 .back {
   width: 100px;
@@ -435,16 +433,17 @@ function toRuns(m) {
   font-size: 21px;
   color: #ffffff;
 }
+/* 电脑同步: 全宽 936px (960 - 左右各 12 边距), 不再被右侧二维码挤压 */
 .pc-wrap {
   position: absolute;
   left: 12px;
   top: 108px;
-  width: 656px;
+  width: 936px;
   height: 150px;
 }
 /* 电脑同步内容超出可视高度, 需可上下滑动 (用户反馈: cookie 页面无法上下滑动) */
 .pc-scroll {
-  width: 656px;
+  width: 936px;
   height: 150px;
 }
 .pc-tip {
@@ -453,7 +452,7 @@ function toRuns(m) {
   margin-bottom: 10px;
 }
 .pc-input {
-  width: 656px;
+  width: 936px;
   height: 42px;
   border-radius: 10px;
   background-color: #21242b;
@@ -486,21 +485,11 @@ function toRuns(m) {
   justify-content: center;
   align-items: center;
 }
-/* 面板顶部说明: 悬浮在深色面板上, 不占白盒空间 (位于 18px 白盒上沿之上) */
-.qr-cap {
-  position: absolute;
-  left: 0px;
-  top: 0px;
-  width: 280px;
-  height: 18px;
-  font-size: 16px;
-  color: #8a94a6;
-  text-align: center;
-}
-/* 白盒尺寸与水平居中由 :style 动态给出 (随二维码版本变化), 此处仅定位垂直 */
+/* 白盒尺寸与水平居中由 :style 动态给出 (随二维码版本变化).
+   垂直居中: v6 白盒 245px, (266-245)/2 ≈ 10px */
 .qr-box {
   position: absolute;
-  top: 18px;
+  top: 10px;
   background-color: #ffffff;
 }
 /* 每行: 必须是「整个二维码宽度」, 否则绝对定位的 .qr-dark 子元素
