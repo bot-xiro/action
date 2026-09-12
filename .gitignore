@@ -2,3 +2,7 @@ node_modules
 *.amr
 dist
 .DS_Store
+__pycache__
+tools/__pycache__
+tools/bilibili-cookie.json
+*.pyc

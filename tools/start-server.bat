@@ -1,41 +1,67 @@
 @echo off
-rem bilibilipan ä¸€é”®å¯åŠ¨ Cookie åŒæ­¥æœåŠ¡ (Windows)
-rem
-rem ç”¨æ³•:
-rem   tools\start-server.bat         é»˜è®¤ç«¯å£ 9527
-rem   tools\start-server.bat 9000    è‡ªå®šä¹‰ç«¯å£
-rem
-rem å¯åŠ¨åä¼šæ‰“å°æœ¬æœºå±€åŸŸç½‘ IP, æµè§ˆå™¨æ‰“å¼€ http://127.0.0.1:<ç«¯å£> ç²˜è´´ B ç«™ Cookie å³å¯.
-rem Ctrl+C é€€å‡º.
-
+chcp 936 >nul
 setlocal
+
+rem ============================================================
+rem  bilibilipan µÇÂ¼ / Cookie Í¬²½·şÎñ - Ò»¼üÆô¶¯ (Windows)
+rem
+rem  ÓÃ·¨:
+rem    tools\start-server.bat          Ä¬ÈÏ¶Ë¿Ú 9527
+rem    tools\start-server.bat 9000     ×Ô¶¨Òå¶Ë¿Ú
+rem
+rem  Æô¶¯ºó»á×Ô¶¯´ò¿ªµÇÂ¼Ò³Ãæ http://127.0.0.1:<¶Ë¿Ú>
+rem    ·½Ê½Ò»: µã¡¸´Ó Chrome / Edge ¶ÁÈ¡µÇÂ¼Ì¬¡¹×Ô¶¯»ñÈ¡(ĞèÏÈÍË³öä¯ÀÀÆ÷)
+rem    ·½Ê½¶ş: Õ³Ìù B Õ¾ Cookie(Ò³Ãæ»á×Ô¶¯¼ì²â¼ôÌù°å)
+rem
+rem  Ö»Ïë´Óä¯ÀÀÆ÷×Ô¶¯¶ÁÈ¡, ¿ÉÒÔÓÃ start-browser-login.bat
+rem ============================================================
 
 set "SCRIPT_DIR=%~dp0"
 set "PY_SCRIPT=%SCRIPT_DIR%pc-cookie-server.py"
 set "PORT=%1"
 if "%PORT%"=="" set "PORT=9527"
 
-rem 1) æ‰¾ Python
+rem ---- 1) ²éÕÒ Python ----
 set "PY="
-where python  >nul 2>&1 && set "PY=python"
+where python >nul 2>&1
+if not errorlevel 1 set "PY=python"
+
 if "%PY%"=="" (
-  where py >nul 2>&1 && set "PY=py -3"
-)
-if "%PY%"=="" (
-  echo æœªæ‰¾åˆ° Python, è¯·å…ˆå®‰è£… Python 3 (https://www.python.org/) 1>&2
-  exit /b 1
+    where py >nul 2>&1
+    if not errorlevel 1 set "PY=py -3"
 )
 
-rem 2) æ ¡éªŒç›®æ ‡è„šæœ¬å­˜åœ¨
+if "%PY%"=="" (
+    echo.
+    echo [´íÎó] Î´ÕÒµ½ Python, ÇëÏÈ°²×° Python 3
+    echo       ÏÂÔØµØÖ·: https://www.python.org/downloads/
+    echo.
+    pause
+    exit /b 1
+)
+
+rem ---- 2) Ğ£Ñé½Å±¾ÎÄ¼ş ----
 if not exist "%PY_SCRIPT%" (
-  echo æ‰¾ä¸åˆ° %PY_SCRIPT% 1>&2
-  exit /b 1
+    echo.
+    echo [´íÎó] ÕÒ²»µ½½Å±¾: %PY_SCRIPT%
+    echo.
+    pause
+    exit /b 1
 )
 
-echo ==^> å¯åŠ¨ Cookie åŒæ­¥æœåŠ¡, ç«¯å£ %PORT%
-echo ==^> ç¬”ç«¯è·å–åœ°å€: http://^<æœ¬æœºå±€åŸŸç½‘ IP^>:%PORT%/bilibilipan/cookie
-echo ==^> Ctrl+C é€€å‡º
+rem ---- 3) Æô¶¯·şÎñ ----
+echo.
+echo ============================================================
+echo   bilibilipan µÇÂ¼ / Cookie Í¬²½·şÎñ
+echo ============================================================
+echo   ¶Ë¿Ú             : %PORT%
+echo   µÇÂ¼Ò³Ãæ         : http://127.0.0.1:%PORT%
+echo   (»á×Ô¶¯´ò¿ªä¯ÀÀÆ÷, °´ Ctrl+C ÍË³ö)
+echo ============================================================
 echo.
 
-rem 3) å¯åŠ¨ (ç”¨ call è®© ^C èƒ½å¹²å‡€é€€å‡º)
 %PY% "%PY_SCRIPT%" %PORT%
+
+echo.
+echo ·şÎñÒÑÍË³ö.
+pause
