@@ -9,27 +9,29 @@ SESSDATA / bili_jct / DedeUserID, 校验是否有效, 然后自动填入
 bilibili-cookie.json, 供词典笔 App 通过「电脑同步」获取。
 
 用法:
-    python browser-login.py              # 读取 -> 校验 -> 写入 -> 启动同步服务
-    python browser-login.py --scan       # 只扫描列出找到的账号, 不写入
-    python browser-login.py --no-serve   # 只读取写入, 不启动服务
-    python browser-login.py 8080         # 指定同步服务端口 (默认 9527)
+    python browser-login.py              打开内置浏览器 -> 登录 -> 写入 -> 启动服务
+    python browser-login.py --import     改为读取已有浏览器的登录态
+    python browser-login.py --scan       只扫描列出找到的账号, 不写入
+    python browser-login.py --no-serve   只读取写入, 不启动服务
+    python browser-login.py 8080         指定同步服务端口 (默认 9527)
 
-两条读取路径 (自动依次尝试):
-  A. CDP 直读 (推荐)
-     以 --remote-debugging-port 启动一个浏览器实例 (沿用你原本的 profile,
-     登录态在), 用 DevTools 协议 Network.getAllCookies 直接拿明文 Cookie。
-     这是**浏览器自己解密**的, 所以即使是 Chrome 127+ 的 v20
-     (app-bound) 加密也能正常读出。
-     前提: 该浏览器当前没有在运行 (否则 profile 被独占, 起不来调试实例)。
+两种模式:
+  1) 内置浏览器登录 (默认, 推荐)
+     程序自己拉起一个**独立的浏览器实例**, 用临时用户目录, 打开 B 站登录页。
+     你在弹出的窗口里登录 (扫码 / 短信 / 密码都行), 程序检测到 SESSDATA
+     就自动取回、校验、写入, 然后关掉这个临时实例。
+     优点: 完全不需要解密, 也不要求你关闭正在用的浏览器,
+           绕开了 Chrome 127+ 的 v20(app-bound) 加密问题。
 
-  B. 磁盘解密
-     复制 <profile>/Network/Cookies (SQLite) 到临时文件, 用 DPAPI 解出
-     Local State 里的 AES 主密钥, 再 AES-256-GCM 解 v10 前缀的
-     encrypted_value。仅适用于未启用 app-bound 加密的旧版本浏览器。
+  2) 导入已有登录态 (--import)
+     A. CDP 直读: 以 --remote-debugging-port 启动浏览器实例(沿用原 profile),
+        用 DevTools 协议 Network.getAllCookies 取明文 Cookie。
+        前提: 该浏览器当前没有在运行 (否则 profile 被独占)。
+     B. 磁盘解密: 复制 <profile>/Network/Cookies, 用 DPAPI 解出 AES 主密钥,
+        再 AES-256-GCM 解 v10 前缀的密文。仅适用于未启用 app-bound 的旧版本。
 
-如果两条都失败, 工具会打印具体原因和操作建议。
-
-依赖: 解密 v10 需要 cryptography (pip install cryptography); CDP 路径无依赖。
+依赖: 磁盘解密 v10 需要 cryptography (pip install cryptography);
+      内置浏览器模式与 CDP 模式零第三方依赖。
 """
 import base64
 import ctypes
@@ -301,6 +303,153 @@ def cdp_cookies(exe, udd, headless=True, wait=25):
                     pass
 
 
+# ============================================================ 内置浏览器登录
+LOGIN_URL = 'https://passport.bilibili.com/login'
+
+
+def _cdp_connect(port, timeout=30):
+    """等调试端口就绪并连上第一个 page 的 WebSocket。返回 (ws, err)。"""
+    ver = None
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(
+                    'http://127.0.0.1:%d/json/version' % port, timeout=1.5) as r:
+                ver = json.loads(r.read().decode('utf-8', 'replace'))
+                break
+        except Exception:
+            time.sleep(0.4)
+    if not ver:
+        return None, '调试端口未就绪'
+    # 页面 target 可能还没建好, 多试几次
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(
+                    'http://127.0.0.1:%d/json/list' % port, timeout=3) as r:
+                targets = json.loads(r.read().decode('utf-8', 'replace'))
+            pages = [t for t in targets if t.get('type') == 'page']
+            if pages:
+                try:
+                    return MiniWS(pages[0]['webSocketDebuggerUrl']), ''
+                except Exception as e:
+                    return None, 'WebSocket 连接失败: %s' % e
+        except Exception:
+            pass
+        time.sleep(0.6)
+    return None, '没有可用的页面'
+
+
+def _poll_login_cookies(ws, seconds=300, log=print, proc=None):
+    """轮询 CDP 等 SESSDATA 出现。返回 (cookies_dict, 说明)。"""
+    deadline = time.time() + seconds
+    mid = 100
+    last_log = 0
+    while time.time() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return None, '浏览器窗口已关闭'
+        mid += 1
+        try:
+            ws.send(json.dumps({'id': mid, 'method': 'Network.getAllCookies',
+                                'params': {}}))
+        except Exception as e:
+            return None, '与浏览器通信中断: %s' % e
+        got = None
+        end = time.time() + 5
+        while time.time() < end:
+            try:
+                msg = json.loads(ws.recv())
+            except socket.timeout:
+                break
+            except Exception as e:
+                return None, '与浏览器通信中断: %s' % e
+            if msg.get('id') == mid:
+                got = msg.get('result', {}).get('cookies', [])
+                break
+        if got:
+            best = {}
+            for c in got:
+                if c.get('name') in NEED and 'bilibili' in (c.get('domain') or ''):
+                    best[c['name']] = c.get('value', '')
+            if best.get('SESSDATA'):
+                return best, '内置浏览器登录'
+        now = time.time()
+        if log and now - last_log >= 20:
+            last_log = now
+            left = int(deadline - now)
+            log('      等待登录中… (剩余 %d 秒)' % left)
+        time.sleep(2)
+    return None, '等待登录超时'
+
+
+def interactive_login(exe, url=LOGIN_URL, timeout=300, log=print):
+    """打开一个**独立的浏览器实例**让用户登录 B 站, 登录成功后取 Cookie。
+
+    这是「内置浏览器」方案:
+      · 用临时 user-data-dir, 不碰用户现有浏览器, 也不需要关闭它
+      · 不需要解密任何东西 —— Cookie 由这个实例自己写入、自己读出
+      · 登录完成后关闭实例并删除临时目录
+
+    返回 (cookies_dict, 说明)。
+    """
+    profile = tempfile.mkdtemp(prefix='bilibilipan-browser-')
+    port = random.randint(20000, 40000)
+    args = [exe,
+            '--remote-debugging-port=%d' % port,
+            '--user-data-dir=%s' % profile,
+            '--no-first-run', '--no-default-browser-check', '--no-sandbox',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-gpu',
+            '--new-window', url]
+    proc = None
+    ws = None
+    try:
+        try:
+            proc = subprocess.Popen(args, stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL)
+        except Exception as e:
+            return None, '无法启动浏览器: %s' % e
+        log('  已打开浏览器窗口, 请在里面登录 B 站…')
+        ws, err = _cdp_connect(port, timeout=40)
+        if not ws:
+            if proc.poll() is not None:
+                return None, '浏览器启动后立刻退出了'
+            return None, err
+        try:
+            ws.send(json.dumps({'id': 1, 'method': 'Network.enable', 'params': {}}))
+        except Exception:
+            pass
+        ck, why = _poll_login_cookies(ws, seconds=timeout, log=log, proc=proc)
+        if ck:
+            log('  登录成功, 正在校验…')
+            return ck, why
+        return None, why
+    finally:
+        if ws:
+            ws.close()
+        if proc:
+            try:
+                proc.terminate()
+                proc.wait(timeout=8)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
+        # 清理临时 profile
+        try:
+            shutil.rmtree(profile, ignore_errors=True)
+        except Exception:
+            pass
+
+
+def pick_best_exe():
+    """挑一个最适合当「内置浏览器」的可执行文件: 完整安装优先。"""
+    for label, exe, udd in find_browsers():
+        return label, exe
+    return None, None
+
+
 # ============================================================ 路径 B: 磁盘解密
 def dpapi_decrypt(blob):
     """Windows DPAPI 解密 (当前用户凭据)。失败返回 None。"""
@@ -518,17 +667,43 @@ def main():
     argv = sys.argv[1:]
     scan_only = '--scan' in argv
     no_serve = '--no-serve' in argv
+    do_import = '--import' in argv      # 读取现有浏览器登录态(需先关闭浏览器)
     port = 9527
     for a in argv:
         if a.isdigit():
             port = int(a)
 
     print('=' * 62)
-    print('bilibilipan · 浏览器登录态导入')
+    print('bilibilipan · 浏览器登录')
     print('=' * 62)
     if not IS_WIN:
-        print('[!] 当前系统 %s 尚未支持自动读取, 请用手动方式。' % sys.platform)
+        print('[!] 当前系统 %s 尚未支持, 请用手动方式。' % sys.platform)
         return 1
+
+    # ---------- 默认模式: 内置浏览器登录 ----------
+    if not do_import and not scan_only:
+        label, exe = pick_best_exe()
+        if not exe:
+            print('[×] 没有找到可用的 Chrome / Edge。')
+            return 1
+        print('\n[1/3] 打开内置浏览器 (%s), 请在窗口里登录 B 站…' % label)
+        print('      临时用户目录, 不影响你现有的浏览器, 也不需要关闭它')
+        ck, why = interactive_login(exe, timeout=300)
+        if not ck:
+            print('\n[×] %s' % why)
+            return 1
+        print('\n[2/3] 校验登录态…')
+        ok, desc, info = verify(ck)
+        print('      %s %s' % ('√' if ok else '×', desc))
+        if not ok:
+            return 1
+        print('\n[3/3] 自动填入 Cookie…')
+        print('      账号: %s' % desc)
+        print('      已写入: %s' % save_cookies(ck, info))
+        if no_serve:
+            return 0
+        print('\n启动同步服务, 供词典笔获取 (Ctrl+C 退出)…\n')
+        return _serve(port)
 
     print('\n[1/3] 扫描本机浏览器里的 B 站登录态...')
     found = collect()
@@ -566,7 +741,11 @@ def main():
     if no_serve:
         print('\n完成。可运行 start-server.bat 启动同步服务。')
         return 0
+    return _serve(port)
 
+
+def _serve(port):
+    """启动 pc-cookie-server 的同步服务。"""
     print('\n启动同步服务, 供词典笔获取 (Ctrl+C 退出)...\n')
     # pc-cookie-server.py 文件名带连字符, 不能直接 import, 用 importlib 加载
     import importlib.util

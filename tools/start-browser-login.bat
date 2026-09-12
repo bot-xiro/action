@@ -7,14 +7,15 @@ set "PORT=%1"
 if "%PORT%"=="" set "PORT=9527"
 
 echo ============================================================
-echo   bilibilipan 浏览器登录态导入
+echo   bilibilipan 浏览器登录
 echo ============================================================
 echo.
-echo   本工具会自动读取 Chrome / Edge 里已登录的 B 站账号,
-echo   写入 bilibili-cookie.json, 然后启动同步服务供词典笔获取。
+echo   会打开一个独立的浏览器窗口(临时用户目录), 请在里面登录 B 站。
+echo   登录成功后自动取回 Cookie 并保存, 然后关闭这个临时窗口。
 echo.
-echo   注意: 读取前请完全退出 Chrome / Edge(含后台进程),
-echo         否则浏览器会独占用户数据, 读不到登录态。
+echo   不会影响你正在用的浏览器, 也不需要提前关闭它。
+echo.
+echo   登录完成后会自动启动同步服务, 供词典笔获取。
 echo.
 pause
 

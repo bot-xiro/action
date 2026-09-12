@@ -72,6 +72,8 @@ code{background:#21242b;padding:1px 6px;border-radius:4px;color:#fb7299}
 .ok{color:#3fd67a}.err{color:#ff7a7a}.dim{color:#8a94a6}
 .ip{font-size:26px;color:#fb7299;font-weight:700;letter-spacing:1px;font-family:Consolas,monospace}
 .grow{flex:1}
+.badge{display:inline-block;background:#fb729922;color:#fb7299;font-size:11px;
+       border-radius:9px;padding:2px 9px;margin-left:6px;vertical-align:2px;font-weight:500}
 .split{display:flex;gap:12px;align-items:flex-start}
 .split>div:first-child{flex:1}
 </style></head>
@@ -93,18 +95,31 @@ code{background:#21242b;padding:1px 6px;border-radius:4px;color:#fb7299}
 </div>
 
 <div class="card">
-  <h2>方式一 · 从浏览器自动读取</h2>
+  <h2>方式一 · 打开内置浏览器登录 <span class="badge">推荐</span></h2>
   <div class="row">
-    <button id="btnAuto" onclick="autoRead()">从 Chrome / Edge 读取登录态</button>
-    <span class="tip" style="margin:0">读取前请<b>完全退出</b>浏览器（含后台进程）</span>
+    <button id="btnLogin" onclick="openLogin()">打开浏览器登录 B 站</button>
+    <span class="tip" style="margin:0">会弹出一个独立的浏览器窗口，在里面登录即可</span>
   </div>
-  <p class="tip">原理：以调试端口启动浏览器实例，通过浏览器自身读出已登录的 Cookie。
-     若浏览器正在运行，profile 被独占，会读取失败。</p>
+  <p class="tip">用<b>临时用户目录</b>开一个独立浏览器实例：不影响你正在用的浏览器，
+     也不需要关闭它，更不用解密任何东西。登录成功（扫码 / 短信 / 密码都行）后
+     本页会自动识别并保存。</p>
+  <div class="msg" id="loginmsg"></div>
+</div>
+
+<div class="card">
+  <h2>方式二 · 导入已有浏览器的登录态</h2>
+  <div class="row">
+    <button id="btnAuto" onclick="autoRead()">从 Chrome / Edge 导入</button>
+    <span class="tip" style="margin:0">导入前请<b>完全退出</b>浏览器（含后台进程）</span>
+  </div>
+  <p class="tip">直接读取浏览器里已登录的账号。需要浏览器当前没有在运行；
+     若浏览器启用了新版 app-bound 加密且安装不完整，可能读不出来，
+     此时请用方式一。</p>
   <div class="msg" id="automsg"></div>
 </div>
 
 <div class="card">
-  <h2>方式二 · 手动粘贴 Cookie</h2>
+  <h2>方式三 · 手动粘贴 Cookie</h2>
   <textarea id="ck" placeholder="SESSDATA=xxx; bili_jct=xxx; DedeUserID=xxx; ...&#10;&#10;（在本页面复制后会自动填入，无需手动粘贴）"
             oninput="onEdit()"></textarea>
   <div class="row" style="margin-top:12px">
@@ -144,6 +159,28 @@ function check(){
     document.getElementById('meta').textContent=j.ok?('UID '+j.mid+(j.level?' · LV'+j.level:'')):(j.message||'');
     if(j.raw) lastSaved=j.raw;
   }).catch(e=>set('stmsg','校验失败: '+e,'err'));
+}
+function openLogin(){
+  var b=document.getElementById('btnLogin');b.disabled=true;b.textContent='已打开，等待登录…';
+  set('loginmsg','正在启动浏览器…','dim');
+  fetch('/api/open-login',{method:'POST'}).then(r=>r.json()).then(j=>{
+    set('loginmsg',j.message,j.ok?'ok':'err');
+    if(j.ok){ pollLogin(); } else { b.disabled=false;b.textContent='打开浏览器登录 B 站'; }
+  }).catch(e=>{b.disabled=false;b.textContent='打开浏览器登录 B 站';
+    set('loginmsg','启动失败: '+e,'err');});
+}
+function pollLogin(){
+  var b=document.getElementById('btnLogin');
+  fetch('/api/login-status').then(r=>r.json()).then(j=>{
+    if(j.running||(!j.done)){
+      if(j.stage) set('loginmsg',j.stage,'dim');
+      setTimeout(pollLogin,1800);
+      return;
+    }
+    b.disabled=false;b.textContent='打开浏览器登录 B 站';
+    set('loginmsg',j.message||'已结束',j.ok?'ok':'err');
+    if(j.ok){ check(); }
+  }).catch(e=>{setTimeout(pollLogin,2500);});
 }
 function autoRead(){
   var b=document.getElementById('btnAuto');b.disabled=true;b.textContent='读取中…';
@@ -301,8 +338,62 @@ def load_browser_login():
         return None, '加载 browser-login.py 失败: %s' % e
 
 
+def _load_mod():
+    mod, err = load_browser_login()
+    if not mod:
+        print('[!]', err)
+    return mod
+
+
+# ---------------- 内置浏览器登录 (后台线程) ----------------
+_login = {'running': False, 'done': False, 'ok': False, 'message': '', 'stage': ''}
+
+
+def start_browser_login():
+    """在后台线程里拉起内置浏览器, 等用户登录完成后自动保存 Cookie。"""
+    if _login['running']:
+        return False, '已有登录窗口在进行中'
+    mod = _load_mod()
+    if not mod:
+        return False, '缺少 tools/browser-login.py'
+    label, exe = mod.pick_best_exe()
+    if not exe:
+        return False, '没有找到可用的 Chrome / Edge'
+
+    def work():
+        _login.update(running=True, done=False, ok=False,
+                      message='', stage='正在启动浏览器…')
+        try:
+            ck, why = mod.interactive_login(
+                exe, timeout=300, log=lambda m: _login.update(stage=m.strip()))
+            if not ck:
+                _login.update(running=False, done=True, ok=False,
+                              message=why or '已取消', stage='')
+                return
+            _login.update(stage='正在校验登录态…')
+            ok, desc, info = mod.verify(ck)
+            if not ok:
+                _login.update(running=False, done=True, ok=False,
+                              message='登录态校验失败: %s' % desc, stage='')
+                return
+            raw = mod.build_raw(ck)
+            state['raw'] = raw
+            state['parsed'] = parse_cookie(raw)
+            state['updated_at'] = int(time.time())
+            save_state()
+            print('[+] 内置浏览器登录成功: %s' % desc)
+            _login.update(running=False, done=True, ok=True,
+                          message='已登录: %s' % desc, stage='')
+        except Exception as e:
+            _login.update(running=False, done=True, ok=False,
+                          message='出错: %s' % e, stage='')
+
+    threading.Thread(target=work, daemon=True).start()
+    return True, '已打开浏览器窗口 (%s), 请在里面登录 B 站' % label
+
+
 def do_browser_import():
-    """从浏览器读取登录态并写入。返回 (ok, message, raw)"""
+    """从已有浏览器读取登录态并写入。返回 (ok, message, raw)"""
     mod, err = load_browser_login()
     if not mod:
         return False, err, ''
@@ -350,6 +441,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ok, uname, mid, face, level, msg = nav_check()
             self._json({'ok': ok, 'uname': uname, 'mid': mid, 'face': face,
                         'level': level, 'message': msg, 'raw': state['raw']})
+        elif self.path.startswith('/api/login-status'):
+            self._json({'running': _login['running'], 'done': _login['done'],
+                        'ok': _login['ok'], 'message': _login['message'],
+                        'stage': _login['stage']})
         elif self.path.startswith('/current'):
             self._json({'ok': True, 'raw': state['raw']})
         elif self.path.startswith('/bilibilipan/cookie'):
@@ -399,6 +494,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._json({'ok': ok, 'message': msg, 'raw': raw})
             finally:
                 _busy['running'] = False
+            return
+
+        if self.path == '/api/open-login':
+            ok, msg = start_browser_login()
+            self._json({'ok': ok, 'message': msg})
             return
 
         self._send(404, 'not found', 'text/plain')
