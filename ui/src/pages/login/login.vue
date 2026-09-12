@@ -51,16 +51,29 @@
       </div>
     </div>
 
-    <!-- 右区: 二维码 (本地编码器渲染, 不依赖外部图片服务) -->
-    <div v-if="mode === 'qr'" class="qr-zone">
-      <div v-if="qr.size > 0" class="qr-box" :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px' }">
+    <!-- 右区: 二维码常驻嵌入 (本地编码器渲染, 不依赖外部图片服务).
+         始终渲染, 不随模式切换隐藏 —— 电脑同步模式下同样可用手机扫码登录,
+         避免右侧出现空白区域. -->
+    <div class="qr-zone">
+      <text class="qr-cap">{{ qrCapText }}</text>
+      <div v-if="qr.size > 0" class="qr-box"
+           :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px', left: ((280 - (qr.size * MOD + QPAD * 2)) / 2) + 'px' }">
         <div v-for="(row, r) in qrRows" :key="r" class="qr-row" :style="{ top: (r * MOD + QPAD) + 'px' }">
           <div v-for="(seg, s) in row" :key="s"
                class="qr-dark"
                :style="{ left: (seg.x * MOD + QPAD) + 'px', width: (seg.w * MOD) + 'px' }"></div>
         </div>
-        <div v-if="pollState === 'ok' || pollState === 'expired'" class="qr-mask">
-          <text class="qr-mask-text">{{ pollState === 'ok' ? '✓' : '过期' }}</text>
+        <!-- 覆盖层: 过期/出错时可直接点按刷新 (电脑同步模式下左侧无刷新入口) -->
+        <div v-if="pollState === 'expired' || pollState === 'error'"
+             class="qr-mask qr-mask-tap"
+             :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px' }"
+             @click="startQr">
+          <text class="qr-mask-text">{{ pollState === 'expired' ? '已过期' : '出错了' }}</text>
+          <text class="qr-mask-sub">点此刷新</text>
+        </div>
+        <div v-else-if="pollState === 'ok'" class="qr-mask"
+             :style="{ width: (qr.size * MOD + QPAD * 2) + 'px', height: (qr.size * MOD + QPAD * 2) + 'px' }">
+          <text class="qr-mask-text">✓</text>
         </div>
       </div>
       <text v-else class="qr-ph">{{ qrError !== '' ? '生成失败' : '生成中…' }}</text>
@@ -79,7 +92,7 @@ import { afterPaint } from '../../base-page.js'
 import { makeQR } from '../../services/qrcode.js'
 
 const MOD = 5          // 二维码模块边长 px (本地编码渲染)
-const QPAD = 22        // 静默区 (>= 4 模块)
+const QPAD = 20        // 静默区 >= 4 模块 (ISO/IEC 18004 下限; 面板高 266 受限)
 const POLL_MS = 2000   // 轮询周期
 const QR_TTL_MS = 180000
 
@@ -107,6 +120,17 @@ export default {
       ime: null
     }
   },
+  computed: {
+    // 右侧二维码面板顶部说明: 随模式/状态变化
+    qrCapText() {
+      if (this.pollState === 'ok') return '✓ 已登录'
+      if (this.pollState === 'expired') return '二维码已过期'
+      if (this.pollState === 'error') return '生成失败'
+      if (this.pollState === 'scanned') return '已扫描, 请确认'
+      if (this.mode === 'pc') return '也可以直接扫码'
+      return '扫码登录'
+    }
+  },
   methods: {
     onShow() {
       if (this.entering) {
@@ -117,7 +141,8 @@ export default {
           setTimeout(function () { self.entering = false }, 60)
         }
       }
-      if (this.mode === 'qr' && this.pollState === 'generating' && !this.pollTimer) {
+      // 二维码常驻右侧, 与模式无关: 只要还没生成就补一次
+      if (this.pollState === 'generating' && !this.pollTimer) {
         this.startQr()
       }
     },
@@ -138,10 +163,10 @@ export default {
     switchMode(m) {
       if (this.mode === m) return
       this.mode = m
-      if (m === 'qr') {
+      // 二维码常驻右侧显示, 两种模式下都可用 → 轮询不停.
+      // 仅在二维码尚未生成时补一次生成.
+      if (m === 'qr' && this.pollState === 'generating' && !this.pollTimer) {
         this.startQr()
-      } else {
-        this.stopPoll()
       }
     },
 
@@ -412,14 +437,14 @@ function toRuns(m) {
 .pc-wrap {
   position: absolute;
   left: 12px;
-  top: 116px;
+  top: 108px;
   width: 656px;
-  height: 140px;
+  height: 150px;
 }
 /* 电脑同步内容超出可视高度, 需可上下滑动 (用户反馈: cookie 页面无法上下滑动) */
 .pc-scroll {
   width: 656px;
-  height: 140px;
+  height: 150px;
 }
 .pc-tip {
   font-size: 16px;
@@ -449,7 +474,7 @@ function toRuns(m) {
   margin-top: 8px;
   font-size: 19px;
 }
-/* 右区二维码: 266 全高, 白盒 249x249 (41 模块 x 5px + 22px x2 静默区) */
+/* 右区二维码: 常驻嵌入 (不随模式切换隐藏), 266 全高 */
 .qr-zone {
   position: absolute;
   left: 680px;
@@ -460,16 +485,26 @@ function toRuns(m) {
   justify-content: center;
   align-items: center;
 }
+/* 面板顶部说明: 悬浮在深色面板上, 不占白盒空间 (位于 18px 白盒上沿之上) */
+.qr-cap {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 280px;
+  height: 18px;
+  font-size: 16px;
+  color: #8a94a6;
+  text-align: center;
+}
+/* 白盒尺寸与水平居中由 :style 动态给出 (随二维码版本变化), 此处仅定位垂直 */
 .qr-box {
   position: absolute;
-  left: 15px;
-  top: 8px;
+  top: 18px;
   background-color: #ffffff;
 }
 .qr-row {
   position: absolute;
   left: 0px;
-  width: 249px;
   height: 5px;
 }
 .qr-dark {
@@ -478,12 +513,11 @@ function toRuns(m) {
   height: 5px;
   background-color: #16181c;
 }
+/* 宽高由 :style 动态给出 (随二维码版本变化) */
 .qr-mask {
   position: absolute;
   left: 0px;
   top: 0px;
-  width: 249px;
-  height: 249px;
   background-color: rgba(255, 255, 255, 0.9);
   justify-content: center;
   align-items: center;
@@ -491,6 +525,16 @@ function toRuns(m) {
 .qr-mask-text {
   font-size: 40px;
   color: #16181c;
+}
+/* 过期/出错覆盖层: 可点按刷新 */
+.qr-mask-tap {
+  justify-content: center;
+  align-items: center;
+}
+.qr-mask-sub {
+  margin-top: 8px;
+  font-size: 22px;
+  color: #fb7299;
 }
 .qr-ph {
   font-size: 20px;
