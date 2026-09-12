@@ -38,8 +38,13 @@
       <!-- 电脑同步: 左区全宽铺满, 无二维码、不留空白 -->
       <div v-else class="pc-wrap">
         <scroller class="pc-scroll" scroll-direction="vertical" :show-scrollbar="true">
-          <text class="pc-tip">首次使用? 在电脑上运行本仓库的 tools/pc-cookie-server.py (与词典笔连同一个 WiFi), 浏览器打开 http://127.0.0.1:9527 , 粘贴 B 站 Cookie 并保存。</text>
-          <text class="pc-tip">然后返回本页, 在下面输入电脑的局域网 IP, 点「获取并登录」即可把 Cookie 同步到词典笔。</text>
+          <text class="pc-tip">① 在电脑上安装 Python 3 (Windows/Mac/Linux 均可), 无需第三方包, 全部使用 Python 标准库。</text>
+          <text class="pc-tip">② 电脑与词典笔连接到同一个 WiFi 局域网 (注意: 公共 WiFi 或访客网络可能隔离设备, 建议用家用路由器)。</text>
+          <text class="pc-tip">③ 在电脑上运行本仓库 tools/pc-cookie-server.py, 启动后命令行会打印本机局域网 IP, 例如 http://192.168.1.100:9527。</text>
+          <text class="pc-tip">④ 电脑浏览器打开 http://127.0.0.1:9527, 在文本框粘贴 B 站 Cookie (要求包含 SESSDATA), 点「保存」。</text>
+          <text class="pc-tip">获取 Cookie 的方法: 电脑浏览器登录 bilibili.com → F12 打开 DevTools → Network 标签 → 任一 api.bilibili.com 请求 → 找到 Request Headers → 复制整行 Cookie 值。</text>
+          <text class="pc-tip">⑤ 返回本页面, 在下面输入电脑的局域网 IP (如 192.168.1.100), 点「获取并登录」即可把 Cookie 同步到词典笔。</text>
+          <text class="pc-tip">安全提示: Cookie 相当于登录凭证, 保存后请尽快关闭电脑上的服务 (Ctrl+C)。笔端获取成功后可立即关闭服务。</text>
           <div class="pc-input" @click="inputIp">
             <text class="pc-input-text">{{ pcIp ? pcIp : '点击输入电脑 IP (如 192.168.1.100)' }}</text>
           </div>
