@@ -16,7 +16,8 @@
     "up": "pages/up/up.vue",
     "player": "pages/player/player.vue",
     "login": "pages/login/login.vue",
-    "comment": "pages/comment/comment.vue"
+    "comment": "pages/comment/comment.vue",
+    "subreply": "pages/subreply/subreply.vue"
   },
   "options": {
     "external": ["bilinet", "gstplayer"],

@@ -4,60 +4,54 @@
       <div class="back" @click="goBack">
         <text class="back-text">‹ 返回</text>
       </div>
-      <text class="title">{{ titleText }} 的评论</text>
-      <text class="count" v-if="total > 0">{{ total }} 条</text>
+      <text class="title">全部回复 {{ total > 0 ? total : '' }}</text>
     </div>
 
-    <!-- 排序切换: 热度 / 最新 -->
-    <div class="sortbar">
-      <div :class="['sort-item', sortMode === 'hot' ? 'sort-on' : '']" @click="switchSort('hot')">
-        <text :class="['sort-text', sortMode === 'hot' ? 'sort-text-on' : '']">热度</text>
-      </div>
-      <div :class="['sort-item', sortMode === 'time' ? 'sort-on' : '']" @click="switchSort('time')">
-        <text :class="['sort-text', sortMode === 'time' ? 'sort-text-on' : '']">最新</text>
+    <!-- 父评论 (固定顶部, 点击 = 回复主评论) -->
+    <div class="parent" @click="replyToParent">
+      <image class="pface" :src="parentFace" resize="cover" v-if="parentFace"></image>
+      <div class="pmain">
+        <div class="phead">
+          <text class="pauthor">{{ parentAuthor }}</text>
+        </div>
+        <richtext class="pmsg">
+          <template v-for="(seg, si) in parentSegs">
+            <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
+            <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
+          </template>
+        </richtext>
       </div>
     </div>
 
     <scroller class="list" scroll-direction="vertical" :show-scrollbar="true">
       <text v-if="status !== ''" class="status">{{ status }}</text>
-      <!-- 未登录: 明确给出登录引导 (用户反馈: 未登录状态无法获取评论) -->
-      <div v-if="!logged && !loading" class="gate">
-        <text class="gate-text">评论需要登录后查看</text>
-        <div class="gate-btn" @click="goLogin">
-          <text class="gate-btn-text">去登录 (扫码 / 电脑同步)</text>
-        </div>
-      </div>
-      <div v-else>
-        <div v-for="r in replies" :key="r.rpid" class="reply">
-          <image class="face" :src="r.face" resize="cover"></image>
-          <div class="reply-main">
-            <div class="reply-head">
-              <text class="reply-author">{{ r.author }}</text>
-              <text class="reply-time">{{ r.timeText }}</text>
-            </div>
-            <!-- 图文混排: B 站表情 + emoji 转图片 (设备字体无 emoji 字形) -->
-            <richtext class="reply-msg">
-              <template v-for="(seg, si) in r.segs">
-                <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
-                <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
-              </template>
-            </richtext>
-            <!-- 赞/回复: 文字形式 (设备字体无 emoji 字形); 「回复」可点进楼中页 -->
-            <div class="reply-meta">
-              <text class="meta-text">赞 {{ r.likeText }}</text>
-              <text class="meta-reply" @click="openSubReply(r)">回复 {{ r.replyCount }}</text>
-            </div>
+      <div v-for="r in replies" :key="r.rpid" class="reply">
+        <image class="face" :src="r.face" resize="cover"></image>
+        <div class="reply-main">
+          <div class="reply-head">
+            <text class="reply-author">{{ r.author }}</text>
+            <text class="reply-time">{{ r.timeText }}</text>
+          </div>
+          <richtext class="reply-msg">
+            <template v-for="(seg, si) in r.segs">
+              <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
+              <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
+            </template>
+          </richtext>
+          <div class="reply-meta">
+            <text class="meta-text">赞 {{ r.likeText }}</text>
+            <text class="meta-reply" @click="setTarget(r)">回复</text>
           </div>
         </div>
       </div>
-      <text v-if="logged && replies.length > 0 && hasMore" class="load-more" @click="loadMore">加载更多评论…</text>
-      <text v-if="logged && !loading && replies.length === 0 && status === ''" class="empty">还没有评论, 抢首评</text>
+      <text v-if="replies.length > 0 && hasMore" class="load-more" @click="loadMore">加载更多回复…</text>
+      <text v-if="!loading && replies.length === 0 && status === ''" class="empty">还没有回复</text>
     </scroller>
 
-    <!-- 底部发评栏: 登录后可发 -->
+    <!-- 底部发评栏: 回复目标提示 + IME 输入 -->
     <div class="postbar">
       <div class="post-input" @click="openPostInput">
-        <text class="post-input-text">{{ logged ? '说点什么…' : '登录后参与评论' }}</text>
+        <text class="post-input-text">{{ logged ? inputHint : '登录后参与评论' }}</text>
       </div>
       <div class="post-btn" @click="openPostInput">
         <text class="post-btn-text">发送</text>
@@ -67,16 +61,16 @@
 </template>
 
 <script>
-// 评论页: 视频评论列表 (x/v2/reply, 匿名可读) + 发评论 (登录 Cookie + csrf).
-// aid 由详情页 navTo 传入; 分页 pn 递增, 新评论插到当前列表尾部.
+// 楼中页: 某条主评论的子回复列表 (x/v2/reply/reply) + 回复子评论 (addReply root/parent).
+// 由评论页「回复 N」navTo 传入: aid(oid), root(顶层 rpid), msg/author/face(父评论展示).
+// 点某条回复的「回复」= 设置目标 (发评时 parent=该条 rpid); 点父评论 = 回复主楼 (parent=root).
 import { createIME } from '../../services/ime.js'
-import { getReplies, addReply } from '../../services/bili.js'
+import { getSubReplies, addReply, parseMessage } from '../../services/bili.js'
 import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
 
-// 内置常用 emoji 映射: .vue 文件里的 require png 会被 aiot-cli 编译期处理成 images/<hash>.png,
-// .js 文件 (services/) 里的 require 不会被处理, QuickJS 运行时无 require 会崩掉整个应用.
-// key 为 twemoji 文件名 (不带 .png); B 站 emote (content.emote) 有映射的优先走 B 站 CDN 图.
+// 内置常用 emoji 映射: .vue 里的 require png 会被 aiot-cli 编译成 images/<hash>.png
+// (services/*.js 里的 require 不会被编译, QuickJS 无 require 会崩, 见 0.8.7 黑屏教训)
 const BUILTIN_EMOJI = {
   '1f197': require('../../assets/emoji/1f197.png'),
   '1f338': require('../../assets/emoji/1f338.png'),
@@ -155,14 +149,16 @@ const BUILTIN_EMOJI = {
 }
 
 export default {
-  name: 'comment',
+  name: 'subreply',
   data() {
     return {
       aid: 0,
-      titleText: '',
-      sortMode: 'hot',   // 'hot'=热度 / 'time'=最新
-      replies: [],
+      root: 0,
+      parentAuthor: '',
+      parentFace: '',
+      parentSegs: [],
       total: 0,
+      replies: [],
       pn: 1,
       hasMore: false,
       loading: false,
@@ -170,7 +166,14 @@ export default {
       status: '加载中…',
       posting: false,
       ime: null,
-      generation: 0
+      generation: 0,
+      // 当前回复目标: null = 回复主楼; { rpid, author } = 回复某条子回复
+      target: null
+    }
+  },
+  computed: {
+    inputHint() {
+      return this.target ? '回复 @' + this.target.author : '回复主评论…'
     }
   },
   methods: {
@@ -181,19 +184,13 @@ export default {
         this.$page.onNewOptions = function (options) { self.applyOptions(options) }
       }
       const wasLogged = this.logged
-      this.logged = hasCookie()  // 模板不能直接调导入函数, 落到 data
-      // 从登录页返回后已登录: 之前被门禁挡住, 现在补一次加载
-      if (this.logged && !wasLogged && this.aid && this.replies.length === 0) {
+      this.logged = hasCookie()
+      if (this.logged && !wasLogged && this.root && this.replies.length === 0) {
         this.status = '加载中…'
         this.load(true)
         return
       }
       this.applyOptions((this.$page && this.$page.options) || {})
-    },
-
-    goLogin() {
-      // 与本项目其它页面一致: 页面跳转走 $falcon.navTo($page 无此方法)
-      $falcon.navTo('login', {})
     },
 
     onUnload() {
@@ -202,61 +199,54 @@ export default {
 
     applyOptions(options) {
       const aid = parseInt(options.aid || '0', 10) || 0
-      if (aid === this.aid && (this.replies.length > 0 || this.loading)) return
+      const root = parseInt(options.root || '0', 10) || 0
+      if (root === this.root && (this.replies.length > 0 || this.loading)) return
       this.aid = aid
-      this.titleText = options.title || ''
+      this.root = root
+      this.parentAuthor = options.author || ''
+      this.parentFace = options.face || ''
+      this.total = parseInt(options.count || '0', 10) || 0
+      // 父评论内容: 用内置 emoji 解析成图文混排段
+      this.parentSegs = parseParentSegs(options.msg || '')
       this.replies = []
-      this.total = 0
       this.pn = 1
       this.hasMore = false
-      this.generation++   // 作废在途请求
+      this.target = null
+      this.generation++
       this.loading = false
-      // 未登录: 不发请求, 直接展示登录引导
-      if (!this.logged) {
-        this.status = ''
-        return
-      }
       this.status = '加载中…'
       this.load(true)
     },
 
     load(reset) {
-      if (!this.aid || this.loading) return
+      if (!this.root || this.loading) return
       const gen = ++this.generation
       this.loading = true
       if (reset) this.status = '加载中…'
-      // 同步 httpGet 延后到首帧之后
       afterPaint(async () => {
         try {
-          const r = await getReplies(this.aid, this.pn, BUILTIN_EMOJI, this.sortMode)
+          const r = await getSubReplies(this.aid, this.root, this.pn, BUILTIN_EMOJI)
           if (gen !== this.generation) return
           if (reset) this.replies = []
-          // r.replies 是替换后的新页数据 (pn 已在 loadMore 里递增前记录)
-          this.appendPage(r)
+          for (let i = 0; i < r.replies.length; i++) {
+            const item = r.replies[i]
+            let dup = false
+            for (let j = 0; j < this.replies.length; j++) {
+              if (this.replies[j].rpid === item.rpid) { dup = true; break }
+            }
+            if (!dup) this.replies.push(item)
+          }
+          this.total = r.total
+          this.hasMore = this.replies.length < r.total && r.replies.length > 0
           this.status = ''
         } catch (err) {
           if (gen !== this.generation) return
-          console.log('[comment] load error: ' + (err && err.message ? err.message : err))
+          console.log('[subreply] load error: ' + (err && err.message ? err.message : err))
           this.status = err && err.message ? err.message : String(err)
         } finally {
           if (gen === this.generation) this.loading = false
         }
       })
-    },
-
-    appendPage(r) {
-      // 同 rpid 去重后追加
-      const seen = {}
-      for (let i = 0; i < this.replies.length; i++) seen[this.replies[i].rpid] = true
-      for (let i = 0; i < r.replies.length; i++) {
-        const item = r.replies[i]
-        if (!seen[item.rpid]) {
-          this.replies.push(item)
-          seen[item.rpid] = true
-        }
-      }
-      this.total = r.total
-      this.hasMore = this.replies.length < r.total && r.replies.length > 0
     },
 
     loadMore() {
@@ -265,61 +255,46 @@ export default {
       this.load(false)
     },
 
-    // 切换排序 (热度/最新): 重置到第一页重新拉
-    switchSort(mode) {
-      if (this.sortMode === mode || this.loading) return
-      this.sortMode = mode
-      this.replies = []
-      this.total = 0
-      this.pn = 1
-      this.hasMore = false
-      this.generation++
-      this.status = '加载中…'
-      this.load(true)
+    // 点某条子回复的「回复」→ 设为目标
+    setTarget(r) {
+      this.target = { rpid: r.rpid, author: r.author }
     },
 
-    // 点「回复 N」进楼中页 (子回复列表 + 可继续回复)
-    openSubReply(r) {
-      $falcon.navTo('subreply', {
-        aid: String(this.aid),
-        root: String(r.rpid),
-        msg: r.message || '',
-        author: r.author || '',
-        face: r.face || '',
-        count: String(r.replyCount || 0),
-        title: this.titleText || ''
-      })
+    // 点父评论 → 回复主楼 (parent = root)
+    replyToParent() {
+      this.target = null
     },
 
     async openPostInput() {
       if (!hasCookie()) {
-        this.goLogin()
+        $falcon.navTo('login', {})
         return
       }
       if (this.ime == null) this.ime = createIME()
       try {
         const text = await this.ime.open({
           text: '',
-          placeholder: '说点什么…',
+          placeholder: this.inputHint,
           maxlength: 500,
           multiLinesEditVisible: false,
           enterButtonText: '发送',
           confirmText: '发送'
         })
         if (text === null || text.trim() === '') return
-        await this.postComment(text.trim())
+        await this.postReply(text.trim())
       } catch (err) {
         this.status = '输入失败: ' + (err && err.message ? err.message : err)
       }
     },
 
-    async postComment(message) {
+    async postReply(message) {
       if (this.posting) return
       this.posting = true
       this.status = '发送中…'
+      const parent = this.target ? this.target.rpid : this.root
       try {
-        await addReply(this.aid, message)
-        // 成功: 刷新第一页, 新评论通常出现在置顶/热评区, 简单起见回到第一页
+        await addReply(this.aid, message, this.root, parent)
+        this.target = null
         this.pn = 1
         this.replies = []
         this.status = '✓ 已发送'
@@ -335,6 +310,11 @@ export default {
       this.$page.finish()
     }
   }
+}
+
+// 父评论内容解析 (无 emote 映射, 只做 unicode emoji -> 内置图): 复用 bili.js 的 parseMessage
+function parseParentSegs(msg) {
+  return parseMessage(msg, {}, BUILTIN_EMOJI)
 }
 </script>
 
@@ -374,54 +354,57 @@ export default {
   font-size: 22px;
   color: #ffffff;
   margin-left: 14px;
-  width: 620px;
-  /* Falcon 不支持 max-lines, 必须用 lines: N 配合 text-overflow (此前长标题溢出) */
   lines: 1;
   text-overflow: ellipsis;
   overflow: hidden;
 }
-.count {
-  font-size: 19px;
-  color: #8a94a6;
-  /* 与标题省略号拉开间距 (真机: 长标题下「...」和「N 条」挤在一起) */
-  margin-left: 12px;
-}
-.list {
-  position: absolute;
-  left: 0px;
-  top: 74px;
-  width: 960px;
-  height: 148px;
-  padding-left: 12px;
-  padding-right: 12px;
-}
-/* 排序切换栏 */
-.sortbar {
+/* 父评论卡片 */
+.parent {
   position: absolute;
   left: 0px;
   top: 44px;
   width: 960px;
-  height: 30px;
+  height: 66px;
   flex-direction: row;
-  background-color: #1a1d22;
-}
-.sort-item {
-  width: 90px;
-  height: 30px;
-  justify-content: center;
   align-items: center;
-  margin-left: 12px;
-  border-radius: 15px;
+  padding-left: 12px;
+  padding-right: 12px;
+  background-color: #1a1d22;
+  border-bottom-width: 1px;
+  border-bottom-color: #262b33;
 }
-.sort-on {
-  background-color: #2c313a;
+.pface {
+  width: 40px;
+  height: 40px;
+  border-radius: 20px;
+  margin-right: 10px;
 }
-.sort-text {
-  font-size: 17px;
+.pmain {
+  width: 880px;
+  flex-direction: column;
+}
+.phead {
+  flex-direction: row;
+  align-items: center;
+}
+.pauthor {
+  font-size: 18px;
   color: #8a94a6;
 }
-.sort-text-on {
-  color: #fb7299;
+.pmsg {
+  font-size: 19px;
+  color: #c8d2de;
+  lines: 1;
+  text-overflow: ellipsis;
+}
+.list {
+  position: absolute;
+  left: 0px;
+  top: 110px;
+  width: 960px;
+  height: 112px;
+  padding-left: 12px;
+  padding-right: 12px;
 }
 .status {
   font-size: 19px;
@@ -431,93 +414,67 @@ export default {
 }
 .reply {
   flex-direction: row;
-  padding-top: 10px;
-  padding-bottom: 10px;
+  padding-top: 8px;
+  padding-bottom: 8px;
   border-bottom-width: 1px;
   border-bottom-color: #262b33;
 }
 .face {
-  width: 52px;
-  height: 52px;
-  border-radius: 26px;
-  margin-right: 12px;
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  margin-right: 10px;
 }
 .reply-main {
-  width: 850px;
+  width: 870px;
   flex-direction: column;
 }
 .reply-head {
   flex-direction: row;
   align-items: center;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 .reply-author {
-  font-size: 19px;
+  font-size: 18px;
   color: #8a94a6;
   margin-right: 12px;
 }
 .reply-time {
-  font-size: 17px;
+  font-size: 16px;
   color: #5c6672;
 }
 .reply-msg {
-  font-size: 21px;
+  font-size: 20px;
   color: #e8edf3;
-  /* richtext 支持 lines: 长评论限 4 行, 防止把可视区撑爆 */
-  lines: 4;
+  lines: 3;
   margin-top: 2px;
 }
 .reply-meta {
   flex-direction: row;
   align-items: center;
-  margin-top: 4px;
+  margin-top: 3px;
 }
 .meta-text {
-  font-size: 17px;
+  font-size: 16px;
   color: #6a7684;
 }
 .meta-reply {
-  font-size: 17px;
+  font-size: 16px;
   color: #fb7299;
   margin-left: 18px;
 }
 .load-more {
-  font-size: 20px;
+  font-size: 19px;
   color: #fb7299;
   text-align: center;
-  margin-top: 12px;
-  margin-bottom: 12px;
+  margin-top: 10px;
+  margin-bottom: 10px;
 }
 .empty {
-  font-size: 20px;
+  font-size: 19px;
   color: #6a7684;
-  margin-top: 20px;
+  margin-top: 16px;
   text-align: center;
-}
-/* 未登录门禁 */
-.gate {
-  width: 936px;
-  height: 160px;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-}
-.gate-text {
-  font-size: 22px;
-  color: #8a94a6;
-  margin-bottom: 14px;
-}
-.gate-btn {
-  width: 300px;
-  height: 44px;
-  border-radius: 22px;
-  background-color: #fb7299;
-  justify-content: center;
-  align-items: center;
-}
-.gate-btn-text {
-  font-size: 21px;
-  color: #ffffff;
 }
 .postbar {
   position: absolute;

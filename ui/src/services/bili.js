@@ -348,7 +348,7 @@ function scanEmoji(text, segs, builtin) {
 
 // 解析评论内容: B 站表情占位符 ([dog] 等) 按 content.emote 映射成图片,
 // 剩余文本再做 emoji 切分. emote 图按 API 给的原始尺寸等比缩到高 34 内.
-function parseMessage(text, emotes, builtin) {
+export function parseMessage(text, emotes, builtin) {
   const segs = []
   const rest = String(text == null ? '' : text).replace(/\r/g, '')
   const emoteMap = emotes || {}
@@ -824,12 +824,15 @@ export async function getDynamicFeed(offset) {
  * 视频评论列表 (x/v2/reply, 匿名可读; type=1 视频评论区)
  * @param {number} aid 视频 aid
  * @param {number} pn 页码 (从 1 开始)
+ * @param {object} builtinEmoji 内置 emoji 图片映射 (由页面层传入)
+ * @param {string} sort 'hot'=热度(sort=2) / 'time'=最新(sort=0)
  * @returns {Promise<{total:number, replies:Array}>}
  */
-export async function getReplies(aid, pn, builtinEmoji) {
+export async function getReplies(aid, pn, builtinEmoji, sort) {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
+  const sortParam = sort === 'time' ? 0 : 2
   const url = 'https://api.bilibili.com/x/v2/reply?type=1&oid=' + encodeURIComponent(aid)
-    + '&pn=' + (pn || 1) + '&ps=20&jsonp=json'
+    + '&pn=' + (pn || 1) + '&ps=20&sort=' + sortParam + '&jsonp=json'
   const body = getJson(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === 12009) throw new Error('评论区已关闭')
@@ -862,15 +865,65 @@ export async function getReplies(aid, pn, builtinEmoji) {
 }
 
 /**
- * 发表评论 (x/v2/reply/add, 需登录 Cookie + csrf)
+ * 楼中楼 (某条主评论的子回复列表, x/v2/reply/reply)
+ * @param {number} aid 视频 aid (oid)
+ * @param {number} root 顶层主评论 rpid
+ * @param {number} pn 页码
+ * @param {object} builtinEmoji 内置 emoji 图片映射
  */
-export async function addReply(aid, message) {
+export async function getSubReplies(aid, root, pn, builtinEmoji) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
+  const url = 'https://api.bilibili.com/x/v2/reply/reply?type=1&oid=' + encodeURIComponent(aid)
+    + '&root=' + encodeURIComponent(root) + '&pn=' + (pn || 1) + '&ps=20&jsonp=json'
+  const body = getJson(url, 15)
+  if (body.code !== 0 || !body.data) {
+    if (body.code === 12009) throw new Error('评论区已关闭')
+    throw new Error(body.message || ('回复接口错误 code=' + body.code))
+  }
+  const page = body.data.page || {}
+  const list = body.data.replies || []
+  const replies = []
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i]
+    if (!r) continue
+    const member = r.member || {}
+    const content = r.content || {}
+    let face = member.avatar || ''
+    if (face.indexOf('//') === 0) face = 'https:' + face
+    // reply_to: 楼中楼里被回复的人 (扁平结构, 回复某人时标注)
+    const rt = r.reply_to ? (r.reply_to.uname || '') : ''
+    replies.push({
+      rpid: r.rpid || 0,
+      author: member.uname || '用户',
+      replyTo: rt,
+      face: thumb(face, 60, 60),
+      message: stripTags(content.message),
+      segs: parseMessage(content.message, content.emote, builtinEmoji),
+      likeText: formatPlay(r.like),
+      timeText: formatRelative(r.ctime)
+    })
+  }
+  return { total: page.count || 0, replies: replies }
+}
+
+/**
+ * 发表评论 (x/v2/reply/add, 需登录 Cookie + csrf)
+ * @param {number} aid 视频 aid (oid)
+ * @param {string} message 内容
+ * @param {number} [root] 楼中楼: 顶层主评论 rpid (发主评论时不传)
+ * @param {number} [parent] 楼中楼: 被直接回复的那条 rpid (默认等于 root)
+ */
+export async function addReply(aid, message, root, parent) {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   if (!auth.hasCookie()) throw new Error('登录后才能评论')
   const csrf = auth.getCsrf()
   if (!csrf) throw new Error('Cookie 缺少 bili_jct (请重新登录)')
-  const data = 'oid=' + encodeURIComponent(aid) + '&type=1&message='
+  let data = 'oid=' + encodeURIComponent(aid) + '&type=1&message='
     + encodeURIComponent(message) + '&csrf=' + encodeURIComponent(csrf)
+  if (root) {
+    data += '&root=' + encodeURIComponent(root)
+    data += '&parent=' + encodeURIComponent(parent || root)
+  }
   const body = postJson('https://api.bilibili.com/x/v2/reply/add', data, 15)
   if (body.code !== 0) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
