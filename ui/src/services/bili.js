@@ -254,82 +254,8 @@ function thumb(url, w, h) {
 // unicode emoji 设备字体渲染不出 (豆腐块), 常用的转成内置 PNG (CLI 编译时打包进应用,
 // 不依赖网络/CDN —— 防止系统不显示). key 为 twemoji 文件名 (不带 .png).
 // B 站独有表情优先级更高: content.emote 有映射的 (含 emoji 字符 key) 一律走 B 站 CDN 图.
-const BUILTIN_EMOJI = {
-  '1f602': require('../assets/emoji/1f602.png'),
-  '1f923': require('../assets/emoji/1f923.png'),
-  '1f62d': require('../assets/emoji/1f62d.png'),
-  '1f604': require('../assets/emoji/1f604.png'),
-  '1f600': require('../assets/emoji/1f600.png'),
-  '1f606': require('../assets/emoji/1f606.png'),
-  '1f60a': require('../assets/emoji/1f60a.png'),
-  '1f633': require('../assets/emoji/1f633.png'),
-  '1f60f': require('../assets/emoji/1f60f.png'),
-  '1f622': require('../assets/emoji/1f622.png'),
-  '1f60d': require('../assets/emoji/1f60d.png'),
-  '1f618': require('../assets/emoji/1f618.png'),
-  '1f644': require('../assets/emoji/1f644.png'),
-  '1f605': require('../assets/emoji/1f605.png'),
-  '1f97a': require('../assets/emoji/1f97a.png'),
-  '1f631': require('../assets/emoji/1f631.png'),
-  '1f621': require('../assets/emoji/1f621.png'),
-  '1f914': require('../assets/emoji/1f914.png'),
-  '1f917': require('../assets/emoji/1f917.png'),
-  '1f607': require('../assets/emoji/1f607.png'),
-  '1f634': require('../assets/emoji/1f634.png'),
-  '1f970': require('../assets/emoji/1f970.png'),
-  '1f61c': require('../assets/emoji/1f61c.png'),
-  '1f609': require('../assets/emoji/1f609.png'),
-  '1f612': require('../assets/emoji/1f612.png'),
-  '1f62a': require('../assets/emoji/1f62a.png'),
-  '1f629': require('../assets/emoji/1f629.png'),
-  '1f92c': require('../assets/emoji/1f92c.png'),
-  '1f973': require('../assets/emoji/1f973.png'),
-  '1f976': require('../assets/emoji/1f976.png'),
-  '1f44d': require('../assets/emoji/1f44d.png'),
-  '1f44e': require('../assets/emoji/1f44e.png'),
-  '1f44f': require('../assets/emoji/1f44f.png'),
-  '1f64f': require('../assets/emoji/1f64f.png'),
-  '1f4aa': require('../assets/emoji/1f4aa.png'),
-  '1f91d': require('../assets/emoji/1f91d.png'),
-  '1f440': require('../assets/emoji/1f440.png'),
-  '1f448': require('../assets/emoji/1f448.png'),
-  '1f449': require('../assets/emoji/1f449.png'),
-  '1f446': require('../assets/emoji/1f446.png'),
-  '2764': require('../assets/emoji/2764.png'),
-  '1f494': require('../assets/emoji/1f494.png'),
-  '1f495': require('../assets/emoji/1f495.png'),
-  '1f496': require('../assets/emoji/1f496.png'),
-  '1f497': require('../assets/emoji/1f497.png'),
-  '1f498': require('../assets/emoji/1f498.png'),
-  '2728': require('../assets/emoji/2728.png'),
-  '1f525': require('../assets/emoji/1f525.png'),
-  '1f339': require('../assets/emoji/1f339.png'),
-  '1f338': require('../assets/emoji/1f338.png'),
-  '1f389': require('../assets/emoji/1f389.png'),
-  '1f382': require('../assets/emoji/1f382.png'),
-  '1f381': require('../assets/emoji/1f381.png'),
-  '1f451': require('../assets/emoji/1f451.png'),
-  '1f4af': require('../assets/emoji/1f4af.png'),
-  '2705': require('../assets/emoji/2705.png'),
-  '274c': require('../assets/emoji/274c.png'),
-  '2753': require('../assets/emoji/2753.png'),
-  '1f197': require('../assets/emoji/1f197.png'),
-  '1f4a9': require('../assets/emoji/1f4a9.png'),
-  '1f436': require('../assets/emoji/1f436.png'),
-  '1f431': require('../assets/emoji/1f431.png'),
-  '1f437': require('../assets/emoji/1f437.png'),
-  '1f42e': require('../assets/emoji/1f42e.png'),
-  '1f414': require('../assets/emoji/1f414.png'),
-  '1f480': require('../assets/emoji/1f480.png'),
-  '1f47b': require('../assets/emoji/1f47b.png'),
-  '1f921': require('../assets/emoji/1f921.png'),
-  '1f349': require('../assets/emoji/1f349.png'),
-  '1f34b': require('../assets/emoji/1f34b.png'),
-  '1f37a': require('../assets/emoji/1f37a.png'),
-  '1f35a': require('../assets/emoji/1f35a.png'),
-  '2615': require('../assets/emoji/2615.png'),
-  '1f4ac': require('../assets/emoji/1f4ac.png')
-}
+// 内置映射由页面层传入 (scanEmoji 的 builtin 参数) —— aiot-cli 只编译 .vue 文件里的
+// require png, .js 文件里的 require 原样保留会在 QuickJS 运行时崩掉 (无 require 函数).
 
 // 「强 emoji」码点 (转图片); ©®™ 等弱符号单独出现时保持文本
 function isStrongEmoji(cp) {
@@ -360,7 +286,7 @@ function pushText(segs, s) {
 
 // 扫描文本: unicode emoji 转 twemoji 图片段, 其余为文字段.
 // segment: { t:0, v:文字 } | { t:1, v:图URL, w, h }
-function scanEmoji(text, segs) {
+function scanEmoji(text, segs, builtin) {
   if (!text) return
   let buf = ''
   let i = 0
@@ -404,7 +330,7 @@ function scanEmoji(text, segs) {
     }
     if (convert) {
       // 优先内置图片 (打包文件, 不依赖网络); 未内置的保持原字符
-      const img = BUILTIN_EMOJI[names.join('-')]
+      const img = builtin ? builtin[names.join('-')] : null
       if (img) {
         pushText(segs, buf)
         buf = ''
@@ -422,7 +348,7 @@ function scanEmoji(text, segs) {
 
 // 解析评论内容: B 站表情占位符 ([dog] 等) 按 content.emote 映射成图片,
 // 剩余文本再做 emoji 切分. emote 图按 API 给的原始尺寸等比缩到高 34 内.
-function parseMessage(text, emotes) {
+function parseMessage(text, emotes, builtin) {
   const segs = []
   const rest = String(text == null ? '' : text).replace(/\r/g, '')
   const emoteMap = emotes || {}
@@ -451,7 +377,7 @@ function parseMessage(text, emotes) {
   }
   for (let i = 0; i < pieces.length; i++) {
     if (!pieces[i].emote) {
-      scanEmoji(pieces[i].s, segs)
+      scanEmoji(pieces[i].s, segs, builtin)
       continue
     }
     const em = emoteMap[pieces[i].key] || {}
@@ -900,7 +826,7 @@ export async function getDynamicFeed(offset) {
  * @param {number} pn 页码 (从 1 开始)
  * @returns {Promise<{total:number, replies:Array}>}
  */
-export async function getReplies(aid, pn) {
+export async function getReplies(aid, pn, builtinEmoji) {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   const url = 'https://api.bilibili.com/x/v2/reply?type=1&oid=' + encodeURIComponent(aid)
     + '&pn=' + (pn || 1) + '&ps=20&jsonp=json'
@@ -926,7 +852,7 @@ export async function getReplies(aid, pn) {
       face: thumb(face, 60, 60),
       // segs: 图文混排段 (B 站 emote + unicode emoji -> 图片); message 保留纯文本兜底
       message: stripTags(content.message),
-      segs: parseMessage(content.message, content.emote),
+      segs: parseMessage(content.message, content.emote, builtinEmoji),
       likeText: formatPlay(r.like),
       timeText: formatRelative(r.ctime),
       replyCount: r.rcount || 0
