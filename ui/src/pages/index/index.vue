@@ -496,7 +496,8 @@ export default {
   margin-left: 16px;
   margin-top: 8px;
   margin-right: 16px;
-  max-lines: 2;
+  /* Falcon 不支持 max-lines, 必须用 lines: N 配合 text-overflow */
+  lines: 2;
   text-overflow: ellipsis;
   overflow: hidden;
 }

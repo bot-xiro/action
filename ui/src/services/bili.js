@@ -9,6 +9,7 @@
 
 import { bilinet } from 'bilinet'
 import * as auth from './auth.js'
+import { log } from './log.js'
 
 function hasHttp() {
   return !!(bilinet && typeof bilinet.httpGet === 'function')
@@ -185,6 +186,8 @@ function stripTags(s) {
 
 function formatPlay(n) {
   const num = Number(n) || 0
+  // B 站对部分视频隐藏播放量, 返回 -1 (动态流 stat.play 常见), 显示 '--'
+  if (num < 0) return '--'
   if (num >= 10000) return (num / 10000).toFixed(1) + '万'
   return String(num)
 }
@@ -238,9 +241,230 @@ export async function getPlayUrl(bvid, cid) {
 function thumb(url, w, h) {
   if (!url) return ''
   if (url.indexOf('//') === 0) url = 'https:' + url
+  // 设备 image 组件对 http:// 的加载不可靠 (0.8.6 动态封面不显示的主嫌疑),
+  // 统一升级成 https —— B 站图床 i0.hdslb.com 支持 https, 无兼容风险.
+  if (url.indexOf('http://') === 0) url = 'https://' + url.substring(7)
   // 已经是缩略尺寸的不重复追加
   if (url.indexOf('@') > 0) return url
   return url + '@' + w + 'w_' + h + 'h_1c.jpg'
+}
+
+// ================= 评论表情 (B 站 emote 优先 + unicode emoji 内置图) =================
+
+// unicode emoji 设备字体渲染不出 (豆腐块), 常用的转成内置 PNG (CLI 编译时打包进应用,
+// 不依赖网络/CDN —— 防止系统不显示). key 为 twemoji 文件名 (不带 .png).
+// B 站独有表情优先级更高: content.emote 有映射的 (含 emoji 字符 key) 一律走 B 站 CDN 图.
+const BUILTIN_EMOJI = {
+  '1f602': require('../assets/emoji/1f602.png'),
+  '1f923': require('../assets/emoji/1f923.png'),
+  '1f62d': require('../assets/emoji/1f62d.png'),
+  '1f604': require('../assets/emoji/1f604.png'),
+  '1f600': require('../assets/emoji/1f600.png'),
+  '1f606': require('../assets/emoji/1f606.png'),
+  '1f60a': require('../assets/emoji/1f60a.png'),
+  '1f633': require('../assets/emoji/1f633.png'),
+  '1f60f': require('../assets/emoji/1f60f.png'),
+  '1f622': require('../assets/emoji/1f622.png'),
+  '1f60d': require('../assets/emoji/1f60d.png'),
+  '1f618': require('../assets/emoji/1f618.png'),
+  '1f644': require('../assets/emoji/1f644.png'),
+  '1f605': require('../assets/emoji/1f605.png'),
+  '1f97a': require('../assets/emoji/1f97a.png'),
+  '1f631': require('../assets/emoji/1f631.png'),
+  '1f621': require('../assets/emoji/1f621.png'),
+  '1f914': require('../assets/emoji/1f914.png'),
+  '1f917': require('../assets/emoji/1f917.png'),
+  '1f607': require('../assets/emoji/1f607.png'),
+  '1f634': require('../assets/emoji/1f634.png'),
+  '1f970': require('../assets/emoji/1f970.png'),
+  '1f61c': require('../assets/emoji/1f61c.png'),
+  '1f609': require('../assets/emoji/1f609.png'),
+  '1f612': require('../assets/emoji/1f612.png'),
+  '1f62a': require('../assets/emoji/1f62a.png'),
+  '1f629': require('../assets/emoji/1f629.png'),
+  '1f92c': require('../assets/emoji/1f92c.png'),
+  '1f973': require('../assets/emoji/1f973.png'),
+  '1f976': require('../assets/emoji/1f976.png'),
+  '1f44d': require('../assets/emoji/1f44d.png'),
+  '1f44e': require('../assets/emoji/1f44e.png'),
+  '1f44f': require('../assets/emoji/1f44f.png'),
+  '1f64f': require('../assets/emoji/1f64f.png'),
+  '1f4aa': require('../assets/emoji/1f4aa.png'),
+  '1f91d': require('../assets/emoji/1f91d.png'),
+  '1f440': require('../assets/emoji/1f440.png'),
+  '1f448': require('../assets/emoji/1f448.png'),
+  '1f449': require('../assets/emoji/1f449.png'),
+  '1f446': require('../assets/emoji/1f446.png'),
+  '2764': require('../assets/emoji/2764.png'),
+  '1f494': require('../assets/emoji/1f494.png'),
+  '1f495': require('../assets/emoji/1f495.png'),
+  '1f496': require('../assets/emoji/1f496.png'),
+  '1f497': require('../assets/emoji/1f497.png'),
+  '1f498': require('../assets/emoji/1f498.png'),
+  '2728': require('../assets/emoji/2728.png'),
+  '1f525': require('../assets/emoji/1f525.png'),
+  '1f339': require('../assets/emoji/1f339.png'),
+  '1f338': require('../assets/emoji/1f338.png'),
+  '1f389': require('../assets/emoji/1f389.png'),
+  '1f382': require('../assets/emoji/1f382.png'),
+  '1f381': require('../assets/emoji/1f381.png'),
+  '1f451': require('../assets/emoji/1f451.png'),
+  '1f4af': require('../assets/emoji/1f4af.png'),
+  '2705': require('../assets/emoji/2705.png'),
+  '274c': require('../assets/emoji/274c.png'),
+  '2753': require('../assets/emoji/2753.png'),
+  '1f197': require('../assets/emoji/1f197.png'),
+  '1f4a9': require('../assets/emoji/1f4a9.png'),
+  '1f436': require('../assets/emoji/1f436.png'),
+  '1f431': require('../assets/emoji/1f431.png'),
+  '1f437': require('../assets/emoji/1f437.png'),
+  '1f42e': require('../assets/emoji/1f42e.png'),
+  '1f414': require('../assets/emoji/1f414.png'),
+  '1f480': require('../assets/emoji/1f480.png'),
+  '1f47b': require('../assets/emoji/1f47b.png'),
+  '1f921': require('../assets/emoji/1f921.png'),
+  '1f349': require('../assets/emoji/1f349.png'),
+  '1f34b': require('../assets/emoji/1f34b.png'),
+  '1f37a': require('../assets/emoji/1f37a.png'),
+  '1f35a': require('../assets/emoji/1f35a.png'),
+  '2615': require('../assets/emoji/2615.png'),
+  '1f4ac': require('../assets/emoji/1f4ac.png')
+}
+
+// 「强 emoji」码点 (转图片); ©®™ 等弱符号单独出现时保持文本
+function isStrongEmoji(cp) {
+  return (cp >= 0x1f000 && cp <= 0x1ffff) ||   // 主体 emoji (含 🤣 ⭐ 等)
+    (cp >= 0x2600 && cp <= 0x27bf) ||           // ☀ ❤ ✨ 等
+    (cp >= 0x2b00 && cp <= 0x2bff) ||           // ⭐ ⬆ 等
+    (cp >= 0x231a && cp <= 0x231b) || cp === 0x2328 ||
+    (cp >= 0x23e9 && cp <= 0x23fa) || cp === 0x24c2 ||
+    (cp >= 0x25aa && cp <= 0x25fe) ||           // ▶ ▪ 等
+    (cp >= 0x2934 && cp <= 0x2935) ||
+    cp === 0x3030 || cp === 0x303d || cp === 0x3297 || cp === 0x3299
+}
+
+// emoji 序列的起始码点 (含 ©®™, 它们带变体选择符时是 emoji)
+function isEmojiStart(cp) {
+  return isStrongEmoji(cp) || cp === 0x00a9 || cp === 0x00ae || cp === 0x2122
+}
+
+// 连接符/选择符 (并入当前 emoji 序列)
+function isEmojiJoiner(cp) {
+  return cp === 0x200d || cp === 0xfe0f || cp === 0xfe0e || cp === 0x20e3
+}
+
+// 文本段追加 (过滤空段)
+function pushText(segs, s) {
+  if (s) segs.push({ t: 0, v: s })
+}
+
+// 扫描文本: unicode emoji 转 twemoji 图片段, 其余为文字段.
+// segment: { t:0, v:文字 } | { t:1, v:图URL, w, h }
+function scanEmoji(text, segs) {
+  if (!text) return
+  let buf = ''
+  let i = 0
+  while (i < text.length) {
+    const cp = text.codePointAt(i)
+    if (!isEmojiStart(cp)) {
+      buf += text.charAt(i)
+      i++
+      continue
+    }
+    // 收集 emoji 序列: 起始字符 + 连接符/后续 emoji.
+    // 仅 ZWJ 连接的 emoji 属于同一序列 (👍❤️ 相邻无 ZWJ 必须切开, 否则文件名不存在)
+    let end = i + (cp > 0xffff ? 2 : 1)
+    let prev = cp
+    while (end < text.length) {
+      const c2 = text.codePointAt(end)
+      if (isEmojiJoiner(c2)) {
+        end += c2 > 0xffff ? 2 : 1
+        prev = c2
+        continue
+      }
+      if (isEmojiStart(c2) && prev === 0x200d) {
+        end += c2 > 0xffff ? 2 : 1
+        prev = c2
+        continue
+      }
+      break
+    }
+    const slice = text.substring(i, end)
+    // twemoji 文件名规则: codepoints 去掉 FE0F, 其余 '-' 连接 (ZWJ/keycap 保留)
+    let convert = false
+    const names = []
+    for (let j = 0; j < slice.length; j++) {
+      const c = slice.codePointAt(j)
+      if (c > 0xffff) j++   // 代理对: 码点读全, 下标多跳 1
+      if (c === 0xfe0f) { convert = true; continue }
+      if (c === 0xfe0e) continue   // 文本变体: 保持字体渲染
+      if (c === 0x200d || c === 0x20e3) { convert = true; names.push(c.toString(16)); continue }
+      if (isStrongEmoji(c)) convert = true
+      names.push(c.toString(16))
+    }
+    if (convert) {
+      // 优先内置图片 (打包文件, 不依赖网络); 未内置的保持原字符
+      const img = BUILTIN_EMOJI[names.join('-')]
+      if (img) {
+        pushText(segs, buf)
+        buf = ''
+        segs.push({ t: 1, v: img, w: 30, h: 30 })
+      } else {
+        buf += slice
+      }
+    } else {
+      buf += slice   // ©®™ 单独出现, 保持文本
+    }
+    i = end
+  }
+  pushText(segs, buf)
+}
+
+// 解析评论内容: B 站表情占位符 ([dog] 等) 按 content.emote 映射成图片,
+// 剩余文本再做 emoji 切分. emote 图按 API 给的原始尺寸等比缩到高 34 内.
+function parseMessage(text, emotes) {
+  const segs = []
+  const rest = String(text == null ? '' : text).replace(/\r/g, '')
+  const emoteMap = emotes || {}
+  const keys = []
+  for (const k in emoteMap) keys.push(k)
+  let pieces
+  if (keys.length > 0) {
+    // 循环找最早出现的占位符切分 (emote key 自带方括号, 完整匹配不互吃)
+    pieces = []
+    let pos = 0
+    while (true) {
+      let best = -1
+      let bestKey = ''
+      for (let i = 0; i < keys.length; i++) {
+        const p = rest.indexOf(keys[i], pos)
+        if (p >= 0 && (best < 0 || p < best)) { best = p; bestKey = keys[i] }
+      }
+      if (best < 0) break
+      pieces.push({ emote: false, s: rest.substring(pos, best) })
+      pieces.push({ emote: true, key: bestKey })
+      pos = best + bestKey.length
+    }
+    pieces.push({ emote: false, s: rest.substring(pos) })
+  } else {
+    pieces = [{ emote: false, s: rest }]
+  }
+  for (let i = 0; i < pieces.length; i++) {
+    if (!pieces[i].emote) {
+      scanEmoji(pieces[i].s, segs)
+      continue
+    }
+    const em = emoteMap[pieces[i].key] || {}
+    let url = em.url || ''
+    if (url.indexOf('//') === 0) url = 'https:' + url
+    if (url.indexOf('http://') === 0) url = 'https://' + url.substring(7)
+    if (!url) continue
+    const w = Number(em.width) || 30
+    const h = Number(em.height) || 30
+    const scale = Math.min(1, 34 / Math.max(w, h))
+    segs.push({ t: 1, v: url, w: Math.round(w * scale), h: Math.round(h * scale) })
+  }
+  return segs
 }
 
 function mapFeedItem(v) {
@@ -661,6 +885,8 @@ export async function getDynamicFeed(offset) {
       pubText: ma.pub_time || ''
     })
   }
+  // 封面诊断: 0.8.6 动态封面不显示过一次, 留下实际下发的 URL 便于设备上 curl 验证
+  if (items.length > 0) log('动态', '首条封面 ' + items[0].pic)
   return {
     items: items,
     offset: body.data.offset || '',
@@ -698,7 +924,9 @@ export async function getReplies(aid, pn) {
       rpid: r.rpid || 0,
       author: (member.uname || '用户') + (r.mid === upperMid ? ' (UP)' : ''),
       face: thumb(face, 60, 60),
+      // segs: 图文混排段 (B 站 emote + unicode emoji -> 图片); message 保留纯文本兜底
       message: stripTags(content.message),
+      segs: parseMessage(content.message, content.emote),
       likeText: formatPlay(r.like),
       timeText: formatRelative(r.ctime),
       replyCount: r.rcount || 0

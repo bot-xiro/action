@@ -24,7 +24,7 @@
               <text class="play-text">▶ 播放</text>
             </div>
             <div class="playbtn playbtn-ghost" @click="openComments">
-              <text class="play-text">💬 评论</text>
+              <text class="play-text">评论</text>
             </div>
           </div>
         </div>

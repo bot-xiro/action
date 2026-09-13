@@ -25,8 +25,20 @@
               <text class="reply-author">{{ r.author }}</text>
               <text class="reply-time">{{ r.timeText }}</text>
             </div>
-            <text class="reply-msg">{{ r.message }}</text>
-            <text class="reply-meta">👍 {{ r.likeText }} · 💬 {{ r.replyCount }}</text>
+            <!-- 图文混排: B 站表情 + emoji 转图片 (设备字体无 emoji 字形) -->
+            <richtext class="reply-msg">
+              <template v-for="(seg, si) in r.segs">
+                <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
+                <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
+              </template>
+            </richtext>
+            <!-- 赞/回复: 内置图标 (设备字体无 emoji 字形, 固定图标走打包文件) -->
+            <div class="reply-meta">
+              <image class="meta-icon" :src="likeIcon"></image>
+              <text class="meta-text">{{ r.likeText }}</text>
+              <image class="meta-icon reply-ic-gap" :src="replyIcon"></image>
+              <text class="meta-text">{{ r.replyCount }}</text>
+            </div>
           </div>
         </div>
       </div>
@@ -60,6 +72,9 @@ export default {
     return {
       aid: 0,
       titleText: '',
+      // 内置图标: CLI 编译时打包进应用 (require 本地文件)
+      likeIcon: require('../../assets/icon/like.png'),
+      replyIcon: require('../../assets/icon/reply.png'),
       replies: [],
       total: 0,
       pn: 1,
@@ -248,7 +263,8 @@ export default {
   color: #ffffff;
   margin-left: 14px;
   width: 620px;
-  max-lines: 1;
+  /* Falcon 不支持 max-lines, 必须用 lines: N 配合 text-overflow (此前长标题溢出) */
+  lines: 1;
   text-overflow: ellipsis;
   overflow: hidden;
 }
@@ -305,11 +321,26 @@ export default {
 .reply-msg {
   font-size: 21px;
   color: #e8edf3;
+  /* richtext 支持 lines: 长评论限 4 行, 防止把可视区撑爆 */
+  lines: 4;
+  margin-top: 2px;
 }
 .reply-meta {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 4px;
+}
+.meta-icon {
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+}
+.reply-ic-gap {
+  margin-left: 14px;
+}
+.meta-text {
   font-size: 17px;
   color: #6a7684;
-  margin-top: 4px;
 }
 .load-more {
   font-size: 20px;
