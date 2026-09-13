@@ -546,6 +546,10 @@ export default {
   height: 266px;
   background-color: #141414;
   flex-direction: row;
+  /* 进入动画: 只允许 transform (Falcon transition 不支持 opacity, 0.9.1 加 opacity:0 导致黑屏) */
+  transition-property: transform;
+  transition-duration: 260ms;
+  transition-timing-function: ease-out;
 }
 /* ---------- 左栏: 封面 ---------- */
 .left {
@@ -915,14 +919,8 @@ export default {
   font-size: 18px;
   color: #ffffff;
 }
-/* 进入动画: 从右滑入 */
+/* 进入动画: 从右滑入 (0.9.1 教训: 别用 opacity, transition 不支持会黑屏) */
 .page-enter {
-  transform: translateX(60px);
-  opacity: 0;
-}
-.page {
-  transition-property: transform, opacity;
-  transition-duration: 200ms;
-  transition-timing-function: ease-out;
+  transform: translateX(960px);
 }
 </style>
