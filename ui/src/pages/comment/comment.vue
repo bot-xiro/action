@@ -351,6 +351,8 @@ export default {
 .count {
   font-size: 19px;
   color: #8a94a6;
+  /* 与标题省略号拉开间距 (真机: 长标题下「...」和「N 条」挤在一起) */
+  margin-left: 12px;
 }
 .list {
   position: absolute;
