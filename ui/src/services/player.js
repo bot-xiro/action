@@ -17,6 +17,7 @@
 //                                    "eos"/"closed"/"error: xxx"
 
 import { gstPlayer } from 'gstplayer'
+import { bilinet } from 'bilinet'
 
 const LOG = '[player] '
 
@@ -25,6 +26,43 @@ let nativeSubscribed = false
 
 export function isSupported() {
   return !!(gstPlayer && typeof gstPlayer.open === 'function')
+}
+
+// ---------------- 播放时防息屏 ----------------
+//
+// 息屏机制: 系统按输入事件空闲计时 (真机实测 ~10s 无触控即息屏), 播放中
+// 用户不碰屏幕就会黑掉 (视频还在播). 用 bilinet.exec 定期注入一条无害的
+// `send_event touch move` 输入事件重置计时器 —— move 不产生点击, 不干扰 UI.
+// 命令在真机上验证后调整 (若 move 不重置计时器, 换 press/release 短按).
+
+/** 注入一次防息屏输入事件 (同步, ~10ms). exec 缺失/失败静默. */
+export function keepAwakeTick() {
+  if (!bilinet || typeof bilinet.exec !== 'function') return
+  try {
+    bilinet.exec('send_event touch move 240 479')
+  } catch (e) {
+    console.log(LOG + 'keepAwake exec failed: ' + (e && e.message ? e.message : e))
+  }
+}
+
+/** 是否具备防息屏能力 (exec 方法存在) */
+export function keepAwakeSupported() {
+  return !!(bilinet && typeof bilinet.exec === 'function')
+}
+
+/**
+ * 合成一次屏幕点击 (等效用户点一下屏幕, 真机实测点击后视频/UI 层级恢复).
+ * 坐标 (240,479) = 显示坐标 (480,133) 屏幕中心; 点在 stage 空白处, 只触发
+ * 控制条显隐切换, 页面自行恢复控制条状态.
+ */
+export function tapScreen() {
+  if (!bilinet || typeof bilinet.exec !== 'function') return
+  try {
+    bilinet.exec('send_event touch press 240 479')
+    bilinet.exec('send_event touch release 240 479')
+  } catch (e) {
+    console.log(LOG + 'tapScreen exec failed: ' + (e && e.message ? e.message : e))
+  }
 }
 
 function toMs(v) {

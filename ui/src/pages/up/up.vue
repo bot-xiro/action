@@ -8,7 +8,9 @@
     </div>
 
     <!-- UP 信息栏内嵌为列表首项: 往上滑自然滚出, 滑回顶部自然恢复, 无事件依赖 -->
-    <scroller class="results" scroll-direction="vertical" :show-scrollbar="true">
+    <scroller class="results" scroll-direction="vertical" :show-scrollbar="true"
+              :loadmoreoffset="100" @loadmore="loadMoreVideos" @scroll="onListScroll"
+              @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <text v-if="upStatus !== ''" class="state">{{ upStatus }}</text>
 
       <div class="info-row" v-if="info">
@@ -27,6 +29,7 @@
           <text class="stat">▶{{ item.playText }}  {{ item.duration }}</text>
         </div>
       </div>
+      <text v-if="videos.length > 0 && videosHasMore" class="empty" @click="loadMoreVideos">上滑加载更多…</text>
       <text v-if="videosStatus !== ''" class="empty">{{ videosStatus }}</text>
     </scroller>
   </div>
@@ -35,6 +38,10 @@
 <script>
 import { getUpInfo, getUpFans, getUpVideos } from '../../services/bili.js'
 import { afterPaint } from '../../base-page.js'
+
+// 进入动画 340ms 画完再发首条请求 (同步 http 阻塞 JS 会卡进入动画)
+var LOAD_DELAY_MS = 340
+var PULL_DY = 55
 
 export default {
   name: 'up',
@@ -45,6 +52,8 @@ export default {
       info: null,
       fansText: '',
       videos: [],
+      videosPage: 1,
+      videosHasMore: false,
       upStatus: '加载中…',
       videosStatus: '',
       generation: 0,
@@ -64,6 +73,8 @@ export default {
       this.name = options.name || ''
       this.info = null
       this.videos = []
+      this.videosPage = 1
+      this.videosHasMore = false
       this.load()
     },
 
@@ -98,7 +109,7 @@ export default {
       this.videos = []
       this.upStatus = '加载中…'
 
-      // 先让首帧画出加载态再发请求: bilinet.httpGet 同步阻塞 JS 线程
+      // 先进页面画完进入动画再发请求: bilinet.httpGet 同步阻塞 JS 线程
       afterPaint(async () => {
         // 基本信息 (失败直接报整体错误)
         try {
@@ -124,13 +135,74 @@ export default {
           const videos = await getUpVideos(this.mid, 1)
           if (gen !== this.generation) return
           this.videos = videos
+          this.videosHasMore = videos.length >= 20
           this.videosStatus = videos.length === 0 ? 'TA 还没有投稿视频' : ''
         } catch (err) {
           if (gen !== this.generation) return
           console.log('[bili] up videos error: ' + (err && err.message ? err.message : err))
           this.videosStatus = err && err.message ? err.message : String(err)
         }
+      }, LOAD_DELAY_MS)
+    },
+
+    // 投稿列表无限滑动
+    loadMoreVideos() {
+      if (!this.videosHasMore || this.videos.length === 0) return
+      const gen = this.generation
+      this.videosPage++
+      getUpVideos(this.mid, this.videosPage).then((videos) => {
+        if (gen !== this.generation) return
+        const seen = {}
+        for (let i = 0; i < this.videos.length; i++) seen[this.videos[i].bvid] = true
+        for (let i = 0; i < videos.length; i++) {
+          if (!seen[videos[i].bvid]) this.videos.push(videos[i])
+        }
+        this.videosHasMore = videos.length >= 20
+      }).catch(() => {
+        if (gen !== this.generation) return
+        this.videosHasMore = false
       })
+    },
+
+    // ---------- 下拉刷新 (与 index 同款 touch 方案) ----------
+    touchXY(e) {
+      try {
+        const t = (e && e.changedTouches && e.changedTouches[0]) ||
+          (e && e.touches && e.touches[0]) || e
+        if (t) {
+          if (typeof t.pageY === 'number') return t.pageY
+          if (typeof t.clientY === 'number') return t.clientY
+          if (typeof t.y === 'number') return t.y
+        }
+      } catch (err) {}
+      return 0
+    },
+    onListScroll(e) {
+      try {
+        const co = e && e.contentOffset
+        this._scrollY = co && typeof co.y === 'number' ? co.y : (this._scrollY || 0)
+      } catch (err) {}
+    },
+    onTouchStart(e) {
+      this._touchY0 = this.touchXY(e)
+      this._pullArmed = false
+      this._pullOk = (this._scrollY || 0) <= 2
+    },
+    onTouchMove(e) {
+      if (!this._pullOk) return
+      if ((this._scrollY || 0) > 2) { this._pullOk = false; return }
+      if (this.touchXY(e) - this._touchY0 > PULL_DY) this._pullArmed = true
+    },
+    onTouchEnd() {
+      if (this._pullArmed && this._pullOk && (this._scrollY || 0) <= 2) {
+        this._pullArmed = false
+        this.videosPage = 1
+        this.videosHasMore = false
+        this.mid = 0
+        this.beginLoad()
+        return
+      }
+      this._pullArmed = false
     },
 
     openVideo(item) {
@@ -171,10 +243,10 @@ export default {
   background-color: #1f1f1f;
 }
 .back {
-  width: 120px;
-  height: 36px;
+  width: 132px;
+  height: 40px;
   margin-left: 12px;
-  border-radius: 18px;
+  border-radius: 20px;
   background-color: #2c2c2c;
   justify-content: center;
   align-items: center;
@@ -228,7 +300,8 @@ export default {
   font-size: 18px;
   color: #888888;
   margin-top: 4px;
-  max-lines: 1;
+  /* Falcon 不支持 max-lines (0.8.7 教训), 限行用 lines: N */
+  lines: 1;
   text-overflow: ellipsis;
   overflow: hidden;
 }
@@ -263,7 +336,7 @@ export default {
   margin-left: 16px;
   margin-top: 8px;
   margin-right: 12px;
-  max-lines: 2;
+  lines: 2;
   text-overflow: ellipsis;
   overflow: hidden;
 }

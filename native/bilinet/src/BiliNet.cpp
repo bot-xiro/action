@@ -542,6 +542,47 @@ public:
         sql::closeDb();
         info.GetReturnValue().Set(true);
     }
+
+    // ------------------------------------------------------------------
+    // v5: exec(cmd) —— 执行单条设备 shell 命令, 同步返回 stdout (失败返回 '')
+    //
+    // 用途: 播放时防息屏 —— 息屏是输入事件空闲计时器, 播放中定期注入
+    // `send_event touch move ...` (无副作用, 不会触发点击) 重置计时器.
+    // JS 侧:
+    //   const out = bilinet.exec('send_event touch move 240 479')
+    // 安全: 命令只由本应用打包的 JS 发起 (单用户自有设备), 长度限 512,
+    // 拒绝控制字符; 经 popen(/bin/sh -c) 执行.
+    // ------------------------------------------------------------------
+    void exec(JQUTIL_NS::JQFunctionInfo& info)
+    {
+        JSContext* ctx = info.GetContext();
+        if (info.Length() < 1 || !JS_IsString(info[0])) {
+            info.GetReturnValue().Set(std::string());
+            return;
+        }
+        const char* c = JS_ToCString(ctx, info[0]);
+        if (!c) { info.GetReturnValue().Set(std::string()); return; }
+        std::string cmd(c);
+        JS_FreeCString(ctx, c);
+        if (cmd.empty() || cmd.size() > 512 ||
+            cmd.find_first_of("\r\n") != std::string::npos) {
+            BN_LOG("exec: invalid cmd (len=%zu)", cmd.size());
+            info.GetReturnValue().Set(std::string());
+            return;
+        }
+        BN_LOG("exec: %s", cmd.c_str());
+        FILE* fp = popen(cmd.c_str(), "r");
+        if (!fp) { info.GetReturnValue().Set(std::string()); return; }
+        std::string out;
+        char buf[4096];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) {
+            out.append(buf, n);
+            if (out.size() > 64 * 1024) break;  // 64KB 上限
+        }
+        pclose(fp);
+        info.GetReturnValue().Set(out);
+    }
 };
 
 const char* BiliNet::UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -568,6 +609,7 @@ static JSValue createBiliNet(JQModuleEnv* env)
     tpl->SetProtoMethod("dbExec", &BiliNet::dbExec);
     tpl->SetProtoMethod("dbQuery", &BiliNet::dbQuery);
     tpl->SetProtoMethod("dbClose", &BiliNet::dbClose);
+    tpl->SetProtoMethod("exec", &BiliNet::exec);
     return tpl->CallConstructor();
 }
 

@@ -462,14 +462,17 @@ export async function searchVideos(keyword, page) {
 /**
  * 获取视频详情
  * @param {string} bvid
- * @returns {Promise<{bvid,aid,title,pic,desc,author,duration,pubdateText,playText,danmakuText,likeText,coinText,favText,shareText}>}
+ * @param {boolean} [noCache] 跳过缓存强拉 (点赞/投币等操作后刷新状态用)
+ * @returns {Promise<{bvid,aid,title,pic,desc,author,duration,pubdateText,playText,danmakuText,likeText,coinText,favText,shareText,reqLike,reqCoin,reqFav}>}
  */
-export async function getVideoDetail(bvid) {
+export async function getVideoDetail(bvid, noCache) {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
-  // 详情缓存 5 分钟
+  // 详情缓存 5 分钟 (noCache: 交互操作后强拉最新状态)
   const ckey = 'view:' + bvid
-  const cached = cacheGet(ckey, 300000)
-  if (cached) { console.log('[bili] 详情命中缓存, 不发请求'); return cached }
+  if (!noCache) {
+    const cached = cacheGet(ckey, 300000)
+    if (cached) { console.log('[bili] 详情命中缓存, 不发请求'); return cached }
+  }
   // 详情带 wbi 签名, 与官方前端一致 (wbi/view 为 wbi 版本接口)
   const url = 'https://api.bilibili.com/x/web-interface/wbi/view?'
     + (await wbiQuery({ bvid: bvid }))
@@ -483,6 +486,8 @@ export async function getVideoDetail(bvid) {
 
   const d = body.data
   const st = d.stat || {}
+  // req_user: 登录态下本账号与该稿件的交互状态 (like=已赞, coin>0=已投币, favorite=已收藏)
+  const ru = d.req_user || {}
   let pic = d.pic || ''
   if (pic.indexOf('//') === 0) pic = 'https:' + pic
   const out = {
@@ -500,6 +505,10 @@ export async function getVideoDetail(bvid) {
     coinText: formatPlay(st.coin),
     favText: formatPlay(st.favorite),
     shareText: formatPlay(st.share),
+    // 交互状态 (未登录时 req_user 缺失, 全 false)
+    reqLike: ru.like === 1,
+    reqCoin: (Number(ru.coin) || 0) > 0,
+    reqFav: ru.favorite === 1,
     mid: (d.owner && d.owner.mid) || 0,
     // 分 P (同稿件多段)
     pages: (d.pages || []).map(function (p) {
@@ -551,6 +560,45 @@ export async function getPopular(page) {
   const list = (body.data && body.data.list) || []
   const videos = []
   for (let i = 0; i < list.length; i++) videos.push(mapFeedItem(list[i]))
+  cacheSet(ckey, videos)
+  return videos
+}
+
+/**
+ * 真主页推荐流 (x/web-interface/index/top/feed/rcmd, 无需登录, 官网首页同款).
+ * 分页游标 fresh_idx 递增即可无限翻页, 返回空数组即到底.
+ * @returns {Promise<Array<feedItem>>}
+ */
+export async function getRecommend(page) {
+  if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
+  const ckey = 'rcmd:' + (page || 1)
+  const cached = cacheGet(ckey, 60000)
+  if (cached) return cached
+  const url = 'https://api.bilibili.com/x/web-interface/index/top/feed/rcmd?ps=12'
+    + '&fresh_idx=' + (page || 1) + '&fresh_idx_1h=' + (page || 1) + '&fresh_type=4&version=1'
+  const body = getJson(url, 15)
+  if (body.code !== 0 || !body.data) {
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('接口错误 code=' + body.code))
+  }
+  const list = body.data.item || []
+  const videos = []
+  for (let i = 0; i < list.length; i++) {
+    const v = list[i]
+    if (!v) continue
+    let pic = v.pic || ''
+    if (pic.indexOf('//') === 0) pic = 'https:' + pic
+    videos.push({
+      bvid: v.bvid || '',
+      aid: v.aid || 0,
+      // rcmd 标题带 <em class="keyword"> 高亮标记, stripTags 统一去除
+      title: stripTags(v.title),
+      author: (v.owner && v.owner.name) || '',
+      playText: formatPlay(v.stat && v.stat.view),
+      duration: typeof v.duration === 'number' ? formatDuration(v.duration) : (v.duration || ''),
+      pic: thumb(pic, 400, 250)
+    })
+  }
   cacheSet(ckey, videos)
   return videos
 }
@@ -685,6 +733,220 @@ export async function getUpVideos(mid, page) {
   return videos2
 }
 
+// ================= 交互操作 (点赞/投币/收藏/三连/稍后再看, 需登录 + csrf) =================
+
+function needCsrf() {
+  if (!auth.hasCookie()) throw new Error('登录后才能操作')
+  const csrf = auth.getCsrf()
+  if (!csrf) throw new Error('Cookie 缺少 bili_jct (请重新登录)')
+  return csrf
+}
+
+/**
+ * 点赞/取消赞 (x/web-interface/archive/like, like=1 赞 / 2 取消)
+ * @returns {Promise<{ok:boolean}>}
+ */
+export async function likeVideo(aid, on) {
+  const csrf = needCsrf()
+  const data = 'aid=' + encodeURIComponent(aid) + '&like=' + (on === false ? 2 : 1)
+    + '&csrf=' + encodeURIComponent(csrf)
+  const body = postJson('https://api.bilibili.com/x/web-interface/archive/like', data, 15)
+  if (body.code !== 0) {
+    if (body.code === -101) throw new Error('登录已过期, 请重新登录')
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('点赞失败 code=' + body.code))
+  }
+  return true
+}
+
+/**
+ * 投币 (x/web-interface/coin/add, multiply=1/2, select_like=1 同时点赞)
+ * @returns {Promise<{ok:boolean, like:boolean}>}
+ */
+export async function addCoin(aid, multiply, withLike) {
+  const csrf = needCsrf()
+  const data = 'aid=' + encodeURIComponent(aid) + '&multiply=' + (multiply === 2 ? 2 : 1)
+    + '&select_like=' + (withLike ? 1 : 0) + '&csrf=' + encodeURIComponent(csrf)
+  const body = postJson('https://api.bilibili.com/x/web-interface/coin/add', data, 15)
+  if (body.code !== 0) {
+    if (body.code === -101) throw new Error('登录已过期, 请重新登录')
+    if (body.code === 34002) throw new Error('硬币不足')
+    if (body.code === 34003) throw new Error('超过投币上限')
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('投币失败 code=' + body.code))
+  }
+  return { like: body.data && body.data.like === true }
+}
+
+/**
+ * 收藏夹列表 (x/v3/fav/folder/created/list-all, 需登录)
+ * @param {number} rid 稿件 aid (传入时返回该稿件的收藏状态)
+ * @returns {Promise<Array<{id,title,mediaCount,favoured}>>}
+ */
+export async function getFavFolders(rid) {
+  if (!auth.hasCookie()) throw new Error('登录后才能查看收藏夹')
+  const url = 'https://api.bilibili.com/x/v3/fav/folder/created/list-all?type=2'
+    + (rid ? '&rid=' + encodeURIComponent(rid) : '')
+  const body = getJson(url, 15)
+  if (body.code !== 0 || !body.data) {
+    if (body.code === -101) throw new Error('登录已过期, 请重新登录')
+    throw new Error(body.message || ('收藏夹接口错误 code=' + body.code))
+  }
+  const list = body.data.list || []
+  const out = []
+  for (let i = 0; i < list.length; i++) {
+    const f = list[i]
+    if (!f) continue
+    out.push({
+      id: f.id || 0,
+      title: f.title || '收藏夹',
+      mediaCount: f.media_count || 0,
+      favoured: f.favoured === 1
+    })
+  }
+  return out
+}
+
+/**
+ * 收藏/取消收藏 (x/v3/fav/resource/deal, add/del_media_ids)
+ */
+export async function dealFav(aid, folderId, on) {
+  const csrf = needCsrf()
+  const data = 'rid=' + encodeURIComponent(aid) + '&type=2&csrf=' + encodeURIComponent(csrf)
+    + '&' + (on === false ? 'del_media_ids=' + encodeURIComponent(folderId)
+                          : 'add_media_ids=' + encodeURIComponent(folderId))
+  const body = postJson('https://api.bilibili.com/x/v3/fav/resource/deal', data, 15)
+  if (body.code !== 0) {
+    if (body.code === -101) throw new Error('登录已过期, 请重新登录')
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('收藏失败 code=' + body.code))
+  }
+  return true
+}
+
+/**
+ * 添加稍后再看 (x/v2/history/toview/add, 需登录 + csrf)
+ */
+export async function addToViewLater(aid) {
+  const csrf = needCsrf()
+  const data = 'aid=' + encodeURIComponent(aid) + '&csrf=' + encodeURIComponent(csrf)
+  const body = postJson('https://api.bilibili.com/x/v2/history/toview/add', data, 15)
+  if (body.code !== 0) {
+    if (body.code === -101) throw new Error('登录已过期, 请重新登录')
+    if (body.code === 57001) throw new Error('稍后再看列表已满')
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('添加失败 code=' + body.code))
+  }
+  return true
+}
+
+// ================= 我的页面子列表 (历史记录/收藏/稍后再看, 需登录) =================
+
+/**
+ * 历史记录 (x/web-interface/history/search, wbi 签名)
+ * @returns {Promise<{items:Array, hasMore:boolean}>}
+ */
+export async function getHistoryList(pn) {
+  if (!auth.hasCookie()) throw new Error('未登录')
+  const url = 'https://api.bilibili.com/x/web-interface/history/search?'
+    + (await wbiQuery({ pn: pn || 1, ps: 20, business: 'all' }))
+  const body = getJson(url, 15)
+  if (body.code !== 0 || !body.data) {
+    if (body.code === -101) throw new Error('登录已过期, 请重新登录')
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('历史接口错误 code=' + body.code))
+  }
+  const list = body.data.list || []
+  const items = []
+  for (let i = 0; i < list.length; i++) {
+    const h = list[i]
+    if (!h) continue
+    // history.business: archive=视频 / pugv=课程 / article=专栏, 只展示视频类
+    const his = h.history || {}
+    if (his.business !== 'archive' || !his.bvid) continue
+    items.push({
+      bvid: his.bvid,
+      aid: his.aid || 0,
+      title: stripTags(h.title || h.show_title || ''),
+      author: h.author_name || '',
+      // progress 秒: 看到第几秒, 0 = 未看; duration 秒
+      progressText: h.progress > 0 && h.duration > 0
+        ? '看到 ' + formatDuration(h.progress) + ' / ' + formatDuration(h.duration)
+        : (h.duration > 0 ? formatDuration(h.duration) : ''),
+      pic: thumb(h.cover || '', 400, 250),
+      pubText: formatDate(h.view_at) ? '看于 ' + formatDate(h.view_at) : ''
+    })
+  }
+  return { items: items, hasMore: (body.data.has_more === 1) && items.length > 0 }
+}
+
+/**
+ * 收藏夹内容 (x/v3/fav/resource/list, 需登录)
+ * @returns {Promise<{items:Array, hasMore:boolean}>}
+ */
+export async function getFavList(mediaId, pn) {
+  if (!auth.hasCookie()) throw new Error('未登录')
+  const url = 'https://api.bilibili.com/x/v3/fav/resource/list?media_id='
+    + encodeURIComponent(mediaId) + '&pn=' + (pn || 1) + '&ps=20&keyword=&order=mtime&type=0&tid=0'
+  const body = getJson(url, 15)
+  if (body.code !== 0 || !body.data) {
+    if (body.code === -101) throw new Error('登录已过期, 请重新登录')
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('收藏列表接口错误 code=' + body.code))
+  }
+  const list = body.data.medias || []
+  const items = []
+  for (let i = 0; i < list.length; i++) {
+    const m = list[i]
+    if (!m) continue
+    if (m.title === '已失效视频') continue
+    items.push({
+      bvid: m.bvid || '',
+      aid: m.id || 0,
+      title: stripTags(m.title || ''),
+      author: m.upper ? (m.upper.name || '') : '',
+      playText: formatPlay(m.cnt_info && m.cnt_info.play),
+      duration: m.duration ? formatDuration(m.duration) : '',
+      pic: thumb(m.cover || '', 400, 250)
+    })
+  }
+  // has_more: data.has_more (1=还有) + total 对比兜底
+  const total = body.data.info ? (body.data.info.total || 0) : 0
+  return { items: items, hasMore: body.data.has_more === 1 && items.length > 0 }
+}
+
+/**
+ * 稍后再看 (x/v2/history/toview/web, 需登录)
+ * @returns {Promise<{items:Array, count:number}>}
+ */
+export async function getToViewList(pn) {
+  if (!auth.hasCookie()) throw new Error('未登录')
+  const url = 'https://api.bilibili.com/x/v2/history/toview/web?pn=' + (pn || 1) + '&ps=20'
+  const body = getJson(url, 15)
+  if (body.code !== 0 || !body.data) {
+    if (body.code === -101) throw new Error('登录已过期, 请重新登录')
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('稍后再看接口错误 code=' + body.code))
+  }
+  const list = body.data.list || []
+  const items = []
+  for (let i = 0; i < list.length; i++) {
+    const t = list[i]
+    if (!t) continue
+    items.push({
+      bvid: t.bvid || '',
+      aid: t.aid || 0,
+      title: stripTags(t.title || ''),
+      author: t.owner ? (t.owner.name || '') : '',
+      playText: '',
+      duration: t.duration ? formatDuration(t.duration) : '',
+      pic: thumb(t.pic || '', 400, 250),
+      pubText: formatDate(t.add_at) ? '加于 ' + formatDate(t.add_at) : ''
+    })
+  }
+  return { items: items, count: body.data.count || 0 }
+}
+
 // ================= 登录 (二维码 + Cookie) / 我的 / 动态 / 评论 =================
 
 /**
@@ -790,26 +1052,52 @@ export async function getDynamicFeed(offset) {
   const items = []
   for (let i = 0; i < list.length; i++) {
     const it = list[i]
-    if (!it || it.type !== 'DYNAMIC_TYPE_AV') continue  // 只取视频动态
+    if (!it) continue
     const md = (it.modules && it.modules.module_dynamic) || {}
     const ma = (it.modules && it.modules.module_author) || {}
-    const arc = (md.major && md.major.archive) || {}
-    if (!arc.bvid) continue
-    // 实测: 动态流的 archive 里封面字段叫 cover, 没有 pic (搜索/热门接口才是 pic)。
-    // 之前写 arc.pic 导致封面恒为空 -> 动态列表只有文字没有图。
-    let pic = arc.cover || arc.pic || ''
-    if (pic.indexOf('//') === 0) pic = 'https:' + pic
-    const st = arc.stat || {}
-    items.push({
-      bvid: arc.bvid,
-      aid: arc.aid || 0,
-      title: stripTags(arc.title),
-      author: ma.name || '',
-      playText: formatPlay(st.play),
-      duration: arc.duration_text || '',
-      pic: thumb(pic, 400, 250),
-      pubText: ma.pub_time || ''
-    })
+    const major = md.major || {}
+    // 视频动态: major.archive (封面字段叫 cover, 没有 pic —— 搜索/热门接口才是 pic)
+    if (it.type === 'DYNAMIC_TYPE_AV') {
+      const arc = major.archive || {}
+      if (!arc.bvid) continue
+      let pic = arc.cover || arc.pic || ''
+      if (pic.indexOf('//') === 0) pic = 'https:' + pic
+      const st = arc.stat || {}
+      items.push({
+        type: 'video',
+        bvid: arc.bvid,
+        aid: arc.aid || 0,
+        title: stripTags(arc.title),
+        author: ma.name || '',
+        playText: formatPlay(st.play),
+        duration: arc.duration_text || '',
+        pic: thumb(pic, 400, 250),
+        pubText: ma.pub_time || ''
+      })
+      continue
+    }
+    // 图文动态: major.draw.items[] (src 是 i0.hdslb.com 图床), title 用动态文案
+    if (it.type === 'DYNAMIC_TYPE_DRAW') {
+      const draw = major.draw || {}
+      const pics = draw.items || []
+      const first = pics.length > 0 ? (pics[0].src || '') : ''
+      let pic = first
+      if (pic.indexOf('//') === 0) pic = 'https:' + pic
+      const txt = stripTags(md.desc && md.desc.text ? md.desc.text : '')
+      items.push({
+        type: 'draw',
+        bvid: '',
+        aid: 0,
+        title: txt !== '' ? txt : '图文动态',
+        author: ma.name || '',
+        playText: '',
+        duration: (pics.length > 1 ? pics.length + '图' : '图文'),
+        pic: pic !== '' ? thumb(pic, 400, 400) : '',
+        pubText: ma.pub_time || ''
+      })
+      continue
+    }
+    // 其他动态类型 (转发/文字等) 不展示
   }
   // 封面诊断: 0.8.6 动态封面不显示过一次, 留下实际下发的 URL 便于设备上 curl 验证
   if (items.length > 0) log('动态', '首条封面 ' + items[0].pic)

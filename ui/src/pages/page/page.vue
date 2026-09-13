@@ -5,10 +5,15 @@
       <image v-if="coverSrc" class="cover" :src="coverSrc" resize="cover" @click="openPlayer"></image>
       <div v-else class="cover cover-ph"></div>
       <text v-if="detail" class="dur">{{ detail.duration }}</text>
+      <!-- 返回按钮: 左上角悬浮于封面上 (0.9.5 需求: 返回按钮放左上角) -->
+      <div class="backbtn" @click="goBack">
+        <text class="backbtn-text">‹ 返回</text>
+      </div>
     </div>
 
-    <!-- 右栏: 详情 / 评论 同页 tab 切换 -->
-    <div class="right">
+    <!-- 右栏: 详情 / 评论 同页 tab 切换; 左右滑动切换 (touch 事件冒泡自内部 scroller) -->
+    <div class="right"
+         @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <div class="tabbar">
         <div :class="['tab', tab === 'detail' ? 'tab-on' : '']" @click="switchTab('detail')">
           <text :class="['tab-text', tab === 'detail' ? 'tab-text-on' : '']">详情</text>
@@ -20,16 +25,17 @@
         <div class="mini-btn" @click="goHome">
           <text class="mini-text">⌂</text>
         </div>
-        <div class="mini-btn" @click="goBack">
-          <text class="mini-text">‹</text>
-        </div>
       </div>
 
       <!-- ============ 详情 tab ============ -->
-      <scroller v-if="tab === 'detail'" class="detail-scroll" scroll-direction="vertical" :show-scrollbar="true">
+      <scroller v-if="tab === 'detail'" class="detail-scroll" scroll-direction="vertical" :show-scrollbar="true"
+                @scroll="onListScroll">
         <div ref="topRef"></div>
-        <!-- 标题: 默认 2 行截断 (...), 点击展开/收起 -->
-        <text :class="['title', titleExpanded ? 'title-open' : '']" @click="toggleTitle">{{ detail ? detail.title : fallbackTitle }}</text>
+        <!-- 标题: 默认 2 行截断 (...), 点击展开/收起.
+             :key 强制换元素重建 —— Falcon text 的 lines 样式创建后不随 class 更新
+             (0.9.4 简介点了要切 tab 再回来才展开的根因), 只能重建生效 -->
+        <text :key="'t' + (titleExpanded ? 1 : 0)"
+              :class="['title', titleExpanded ? 'title-open' : '']" @click="toggleTitle">{{ detail ? detail.title : fallbackTitle }}</text>
         <text class="author" @click="openUp">{{ detail ? (detail.author + ' › · ') : '' }}{{ detail ? detail.pubdateText : '' }}</text>
         <text v-if="detail" class="stat">播放 {{ detail.playText }} · 弹幕 {{ detail.danmakuText }} · {{ detail.duration }}</text>
         <text v-if="detail" class="stat">赞 {{ detail.likeText }} · 币 {{ detail.coinText }} · 藏 {{ detail.favText }} · 转 {{ detail.shareText }}</text>
@@ -37,8 +43,24 @@
           <div class="playbtn" @click="openPlayer">
             <text class="play-text">▶ 播放</text>
           </div>
-          <div class="playbtn playbtn-ghost" @click="switchTab('comment')">
-            <text class="play-text">评论 {{ total > 0 ? total : '' }}</text>
+          <text v-if="actStatus !== ''" class="act-status">{{ actStatus }}</text>
+        </div>
+        <!-- 交互行: 点赞/投币/收藏/三连/稍后再看 (登录后可用, 状态高亮) -->
+        <div v-if="detail" class="actrow">
+          <div :class="['act-btn', detail.reqLike ? 'act-on' : '']" @click="doLike">
+            <text :class="['act-text', detail.reqLike ? 'act-text-on' : '']">{{ detail.reqLike ? '已赞' : '点赞' }}</text>
+          </div>
+          <div :class="['act-btn', detail.reqCoin ? 'act-on' : '']" @click="doCoin">
+            <text :class="['act-text', detail.reqCoin ? 'act-text-on' : '']">{{ detail.reqCoin ? '已币' : '投币' }}</text>
+          </div>
+          <div :class="['act-btn', detail.reqFav ? 'act-on' : '']" @click="doFav">
+            <text :class="['act-text', detail.reqFav ? 'act-text-on' : '']">{{ detail.reqFav ? '已藏' : '收藏' }}</text>
+          </div>
+          <div class="act-btn act-triple" @click="doTriple">
+            <text class="act-text">三连</text>
+          </div>
+          <div class="act-btn" @click="doToview">
+            <text class="act-text">稍后看</text>
           </div>
         </div>
 
@@ -47,8 +69,9 @@
 
         <div v-if="detail" class="section">
           <text class="sec-title">简介</text>
-          <!-- 简介: 超 3 行收起 (...), 点击展开 -->
-          <text :class="['desc', descExpanded ? 'desc-open' : '']" @click="toggleDesc">{{ detail.desc !== '' ? detail.desc : '暂无简介' }}</text>
+          <!-- 简介: 超 3 行收起 (...), 点击展开 (:key 重建生效, 同上) -->
+          <text :key="'d' + (descExpanded ? 1 : 0)"
+                :class="['desc', descExpanded ? 'desc-open' : '']" @click="toggleDesc">{{ detail.desc !== '' ? detail.desc : '暂无简介' }}</text>
         </div>
 
         <div v-if="detail && detail.pages.length > 1" class="section">
@@ -78,6 +101,7 @@
             </div>
           </div>
         </div>
+        <text class="pull-hint">↓ 下拉刷新 · 左右滑动切「详情/评论」</text>
       </scroller>
 
       <!-- ============ 评论 tab ============ -->
@@ -91,7 +115,8 @@
             <text :class="['sort-text', sortMode === 'time' ? 'sort-text-on' : '']">最新</text>
           </div>
         </div>
-        <scroller class="clist" scroll-direction="vertical" :show-scrollbar="true">
+        <scroller class="clist" scroll-direction="vertical" :show-scrollbar="true"
+                  :loadmoreoffset="100" @loadmore="onCommentsLoadmore" @scroll="onListScroll">
           <text v-if="cStatus !== ''" class="c-status">{{ cStatus }}</text>
           <!-- 未登录: 登录引导 -->
           <div v-if="!logged && !cLoading" class="gate">
@@ -108,8 +133,10 @@
                   <text class="reply-author">{{ r.author }}</text>
                   <text class="reply-time">{{ r.timeText }}</text>
                 </div>
-                <!-- 图文混排: B 站表情 + emoji 转图片 (设备字体无 emoji 字形); 超 3 行收起, 点击展开 -->
-                <richtext :class="['reply-msg', r.expanded ? 'reply-msg-open' : '']" @click="toggleReply(r)">
+                <!-- 图文混排: B 站表情 + emoji 转图片 (设备字体无 emoji 字形); 超 3 行收起, 点击展开.
+                     :key 重建生效 (lines 不随 class 更新) -->
+                <richtext :key="'r' + r.rpid + (r.expanded ? 1 : 0)"
+                          :class="['reply-msg', r.expanded ? 'reply-msg-open' : '']" @click="toggleReply(r)">
                   <template v-for="(seg, si) in r.segs">
                     <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
                     <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
@@ -140,11 +167,15 @@
 </template>
 
 <script>
-// 详情页: 左栏封面 + 右栏「详情/评论」同页 tab (参考真机另一应用的布局, 左栏不用播放器).
-// 评论逻辑内联 (x/v2/reply + 发评 + 楼中页跳转), 不再跳独立 comment 页。
+// 详情页 v3: 左栏封面 (左上角返回按钮) + 右栏「详情/评论」同页 tab.
+// 0.9.5: 交互行 (赞/投币/收藏/三连/稍后再看) · 评论无限滑动 + 下拉刷新 · 左右滑动切 tab ·
+//        长文本展开 :key 重建修复 (lines 样式不随 class 更新) · 先进页面画完进入动画再发请求.
 // nextPage: 相关推荐点击后的跳转目标页副本名 (page->page2->...->page12->page 轮换栈)。
 import { createIME } from '../../services/ime.js'
-import { getVideoDetail, getRelatedVideos, getReplies, addReply } from '../../services/bili.js'
+import {
+  getVideoDetail, getRelatedVideos, getReplies, addReply,
+  likeVideo, addCoin, dealFav, addToViewLater, getFavFolders
+} from '../../services/bili.js'
 import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
 
@@ -227,6 +258,13 @@ const BUILTIN_EMOJI = {
   '2764': require('../../assets/emoji/2764.png'),
 }
 
+// 进入动画 60+260ms, 数据加载排在动画之后: 同步 http 阻塞 JS 会把动画卡在起点
+// (真机反馈「返回原页面动画卡顿」的根因之一 —— 动画 class 翻转的 timer 被请求堵住)
+var LOAD_DELAY_MS = 340
+var SWIPE_DX = 80          // 左右滑动切 tab 的最小横向位移
+var SWIPE_DY_MAX = 50      // 超过此竖向位移视为滚动不切 tab
+var PULL_DY = 55           // 顶部下拉刷新触发阈值
+
 export default {
   name: 'page',
   props: {
@@ -243,11 +281,15 @@ export default {
       related: [],
       generation: 0,
       entering: true,   // 页面进入动画: 首次渲染后翻转为 false
-      // 长文本收起/展开: 标题默认 2 行, 简介/评论默认 3 行, 点击切换
+      // 长文本收起/展开: 标题默认 2 行, 简介默认 3 行, 点击切换 (:key 重建生效)
       titleExpanded: false,
       descExpanded: false,
       // 同页 tab: 'detail' | 'comment'
       tab: 'detail',
+      // ---- 交互操作 (赞/币/藏/三连/稍后再看) ----
+      actStatus: '',
+      actBusy: false,
+      favFolders: null,   // 收藏夹列表缓存 (含 favoured 状态, 按当前 aid 拉取)
       // ---- 评论区状态 ----
       sortMode: 'hot',   // 'hot'=热度 / 'time'=最新
       replies: [],
@@ -289,6 +331,8 @@ export default {
       this.titleExpanded = false
       this.descExpanded = false
       this.tab = 'detail'
+      this.actStatus = ''
+      this.favFolders = null
       this.load()
       this.scrollTop()
     },
@@ -347,6 +391,7 @@ export default {
       const gen = ++this.generation
       this.loading = true
       this.error = ''
+      // 先进页面再加载: 等进入动画 (340ms) 画完再发同步阻塞请求
       afterPaint(async () => {
         try {
           const d = await getVideoDetail(this.bvid)
@@ -368,7 +413,7 @@ export default {
           if (gen !== this.generation) return
           this.related = rel
         } catch (e) {}
-      })
+      }, LOAD_DELAY_MS)
     },
 
     // 分 P: 同稿件内部切换, 不重新请求接口 (数据已在 pages 中)
@@ -387,6 +432,7 @@ export default {
       this.related = []
       this.titleExpanded = false
       this.descExpanded = false
+      this.favFolders = null
       this.resetComments()
       this.load()
     },
@@ -408,7 +454,219 @@ export default {
       }
     },
 
-    // ---------- 长文本收起/展开 ----------
+    // ---------- 左右滑动切 tab + 下拉刷新 (touch 事件, 冒泡自内部 scroller) ----------
+    touchXY(e) {
+      try {
+        const t = (e && e.changedTouches && e.changedTouches[0]) ||
+          (e && e.touches && e.touches[0]) || e
+        if (t) {
+          if (typeof t.pageX === 'number') return { x: t.pageX, y: t.pageY }
+          if (typeof t.clientX === 'number') return { x: t.clientX, y: t.clientY }
+          if (typeof t.x === 'number') return { x: t.x, y: t.y }
+        }
+      } catch (err) {}
+      return { x: 0, y: 0 }
+    },
+    onListScroll(e) {
+      try {
+        const co = e && e.contentOffset
+        this._scrollY = co && typeof co.y === 'number' ? co.y : (this._scrollY || 0)
+      } catch (err) {}
+    },
+    onTouchStart(e) {
+      const p = this.touchXY(e)
+      this._tx0 = p.x
+      this._ty0 = p.y
+      this._pullArmed = false
+      this._pullOk = (this._scrollY || 0) <= 2
+    },
+    onTouchMove(e) {
+      if (!this._pullOk) return
+      if ((this._scrollY || 0) > 2) { this._pullOk = false; return }
+      const p = this.touchXY(e)
+      if (p.y - this._ty0 > PULL_DY && Math.abs(p.x - this._tx0) < 40) this._pullArmed = true
+    },
+    onTouchEnd(e) {
+      const p = this.touchXY(e)
+      const dx = p.x - this._tx0
+      const dy = p.y - this._ty0
+      // 1) 左右滑动: 横向大幅 + 竖向小幅 → 切 tab
+      if (Math.abs(dx) > SWIPE_DX && Math.abs(dy) < SWIPE_DY_MAX) {
+        this._pullArmed = false
+        this.switchTab(dx < 0 ? 'comment' : 'detail')
+        return
+      }
+      // 2) 顶部下拉: 刷新当前 tab
+      if (this._pullArmed && this._pullOk && (this._scrollY || 0) <= 2) {
+        this._pullArmed = false
+        this.refreshTab()
+        return
+      }
+      this._pullArmed = false
+    },
+    refreshTab() {
+      if (this.tab === 'detail') {
+        if (this.loading) return
+        // 保留展开态, 强拉最新详情 (交互后状态刷新也走这里)
+        this.favFolders = null
+        this.reloadDetail()
+      } else {
+        if (this.cLoading || !this.logged) return
+        this.pn = 1
+        this.loadComments(true)
+      }
+    },
+    // 强拉详情刷新计数与 req_user 状态 (不动展开/合集等界面态)
+    reloadDetail() {
+      const gen = this.generation
+      getVideoDetail(this.bvid, true).then((d) => {
+        if (gen !== this.generation || !this.detail) return
+        this.detail.likeText = d.likeText
+        this.detail.coinText = d.coinText
+        this.detail.favText = d.favText
+        this.detail.shareText = d.shareText
+        this.detail.reqLike = d.reqLike
+        this.detail.reqCoin = d.reqCoin
+        this.detail.reqFav = d.reqFav
+      }).catch(() => {})
+    },
+
+    // ---------- 交互操作 (赞/投币/收藏/三连/稍后再看) ----------
+    requireLogin() {
+      if (this.logged) return true
+      this.goLogin()
+      return false
+    },
+
+    async doLike() {
+      if (!this.detail || !this.detail.aid || this.actBusy) return
+      if (!this.requireLogin()) return
+      this.actBusy = true
+      const want = !this.detail.reqLike
+      this.actStatus = want ? '点赞中…' : '取消中…'
+      try {
+        await likeVideo(this.detail.aid, want)
+        this.detail.reqLike = want
+        this.actStatus = want ? '✓ 已点赞' : '已取消'
+        this.reloadDetail()
+      } catch (err) {
+        this.actStatus = '操作失败: ' + (err && err.message ? err.message : String(err))
+      } finally {
+        this.actBusy = false
+      }
+    },
+
+    async doCoin() {
+      if (!this.detail || !this.detail.aid || this.actBusy) return
+      if (!this.requireLogin()) return
+      if (this.detail.reqCoin) {
+        this.actStatus = '该视频已投过币'
+        return
+      }
+      this.actBusy = true
+      this.actStatus = '投币中…'
+      try {
+        const r = await addCoin(this.detail.aid, 1, false)
+        this.detail.reqCoin = true
+        if (r && r.like) this.detail.reqLike = true
+        this.actStatus = '✓ 已投 1 币'
+        this.reloadDetail()
+      } catch (err) {
+        this.actStatus = '投币失败: ' + (err && err.message ? err.message : String(err))
+      } finally {
+        this.actBusy = false
+      }
+    },
+
+    async ensureFavFolders() {
+      if (!this.detail) return null
+      if (this.favFolders && this.favFolders._aid === this.detail.aid) return this.favFolders
+      const list = await getFavFolders(this.detail.aid)
+      list._aid = this.detail.aid
+      this.favFolders = list
+      return list
+    },
+
+    // 默认收藏夹 = list-all 首个 (未收藏时用); 已收藏时取 favoured 的那个 (取消用)
+    pickFavFolder(folders) {
+      if (!folders || folders.length === 0) return null
+      for (let i = 0; i < folders.length; i++) {
+        if (folders[i].favoured) return folders[i]
+      }
+      return folders[0]
+    },
+
+    async doFav() {
+      if (!this.detail || !this.detail.aid || this.actBusy) return
+      if (!this.requireLogin()) return
+      this.actBusy = true
+      const want = !this.detail.reqFav
+      this.actStatus = want ? '收藏中…' : '取消中…'
+      try {
+        const folders = await this.ensureFavFolders()
+        const folder = this.pickFavFolder(folders)
+        if (!folder) throw new Error('没有可用收藏夹, 请先在网页端创建')
+        await dealFav(this.detail.aid, folder.id, want)
+        this.detail.reqFav = want
+        this.actStatus = want ? ('✓ 已收藏·' + folder.title) : '已取消收藏'
+        this.reloadDetail()
+      } catch (err) {
+        this.favFolders = null
+        this.actStatus = '收藏失败: ' + (err && err.message ? err.message : String(err))
+      } finally {
+        this.actBusy = false
+      }
+    },
+
+    // 三连: 点赞 + 投币 + 收藏 一次完成 (已做过的步骤跳过)
+    async doTriple() {
+      if (!this.detail || !this.detail.aid || this.actBusy) return
+      if (!this.requireLogin()) return
+      this.actBusy = true
+      this.actStatus = '三连中…'
+      const aid = this.detail.aid
+      try {
+        if (!this.detail.reqLike) {
+          await likeVideo(aid, 1)
+          this.detail.reqLike = true
+        }
+        if (!this.detail.reqCoin) {
+          await addCoin(aid, 1, true)
+          this.detail.reqCoin = true
+        }
+        if (!this.detail.reqFav) {
+          const folders = await this.ensureFavFolders()
+          const folder = this.pickFavFolder(folders)
+          if (!folder) throw new Error('没有可用收藏夹')
+          await dealFav(aid, folder.id, true)
+          this.detail.reqFav = true
+        }
+        this.actStatus = '✓ 三连成功！'
+        this.reloadDetail()
+      } catch (err) {
+        this.favFolders = null
+        this.actStatus = '三连失败: ' + (err && err.message ? err.message : String(err))
+      } finally {
+        this.actBusy = false
+      }
+    },
+
+    async doToview() {
+      if (!this.detail || !this.detail.aid || this.actBusy) return
+      if (!this.requireLogin()) return
+      this.actBusy = true
+      this.actStatus = '添加中…'
+      try {
+        await addToViewLater(this.detail.aid)
+        this.actStatus = '✓ 已加入稍后再看'
+      } catch (err) {
+        this.actStatus = '添加失败: ' + (err && err.message ? err.message : String(err))
+      } finally {
+        this.actBusy = false
+      }
+    },
+
+    // ---------- 长文本收起/展开 (:key 强制重建 text 才生效) ----------
     toggleTitle() {
       this.titleExpanded = !this.titleExpanded
     },
@@ -416,7 +674,7 @@ export default {
       this.descExpanded = !this.descExpanded
     },
     toggleReply(r) {
-      // expanded 在 appendPage 推入时已声明, 是响应式字段, 直接赋值即可
+      // expanded 在 appendPage 推入时已声明, 是响应式字段; :key 变化重建 richtext
       r.expanded = !r.expanded
     },
 
@@ -463,6 +721,11 @@ export default {
       if (this.cLoading || !this.hasMore) return
       this.pn++
       this.loadComments(false)
+    },
+
+    // 滚动到底自动续页 (无限滑动)
+    onCommentsLoadmore() {
+      this.loadMore()
     },
 
     switchSort(mode) {
@@ -594,6 +857,22 @@ export default {
   padding-left: 6px;
   padding-right: 6px;
 }
+/* 返回按钮: 左上角悬浮封面之上 (半透明, 不遮太多画面) */
+.backbtn {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  width: 96px;
+  height: 40px;
+  border-radius: 20px;
+  background-color: rgba(0, 0, 0, 0.55);
+  justify-content: center;
+  align-items: center;
+}
+.backbtn-text {
+  font-size: 20px;
+  color: #ffffff;
+}
 /* ---------- 右栏 ---------- */
 .right {
   width: 660px;
@@ -609,7 +888,7 @@ export default {
   background-color: #21242b;
 }
 .tab {
-  width: 88px;
+  width: 96px;
   height: 36px;
   justify-content: center;
   align-items: center;
@@ -630,13 +909,13 @@ export default {
   flex: 1;
 }
 .mini-btn {
-  width: 44px;
-  height: 28px;
-  border-radius: 14px;
+  width: 52px;
+  height: 32px;
+  border-radius: 16px;
   background-color: #37404a;
   justify-content: center;
   align-items: center;
-  margin-right: 8px;
+  margin-right: 10px;
 }
 .mini-text {
   font-size: 20px;
@@ -658,7 +937,7 @@ export default {
   text-overflow: ellipsis;
   overflow: hidden;
 }
-/* lines: 0 = 不限行数 (Falcon 文档), 点击展开态 */
+/* lines: 0 = 不限行数 (Falcon 文档), 点击展开态 (:key 重建生效) */
 .title-open {
   lines: 0;
 }
@@ -674,22 +953,53 @@ export default {
 }
 .btnrow {
   flex-direction: row;
+  align-items: center;
   margin-top: 8px;
 }
 .playbtn {
-  width: 130px;
-  height: 38px;
-  border-radius: 19px;
+  width: 160px;
+  height: 42px;
+  border-radius: 21px;
   background-color: #fb7299;
   justify-content: center;
   align-items: center;
-  margin-right: 12px;
-}
-.playbtn-ghost {
-  background-color: #2a2f38;
 }
 .play-text {
-  font-size: 19px;
+  font-size: 20px;
+  color: #ffffff;
+}
+.act-status {
+  font-size: 16px;
+  color: #e6a23c;
+  margin-left: 14px;
+  flex: 1;
+}
+/* 交互行: 赞/币/藏/三连/稍后看 —— 五键均分, 高度 42 好按 */
+.actrow {
+  flex-direction: row;
+  margin-top: 8px;
+}
+.act-btn {
+  flex: 1;
+  height: 42px;
+  border-radius: 21px;
+  background-color: #2a2f38;
+  justify-content: center;
+  align-items: center;
+  margin-left: 4px;
+  margin-right: 4px;
+}
+.act-on {
+  background-color: #fb7299;
+}
+.act-triple {
+  background-color: #3d2a35;
+}
+.act-text {
+  font-size: 18px;
+  color: #c8d2de;
+}
+.act-text-on {
   color: #ffffff;
 }
 .state-inline {
@@ -717,15 +1027,15 @@ export default {
 }
 .plist {
   width: 632px;
-  height: 40px;
+  height: 44px;
   flex-direction: row;
 }
 .pitem {
-  height: 32px;
-  padding-left: 12px;
-  padding-right: 12px;
+  height: 38px;
+  padding-left: 14px;
+  padding-right: 14px;
   margin-right: 8px;
-  border-radius: 16px;
+  border-radius: 19px;
   background-color: #2a2f38;
   color: #c8d2de;
   font-size: 16px;
@@ -769,6 +1079,13 @@ export default {
   margin-left: 10px;
   margin-top: 4px;
 }
+.pull-hint {
+  font-size: 14px;
+  color: #4a5563;
+  text-align: center;
+  margin-top: 14px;
+  margin-bottom: 10px;
+}
 /* ---------- 评论 tab ---------- */
 .cwrap {
   width: 660px;
@@ -777,23 +1094,24 @@ export default {
 }
 .sortbar {
   width: 660px;
-  height: 26px;
+  height: 32px;
   flex-direction: row;
+  align-items: center;
   background-color: #1a1d22;
 }
 .sort-item {
-  width: 80px;
-  height: 26px;
+  width: 92px;
+  height: 28px;
   justify-content: center;
   align-items: center;
   margin-left: 10px;
-  border-radius: 13px;
+  border-radius: 14px;
 }
 .sort-on {
   background-color: #2c313a;
 }
 .sort-text {
-  font-size: 16px;
+  font-size: 17px;
   color: #8a94a6;
 }
 .sort-text-on {
@@ -801,7 +1119,7 @@ export default {
 }
 .clist {
   width: 660px;
-  height: 160px;
+  height: 154px;
   flex-direction: column;
   padding-left: 12px;
   padding-right: 12px;
@@ -860,18 +1178,23 @@ export default {
 .meta-text {
   font-size: 15px;
   color: #6a7684;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 .meta-reply {
-  font-size: 15px;
+  font-size: 16px;
   color: #fb7299;
   margin-left: 16px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-right: 10px;
 }
 .load-more {
-  font-size: 17px;
+  font-size: 18px;
   color: #fb7299;
   text-align: center;
-  margin-top: 8px;
-  margin-bottom: 8px;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 .empty {
   font-size: 17px;
@@ -881,7 +1204,7 @@ export default {
 }
 .gate {
   width: 636px;
-  height: 120px;
+  height: 110px;
   flex-direction: column;
   justify-content: center;
   align-items: center;
@@ -892,9 +1215,9 @@ export default {
   margin-bottom: 12px;
 }
 .gate-btn {
-  width: 280px;
-  height: 38px;
-  border-radius: 19px;
+  width: 300px;
+  height: 42px;
+  border-radius: 21px;
   background-color: #fb7299;
   justify-content: center;
   align-items: center;
@@ -914,8 +1237,8 @@ export default {
 }
 .post-input {
   width: 500px;
-  height: 32px;
-  border-radius: 16px;
+  height: 36px;
+  border-radius: 18px;
   background-color: #2a2f38;
   justify-content: center;
   padding-left: 14px;
@@ -925,9 +1248,9 @@ export default {
   color: #8a94a6;
 }
 .post-btn {
-  width: 90px;
-  height: 32px;
-  border-radius: 16px;
+  width: 100px;
+  height: 36px;
+  border-radius: 18px;
   background-color: #fb7299;
   justify-content: center;
   align-items: center;

@@ -23,7 +23,9 @@
       </div>
     </div>
 
-    <scroller class="list" scroll-direction="vertical" :show-scrollbar="true">
+    <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
+              :loadmoreoffset="100" @loadmore="loadMore" @scroll="onListScroll"
+              @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <text v-if="status !== ''" class="status">{{ status }}</text>
       <div v-for="r in replies" :key="r.rpid" class="reply">
         <image class="face" :src="r.face" resize="cover"></image>
@@ -32,7 +34,9 @@
             <text class="reply-author">{{ r.author }}</text>
             <text class="reply-time">{{ r.timeText }}</text>
           </div>
-          <richtext :class="['reply-msg', r.expanded ? 'reply-msg-open' : '']" @click="toggleReply(r)">
+          <!-- :key 重建生效: Falcon 的 lines 样式创建后不随 class 更新 -->
+          <richtext :key="'r' + r.rpid + (r.expanded ? 1 : 0)"
+                    :class="['reply-msg', r.expanded ? 'reply-msg-open' : '']" @click="toggleReply(r)">
             <template v-for="(seg, si) in r.segs">
               <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
               <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
@@ -258,6 +262,47 @@ export default {
       this.load(false)
     },
 
+    // ---------- 下拉刷新 (与 index/page 同款 touch 方案) ----------
+    touchXY(e) {
+      try {
+        const t = (e && e.changedTouches && e.changedTouches[0]) ||
+          (e && e.touches && e.touches[0]) || e
+        if (t) {
+          if (typeof t.pageY === 'number') return t.pageY
+          if (typeof t.clientY === 'number') return t.clientY
+          if (typeof t.y === 'number') return t.y
+        }
+      } catch (err) {}
+      return 0
+    },
+    onListScroll(e) {
+      try {
+        const co = e && e.contentOffset
+        this._scrollY = co && typeof co.y === 'number' ? co.y : (this._scrollY || 0)
+      } catch (err) {}
+    },
+    onTouchStart(e) {
+      this._touchY0 = this.touchXY(e)
+      this._pullArmed = false
+      this._pullOk = (this._scrollY || 0) <= 2
+    },
+    onTouchMove(e) {
+      if (!this._pullOk) return
+      if ((this._scrollY || 0) > 2) { this._pullOk = false; return }
+      if (this.touchXY(e) - this._touchY0 > 55) this._pullArmed = true
+    },
+    onTouchEnd() {
+      if (this._pullArmed && this._pullOk && (this._scrollY || 0) <= 2) {
+        this._pullArmed = false
+        if (!this.loading) {
+          this.pn = 1
+          this.load(true)
+        }
+        return
+      }
+      this._pullArmed = false
+    },
+
     // 点某条子回复的「回复」→ 设为目标
     setTarget(r) {
       this.target = { rpid: r.rpid, author: r.author }
@@ -346,10 +391,10 @@ function parseParentSegs(msg) {
   background-color: #21242b;
 }
 .back {
-  width: 100px;
-  height: 34px;
+  width: 132px;
+  height: 38px;
   margin-left: 12px;
-  border-radius: 17px;
+  border-radius: 19px;
   background-color: #37404a;
   justify-content: center;
   align-items: center;
@@ -468,11 +513,16 @@ function parseParentSegs(msg) {
 .meta-text {
   font-size: 16px;
   color: #6a7684;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 .meta-reply {
   font-size: 16px;
   color: #fb7299;
   margin-left: 18px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-right: 12px;
 }
 .load-more {
   font-size: 19px;

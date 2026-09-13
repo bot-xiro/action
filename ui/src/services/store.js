@@ -92,6 +92,12 @@ const SQL_LOG = 'CREATE TABLE IF NOT EXISTS login_log (' +
   'mid INTEGER, uname TEXT, ' +
   'created_at INTEGER)'
 
+// 搜索历史: 关键字唯一, 重复搜索提到最新, 只留最近 20 条
+const SQL_SEARCH = 'CREATE TABLE IF NOT EXISTS search_history (' +
+  'id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, ' +
+  'keyword TEXT NOT NULL UNIQUE, ' +
+  'created_at INTEGER)'
+
 function dbLoad() {
   let rows = []
   try {
@@ -159,6 +165,7 @@ export function initStore() {
     cache = jsonRead()
     return cache
   }
+  bilinet.dbExec(SQL_SEARCH)  // 搜索历史表建失败不阻塞主流程
   opened = true
   cache = dbLoad()
   return cache
@@ -235,6 +242,63 @@ export function clearAuthRow() {
     dbLog('logout', old ? old.mid : 0, old ? old.uname : '')
   } catch (e) {
     reason = String(e && e.message ? e.message : e)
+  }
+}
+
+// ------------------------------ 搜索历史 ------------------------------
+
+// 数据库不可用时的内存兜底 (运行期仍可用, 重启丢失)
+const memSearch = []
+
+/** 记录一次搜索: 同词提到最新, 只留 20 条 (同步, 失败静默) */
+export function addSearchHistory(keyword) {
+  const kw = String(keyword || '').trim()
+  if (!kw) return false
+  if (!opened) {
+    const i = memSearch.indexOf(kw)
+    if (i >= 0) memSearch.splice(i, 1)
+    memSearch.unshift(kw)
+    if (memSearch.length > 20) memSearch.length = 20
+    return true
+  }
+  try {
+    bilinet.dbExec("DELETE FROM search_history WHERE keyword = '" + q(kw) + "'")
+    bilinet.dbExec("INSERT INTO search_history (keyword, created_at) VALUES ('" +
+      q(kw) + "', " + nowSec() + ')')
+    // 只留最近 20 条 (id 越大越新)
+    bilinet.dbExec('DELETE FROM search_history WHERE id NOT IN ' +
+      '(SELECT id FROM search_history ORDER BY id DESC LIMIT 20)')
+    return true
+  } catch (e) {
+    return false
+  }
+}
+
+/** 搜索历史列表 (最新在前, 最多 limit 条) */
+export function getSearchHistory(limit) {
+  const max = Math.max(1, Math.min(50, Number(limit) || 20))
+  if (!opened) return memSearch.slice(0, max)
+  try {
+    const rows = JSON.parse(bilinet.dbQuery(
+      'SELECT keyword FROM search_history ORDER BY id DESC LIMIT ' + max))
+    const out = []
+    for (let i = 0; i < (rows || []).length; i++) {
+      if (rows[i] && rows[i].keyword) out.push(str(rows[i].keyword))
+    }
+    return out
+  } catch (e) {
+    return memSearch.slice(0, max)
+  }
+}
+
+/** 清空搜索历史 */
+export function clearSearchHistory() {
+  memSearch.length = 0
+  if (!opened) return true
+  try {
+    return bilinet.dbExec('DELETE FROM search_history')
+  } catch (e) {
+    return false
   }
 }
 

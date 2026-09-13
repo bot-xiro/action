@@ -148,9 +148,12 @@ public:
 
     void close(JQFunctionInfo&)
     {
-        GP_LOG("close");
-        stopDaemon();
+        GP_LOG("close (async)");
+        // 红线: stopDaemon 里 waitpid 轮询最多 1.5s, 同步执行会卡住 JS 线程,
+        // 页面返回动画跟着冻结 (真机实测「返回原页面动画卡顿」的真因) ——
+        // 挪到后台线程异步停; open/析构路径经 m_stopMutex 等待异步停完成.
         emitState("closed");
+        std::thread([this] { stopDaemon(); }).detach();
     }
 
     void seek(JQFunctionInfo& info)
@@ -285,8 +288,11 @@ private:
     // 停守护进程. 红线: 绝不在持锁状态下 join reader/poller —— reader 线程可能
     // 正 emit 状态回 JS 线程, 若 JS 线程持锁 join 即互等死锁 -> 看门狗重启整机.
     // 顺序: 标志位 -> 闭 stdin (daemon 自动退) -> waitpid 兜底 SIGKILL -> 闭 stdout.
+    // m_stopMutex: close 已改异步停 (后台线程), open/析构再次进入时等异步停完成,
+    // 防止双停 (double close fd / 杀到新 daemon).
     void stopDaemon()
     {
+        std::lock_guard<std::mutex> stopLock(m_stopMutex);
         m_running = false;
         {
             std::lock_guard<std::mutex> lock(m_lock);
@@ -325,6 +331,7 @@ private:
     }
 
     std::mutex m_lock;
+    std::mutex m_stopMutex;
     pid_t m_pid = -1;
     int m_cmdFd = -1;
     int m_outFd = -1;

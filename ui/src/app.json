@@ -17,10 +17,13 @@
     "player": "pages/player/player.vue",
     "login": "pages/login/login.vue",
     "comment": "pages/comment/comment.vue",
-    "subreply": "pages/subreply/subreply.vue"
+    "subreply": "pages/subreply/subreply.vue",
+    "history": "pages/history/history.vue",
+    "fav": "pages/fav/fav.vue",
+    "toview": "pages/toview/toview.vue"
   },
   "options": {
-    "external": ["bilinet", "gstplayer"],
+    "external": ["bilinet", "gstplayer", "brightness"],
     "style": {
       "lessPaths": ["styles"]
     }

@@ -58,6 +58,7 @@
 //     onHide             暂停播放并停轮询 (回前台由用户手动恢复)
 //     onUnload           单一 stop 路径: generation++ -> 停 timer/订阅 -> close native
 import * as player from '../../services/player.js'
+import * as screenon from '../../services/screenon.js'
 import { getVideoDetail, getPlayUrl } from '../../services/bili.js'
 import { afterPaint } from '../../base-page.js'
 
@@ -121,7 +122,8 @@ export default {
       })(),
       generation: 0,       // 异步世代: 换源/离开后过期回调不写界面
       pollTimer: null,
-      hideTimer: null
+      hideTimer: null,
+      keepTimer: null      // 防息屏注入定时器 (播放中每 4s 一次)
     }
   },
   computed: {
@@ -173,6 +175,8 @@ export default {
 
     onHide: function () {
       this.stopPolling()
+      this.stopKeepAwake()
+      screenon.screenOnStop()
       this.cancelHideBar()
       if (this.opened && this.playing) {
         try { player.pause() } catch (e) {}
@@ -184,6 +188,8 @@ export default {
     onUnload: function () {
       this.generation++
       this.stopPolling()
+      this.stopKeepAwake()
+      screenon.screenOnStop()
       this.cancelHideBar()
       try { player.offState(this.onNativeState) } catch (e) {}
       if (this.opened) {
@@ -280,6 +286,7 @@ export default {
         this.statusText = '播放错误: ' + state
         this.playing = false
         this.stopPolling()
+        this.stopKeepAwake()
         this.showBar()
         return
       }
@@ -287,6 +294,7 @@ export default {
         this.statusText = '播放结束'
         this.playing = false
         this.stopPolling()
+        this.stopKeepAwake()
         this.showBar()
         return
       }
@@ -295,14 +303,19 @@ export default {
       if (s.indexOf('pause') >= 0) {
         this.playing = false
         this.stopPolling()   // 暂停后 getPosition 可能返回 0, 轮询会把进度打回 0:00
+        this.stopKeepAwake() // 暂停时不注入输入事件, 不干扰用户点按
         this.showBar()
         return
       }
       if (s.indexOf('play') >= 0) {
+        var firstPlay = !this.started
         this.playing = true
         this.started = true  // 已出过画面: 之后不再显示「加载中」过渡态
         if (this.statusText !== '') this.statusText = ''
         this.startPolling()
+        this.startKeepAwake()
+        // 首播出画: 修复视频 surface 盖住 UI 的层级问题 (真机实测点一下屏幕恢复)
+        if (firstPlay) this.fixLayer()
         this.scheduleHideBar()
         return
       }
@@ -311,6 +324,46 @@ export default {
       if (s === 'ready' || s === 'buffering' || s === 'loading') {
         if (!this.started) this.statusText = '加载中…'
       }
+    },
+
+    // ---------------- 层级修复 + 防息屏 ----------------
+    // 真机实测: 视频偶发盖住整个 UI (层级错乱), 用户点一下屏幕后恢复.
+    // 首播出画后自动等效「点一下」: exec 注入合成点击 (press+release);
+    // 点击会触发 toggleBar, 300ms 后统一 showBar 收拾状态 (随后按既有逻辑自动隐藏).
+    // exec 不可用时退化为控制条 v-if 翻转强制 UI 重新合成.
+    fixLayer: function () {
+      var self = this
+      if (player.keepAwakeSupported()) {
+        player.tapScreen()
+        setTimer(this, 300, function () { self.showBar() })
+      } else {
+        var was = this.barVisible
+        this.barVisible = !this.barVisible
+        setTimer(this, 120, function () { self.barVisible = was })
+      }
+    },
+
+    // 播放中防息屏: 官方 JSAPI 优先 (系统播放器同款三件套, 见 services/screenon.js),
+    // 不可用或持续失败时降级 exec 注入 touch move (重置输入空闲计时, 无副作用).
+    startKeepAwake: function () {
+      if (this.keepTimer != null) return
+      var self = this
+      var useJsapi = screenon.screenOnAvailable()
+      if (useJsapi) screenon.screenOnStart()
+      var failCount = 0
+      this.keepTimer = setTicker(this, 4000, function () {
+        if (!self.playing) return
+        if (useJsapi) {
+          if (screenon.screenOnTick()) { failCount = 0; return }
+          if (++failCount < 3) return
+          useJsapi = false   // JSAPI 持续失败: 降级 exec 注入
+        }
+        player.keepAwakeTick()
+      })
+    },
+    stopKeepAwake: function () {
+      clearTicker(this, this.keepTimer)
+      this.keepTimer = null
     },
 
     // ---------------- 进度轮询 ----------------
@@ -452,10 +505,10 @@ export default {
   background-color: rgba(0, 0, 0, 0.55);
 }
 .back {
-  width: 120px;
-  height: 34px;
+  width: 132px;
+  height: 38px;
   margin-left: 12px;
-  border-radius: 17px;
+  border-radius: 19px;
   background-color: rgba(255, 255, 255, 0.18);
   justify-content: center;
   align-items: center;
@@ -499,18 +552,18 @@ export default {
   align-items: center;
 }
 .btn {
-  height: 32px;
+  height: 36px;
   margin-right: 8px;
-  border-radius: 16px;
+  border-radius: 18px;
   background-color: rgba(255, 255, 255, 0.18);
   justify-content: center;
   align-items: center;
 }
 .btn-mini {
-  width: 66px;
+  width: 72px;
 }
 .btn-main {
-  width: 74px;
+  width: 88px;
   background-color: #fb7299;
 }
 .btn-text {
