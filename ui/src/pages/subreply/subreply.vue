@@ -32,7 +32,7 @@
             <text class="reply-author">{{ r.author }}</text>
             <text class="reply-time">{{ r.timeText }}</text>
           </div>
-          <richtext class="reply-msg">
+          <richtext :class="['reply-msg', r.expanded ? 'reply-msg-open' : '']" @click="toggleReply(r)">
             <template v-for="(seg, si) in r.segs">
               <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
               <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
@@ -234,7 +234,10 @@ export default {
             for (let j = 0; j < this.replies.length; j++) {
               if (this.replies[j].rpid === item.rpid) { dup = true; break }
             }
-            if (!dup) this.replies.push(item)
+            if (!dup) {
+              item.expanded = false   // 推入时声明, 保证响应式 (点击展开用)
+              this.replies.push(item)
+            }
           }
           this.total = r.total
           this.hasMore = this.replies.length < r.total && r.replies.length > 0
@@ -258,6 +261,11 @@ export default {
     // 点某条子回复的「回复」→ 设为目标
     setTarget(r) {
       this.target = { rpid: r.rpid, author: r.author }
+    },
+
+    // 长评论收起/展开 (expanded 在推入时已声明, 响应式)
+    toggleReply(r) {
+      r.expanded = !r.expanded
     },
 
     // 点父评论 → 回复主楼 (parent = root)
@@ -448,6 +456,9 @@ function parseParentSegs(msg) {
   color: #e8edf3;
   lines: 3;
   margin-top: 2px;
+}
+.reply-msg-open {
+  lines: 0;
 }
 .reply-meta {
   flex-direction: row;

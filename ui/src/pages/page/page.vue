@@ -28,7 +28,8 @@
       <!-- ============ 详情 tab ============ -->
       <scroller v-if="tab === 'detail'" class="detail-scroll" scroll-direction="vertical" :show-scrollbar="true">
         <div ref="topRef"></div>
-        <text class="title">{{ detail ? detail.title : fallbackTitle }}</text>
+        <!-- 标题: 默认 2 行截断 (...), 点击展开/收起 -->
+        <text :class="['title', titleExpanded ? 'title-open' : '']" @click="toggleTitle">{{ detail ? detail.title : fallbackTitle }}</text>
         <text class="author" @click="openUp">{{ detail ? (detail.author + ' › · ') : '' }}{{ detail ? detail.pubdateText : '' }}</text>
         <text v-if="detail" class="stat">播放 {{ detail.playText }} · 弹幕 {{ detail.danmakuText }} · {{ detail.duration }}</text>
         <text v-if="detail" class="stat">赞 {{ detail.likeText }} · 币 {{ detail.coinText }} · 藏 {{ detail.favText }} · 转 {{ detail.shareText }}</text>
@@ -46,7 +47,8 @@
 
         <div v-if="detail" class="section">
           <text class="sec-title">简介</text>
-          <text class="desc">{{ detail.desc !== '' ? detail.desc : '暂无简介' }}</text>
+          <!-- 简介: 超 3 行收起 (...), 点击展开 -->
+          <text :class="['desc', descExpanded ? 'desc-open' : '']" @click="toggleDesc">{{ detail.desc !== '' ? detail.desc : '暂无简介' }}</text>
         </div>
 
         <div v-if="detail && detail.pages.length > 1" class="section">
@@ -106,8 +108,8 @@
                   <text class="reply-author">{{ r.author }}</text>
                   <text class="reply-time">{{ r.timeText }}</text>
                 </div>
-                <!-- 图文混排: B 站表情 + emoji 转图片 (设备字体无 emoji 字形) -->
-                <richtext class="reply-msg">
+                <!-- 图文混排: B 站表情 + emoji 转图片 (设备字体无 emoji 字形); 超 3 行收起, 点击展开 -->
+                <richtext :class="['reply-msg', r.expanded ? 'reply-msg-open' : '']" @click="toggleReply(r)">
                   <template v-for="(seg, si) in r.segs">
                     <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
                     <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
@@ -241,6 +243,9 @@ export default {
       related: [],
       generation: 0,
       entering: true,   // 页面进入动画: 首次渲染后翻转为 false
+      // 长文本收起/展开: 标题默认 2 行, 简介/评论默认 3 行, 点击切换
+      titleExpanded: false,
+      descExpanded: false,
       // 同页 tab: 'detail' | 'comment'
       tab: 'detail',
       // ---- 评论区状态 ----
@@ -279,8 +284,10 @@ export default {
       this.related = []
       this.error = ''
       this.loading = true
-      // 切视频: 评论状态整体作废, 停在详情 tab
+      // 切视频: 评论状态整体作废, 停在详情 tab; 长文本回到收起态
       this.resetComments()
+      this.titleExpanded = false
+      this.descExpanded = false
       this.tab = 'detail'
       this.load()
       this.scrollTop()
@@ -378,6 +385,8 @@ export default {
       this.fallbackTitle = e.title
       this.detail = null
       this.related = []
+      this.titleExpanded = false
+      this.descExpanded = false
       this.resetComments()
       this.load()
     },
@@ -397,6 +406,18 @@ export default {
       if (t === 'comment' && !this.cLoaded && !this.cLoading && this.detail && this.detail.aid && this.logged) {
         this.loadComments(true)
       }
+    },
+
+    // ---------- 长文本收起/展开 ----------
+    toggleTitle() {
+      this.titleExpanded = !this.titleExpanded
+    },
+    toggleDesc() {
+      this.descExpanded = !this.descExpanded
+    },
+    toggleReply(r) {
+      // expanded 在 appendPage 推入时已声明, 是响应式字段, 直接赋值即可
+      r.expanded = !r.expanded
     },
 
     // ---------- 评论区 (内联) ----------
@@ -429,6 +450,7 @@ export default {
       for (let i = 0; i < r.replies.length; i++) {
         const item = r.replies[i]
         if (!seen[item.rpid]) {
+          item.expanded = false   // 推入时声明, 保证响应式 (点击展开用)
           this.replies.push(item)
           seen[item.rpid] = true
         }
@@ -636,6 +658,10 @@ export default {
   text-overflow: ellipsis;
   overflow: hidden;
 }
+/* lines: 0 = 不限行数 (Falcon 文档), 点击展开态 */
+.title-open {
+  lines: 0;
+}
 .author {
   font-size: 18px;
   color: #fb7299;
@@ -683,8 +709,11 @@ export default {
 .desc {
   font-size: 16px;
   color: #a8b2c0;
-  lines: 4;
+  lines: 3;
   text-overflow: ellipsis;
+}
+.desc-open {
+  lines: 0;
 }
 .plist {
   width: 632px;
@@ -819,6 +848,9 @@ export default {
   color: #e8edf3;
   lines: 3;
   margin-top: 2px;
+}
+.reply-msg-open {
+  lines: 0;
 }
 .reply-meta {
   flex-direction: row;

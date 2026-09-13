@@ -108,6 +108,7 @@ export default {
       inited: false,
       opened: false,
       playing: false,
+      started: false,      // 是否出过画面: 区分「未开播」与「暂停后重发 ready/buffering」
       titleText: '',
       statusText: '加载中…',
       barVisible: true,
@@ -252,6 +253,7 @@ export default {
 
     openStream: function (url, gen) {
       if (gen !== this.generation) return
+      this.started = false   // 换源/重开: 过渡态重新允许显示「加载中」
       try {
         this.statusText = '缓冲中…'
         player.open(url)
@@ -288,21 +290,26 @@ export default {
         this.showBar()
         return
       }
+      // 注意: 'pause' 包含子串 'play', 必须先判 pause 再判 play
+      // (0.9.3 前 play 在前, pause 状态被误判为播放中)
+      if (s.indexOf('pause') >= 0) {
+        this.playing = false
+        this.stopPolling()   // 暂停后 getPosition 可能返回 0, 轮询会把进度打回 0:00
+        this.showBar()
+        return
+      }
       if (s.indexOf('play') >= 0) {
         this.playing = true
+        this.started = true  // 已出过画面: 之后不再显示「加载中」过渡态
         if (this.statusText !== '') this.statusText = ''
         this.startPolling()
         this.scheduleHideBar()
         return
       }
-      if (s.indexOf('pause') >= 0) {
-        this.playing = false
-        this.showBar()
-        return
-      }
-      // ready/buffering 过渡态只在未开播时显示; closed/duration 不落界面
+      // ready/buffering 过渡态只在「从未播过」时显示;
+      // 暂停后 native 常重发 ready/buffering, 用 started 区分, 否则暂停会误显示「加载中」
       if (s === 'ready' || s === 'buffering' || s === 'loading') {
-        if (!this.playing) this.statusText = '加载中…'
+        if (!this.started) this.statusText = '加载中…'
       }
     },
 
@@ -357,6 +364,7 @@ export default {
         if (this.playing) {
           player.pause()
           this.playing = false
+          this.stopPolling()   // 立即停轮询, 保住当前进度 (暂停后 getPosition 可能返回 0)
         } else {
           player.resume()
           this.playing = true
@@ -460,7 +468,8 @@ export default {
   font-size: 22px;
   color: #ffffff;
   margin-left: 16px;
-  max-lines: 1;
+  /* Falcon 不支持 max-lines (0.9.3 前无效, 长标题换行溢出顶栏), 用 lines: 1 */
+  lines: 1;
   text-overflow: ellipsis;
   overflow: hidden;
 }
