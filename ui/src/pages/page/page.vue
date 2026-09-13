@@ -1,87 +1,235 @@
 <template>
   <div class="page" :class="entering ? 'page-enter' : ''">
-    <div class="header">
-      <div class="back" @click="goBack">
-        <text class="back-text">‹ 返回</text>
-      </div>
-      <text class="header-title">视频详情</text>
-      <div class="homebtn" @click="goHome">
-        <text class="home-text">⌂ 主页</text>
+    <!-- 左栏: 封面 (不放播放器, 点封面/播放条进播放器页) -->
+    <div class="left">
+      <image v-if="coverSrc" class="cover" :src="coverSrc" resize="cover" @click="openPlayer"></image>
+      <div v-else class="cover cover-ph"></div>
+      <text v-if="detail" class="dur">{{ detail.duration }}</text>
+      <div class="playbar" @click="openPlayer">
+        <text class="playbar-text">▶ 播放</text>
       </div>
     </div>
 
-    <scroller class="content" scroll-direction="vertical" :show-scrollbar="true">
-      <!-- 顶部信息: 即使详情接口失败, 也尽可能显示列表页带来的标题, 不再整页拦截 -->
-      <div class="top" ref="topRef">
-        <image v-if="detail && detail.pic" class="cover" :src="detail.pic" resize="cover"></image>
-        <div class="info">
-          <text class="title">{{ detail ? detail.title : fallbackTitle }}</text>
-          <text class="author" @click="openUp">{{ detail ? (detail.author + ' › · ') : '' }}{{ detail ? detail.pubdateText : '' }}</text>
-          <text v-if="detail" class="stat">播放 {{ detail.playText }} · 弹幕 {{ detail.danmakuText }} · {{ detail.duration }}</text>
-          <text v-if="detail" class="stat">赞 {{ detail.likeText }} · 币 {{ detail.coinText }} · 藏 {{ detail.favText }} · 转 {{ detail.shareText }}</text>
-          <div v-if="detail" class="btnrow">
-            <div class="playbtn" @click="openPlayer">
-              <text class="play-text">▶ 播放</text>
-            </div>
-            <div class="playbtn playbtn-ghost" @click="openComments">
-              <text class="play-text">评论</text>
-            </div>
-          </div>
+    <!-- 右栏: 详情 / 评论 同页 tab 切换 -->
+    <div class="right">
+      <div class="tabbar">
+        <div :class="['tab', tab === 'detail' ? 'tab-on' : '']" @click="switchTab('detail')">
+          <text :class="['tab-text', tab === 'detail' ? 'tab-text-on' : '']">详情</text>
+        </div>
+        <div :class="['tab', tab === 'comment' ? 'tab-on' : '']" @click="switchTab('comment')">
+          <text :class="['tab-text', tab === 'comment' ? 'tab-text-on' : '']">评论{{ total > 0 ? ' ' + total : '' }}</text>
+        </div>
+        <div class="tab-spacer"></div>
+        <div class="mini-btn" @click="goHome">
+          <text class="mini-text">⌂</text>
+        </div>
+        <div class="mini-btn" @click="goBack">
+          <text class="mini-text">‹</text>
         </div>
       </div>
 
-      <text v-if="error !== ''" class="state-inline">{{ error }}</text>
-      <!-- 加载状态放在顶部: 切换视频时立即给出反馈 -->
-      <text v-if="loading" class="state-inline">加载中…</text>
+      <!-- ============ 详情 tab ============ -->
+      <scroller v-if="tab === 'detail'" class="detail-scroll" scroll-direction="vertical" :show-scrollbar="true">
+        <div ref="topRef"></div>
+        <text class="title">{{ detail ? detail.title : fallbackTitle }}</text>
+        <text class="author" @click="openUp">{{ detail ? (detail.author + ' › · ') : '' }}{{ detail ? detail.pubdateText : '' }}</text>
+        <text v-if="detail" class="stat">播放 {{ detail.playText }} · 弹幕 {{ detail.danmakuText }} · {{ detail.duration }}</text>
+        <text v-if="detail" class="stat">赞 {{ detail.likeText }} · 币 {{ detail.coinText }} · 藏 {{ detail.favText }} · 转 {{ detail.shareText }}</text>
+        <div v-if="detail" class="btnrow">
+          <div class="playbtn" @click="openPlayer">
+            <text class="play-text">▶ 播放</text>
+          </div>
+          <div class="playbtn playbtn-ghost" @click="switchTab('comment')">
+            <text class="play-text">评论 {{ total > 0 ? total : '' }}</text>
+          </div>
+        </div>
 
-      <!-- 简介 (放大) -->
-      <div v-if="detail" class="section">
-        <text class="sec-title">简介</text>
-        <text class="desc">{{ detail.desc !== '' ? detail.desc : '暂无简介' }}</text>
-      </div>
+        <text v-if="error !== ''" class="state-inline">{{ error }}</text>
+        <text v-if="loading" class="state-inline">加载中…</text>
 
-      <!-- 分 P / 合集切换 -->
-      <div v-if="detail && detail.pages.length > 1" class="section">
-        <text class="sec-title">分 P ({{ detail.pages.length }})</text>
-        <scroller class="plist" scroll-direction="horizontal" :show-scrollbar="true">
-          <text v-for="p in detail.pages" :key="p.page"
-                :class="['pitem', currentPage === p.page ? 'pitem-active' : '']"
-                @click="switchPage(p)">P{{ p.page }} {{ p.part }}</text>
+        <div v-if="detail" class="section">
+          <text class="sec-title">简介</text>
+          <text class="desc">{{ detail.desc !== '' ? detail.desc : '暂无简介' }}</text>
+        </div>
+
+        <div v-if="detail && detail.pages.length > 1" class="section">
+          <text class="sec-title">分 P ({{ detail.pages.length }})</text>
+          <scroller class="plist" scroll-direction="horizontal" :show-scrollbar="true">
+            <text v-for="p in detail.pages" :key="p.page"
+                  :class="['pitem', currentPage === p.page ? 'pitem-active' : '']"
+                  @click="switchPage(p)">P{{ p.page }} {{ p.part }}</text>
+          </scroller>
+        </div>
+        <div v-else-if="detail && detail.season && detail.season.episodes.length > 1" class="section">
+          <text class="sec-title">合集 · {{ detail.season.title }}</text>
+          <scroller class="plist" scroll-direction="horizontal" :show-scrollbar="true">
+            <text v-for="e in detail.season.episodes" :key="e.bvid"
+                  :class="['pitem', e.bvid === detail.bvid ? 'pitem-active' : '']"
+                  @click="switchEpisode(e)">{{ e.title }}</text>
+          </scroller>
+        </div>
+
+        <div v-if="related.length > 0" class="section">
+          <text class="sec-title">推荐</text>
+          <div v-for="item in related" :key="item.bvid" class="ritem" @click="openVideo(item)">
+            <image class="rcover" :src="item.pic" resize="cover" :lazy-load="true"></image>
+            <div class="rmeta">
+              <text class="rtitle">{{ item.title }}</text>
+              <text class="rstat">{{ item.author }} · ▶{{ item.playText }} {{ item.duration }}</text>
+            </div>
+          </div>
+        </div>
+      </scroller>
+
+      <!-- ============ 评论 tab ============ -->
+      <div v-else class="cwrap">
+        <!-- 排序切换: 热度 / 最新 -->
+        <div class="sortbar">
+          <div :class="['sort-item', sortMode === 'hot' ? 'sort-on' : '']" @click="switchSort('hot')">
+            <text :class="['sort-text', sortMode === 'hot' ? 'sort-text-on' : '']">热度</text>
+          </div>
+          <div :class="['sort-item', sortMode === 'time' ? 'sort-on' : '']" @click="switchSort('time')">
+            <text :class="['sort-text', sortMode === 'time' ? 'sort-text-on' : '']">最新</text>
+          </div>
+        </div>
+        <scroller class="clist" scroll-direction="vertical" :show-scrollbar="true">
+          <text v-if="cStatus !== ''" class="c-status">{{ cStatus }}</text>
+          <!-- 未登录: 登录引导 -->
+          <div v-if="!logged && !cLoading" class="gate">
+            <text class="gate-text">评论需要登录后查看</text>
+            <div class="gate-btn" @click="goLogin">
+              <text class="gate-btn-text">去登录 (扫码 / 电脑同步)</text>
+            </div>
+          </div>
+          <div v-else>
+            <div v-for="r in replies" :key="r.rpid" class="reply">
+              <image class="face" :src="r.face" resize="cover"></image>
+              <div class="reply-main">
+                <div class="reply-head">
+                  <text class="reply-author">{{ r.author }}</text>
+                  <text class="reply-time">{{ r.timeText }}</text>
+                </div>
+                <!-- 图文混排: B 站表情 + emoji 转图片 (设备字体无 emoji 字形) -->
+                <richtext class="reply-msg">
+                  <template v-for="(seg, si) in r.segs">
+                    <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
+                    <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
+                  </template>
+                </richtext>
+                <div class="reply-meta">
+                  <text class="meta-text">赞 {{ r.likeText }}</text>
+                  <text class="meta-reply" @click="openSubReply(r)">回复 {{ r.replyCount }}</text>
+                </div>
+              </div>
+            </div>
+          </div>
+          <text v-if="logged && replies.length > 0 && hasMore" class="load-more" @click="loadMore">加载更多评论…</text>
+          <text v-if="logged && !cLoading && replies.length === 0 && cStatus === ''" class="empty">还没有评论, 抢首评</text>
         </scroller>
-      </div>
-      <div v-else-if="detail && detail.season && detail.season.episodes.length > 1" class="section">
-        <text class="sec-title">合集 · {{ detail.season.title }}</text>
-        <scroller class="plist" scroll-direction="horizontal" :show-scrollbar="true">
-          <text v-for="e in detail.season.episodes" :key="e.bvid"
-                :class="['pitem', e.bvid === detail.bvid ? 'pitem-active' : '']"
-                @click="switchEpisode(e)">{{ e.title }}</text>
-        </scroller>
-      </div>
-
-      <!-- 相关推荐 -->
-      <div v-if="related.length > 0" class="section">
-        <text class="sec-title">推荐</text>
-        <div v-for="item in related" :key="item.bvid" class="ritem" @click="openVideo(item)">
-          <image class="rcover" :src="item.pic" resize="cover" :lazy-load="true"></image>
-          <div class="rmeta">
-            <text class="rtitle">{{ item.title }}</text>
-            <text class="rstat">{{ item.author }} · ▶{{ item.playText }} {{ item.duration }}</text>
+        <!-- 底部发评栏 -->
+        <div class="postbar">
+          <div class="post-input" @click="openPostInput">
+            <text class="post-input-text">{{ logged ? '说点什么…' : '登录后参与评论' }}</text>
+          </div>
+          <div class="post-btn" @click="openPostInput">
+            <text class="post-btn-text">发送</text>
           </div>
         </div>
       </div>
-    </scroller>
+    </div>
   </div>
 </template>
 
 <script>
-import { getVideoDetail, getRelatedVideos } from '../../services/bili.js'
+// 详情页: 左栏封面 + 右栏「详情/评论」同页 tab (参考真机另一应用的布局, 左栏不用播放器).
+// 评论逻辑内联 (x/v2/reply + 发评 + 楼中页跳转), 不再跳独立 comment 页。
+// nextPage: 相关推荐点击后的跳转目标页副本名 (page->page2->...->page12->page 轮换栈)。
+import { createIME } from '../../services/ime.js'
+import { getVideoDetail, getRelatedVideos, getReplies, addReply } from '../../services/bili.js'
+import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
+
+// 内置常用 emoji 映射: .vue 里的 require png 会被 aiot-cli 编译成 images/<hash>.png
+// (services/*.js 里的 require 不会被编译, QuickJS 无 require 会崩, 见 0.8.7 黑屏教训)
+const BUILTIN_EMOJI = {
+  '1f197': require('../../assets/emoji/1f197.png'),
+  '1f338': require('../../assets/emoji/1f338.png'),
+  '1f339': require('../../assets/emoji/1f339.png'),
+  '1f349': require('../../assets/emoji/1f349.png'),
+  '1f34b': require('../../assets/emoji/1f34b.png'),
+  '1f35a': require('../../assets/emoji/1f35a.png'),
+  '1f37a': require('../../assets/emoji/1f37a.png'),
+  '1f381': require('../../assets/emoji/1f381.png'),
+  '1f382': require('../../assets/emoji/1f382.png'),
+  '1f389': require('../../assets/emoji/1f389.png'),
+  '1f414': require('../../assets/emoji/1f414.png'),
+  '1f42e': require('../../assets/emoji/1f42e.png'),
+  '1f431': require('../../assets/emoji/1f431.png'),
+  '1f436': require('../../assets/emoji/1f436.png'),
+  '1f437': require('../../assets/emoji/1f437.png'),
+  '1f440': require('../../assets/emoji/1f440.png'),
+  '1f446': require('../../assets/emoji/1f446.png'),
+  '1f448': require('../../assets/emoji/1f448.png'),
+  '1f449': require('../../assets/emoji/1f449.png'),
+  '1f44d': require('../../assets/emoji/1f44d.png'),
+  '1f44e': require('../../assets/emoji/1f44e.png'),
+  '1f44f': require('../../assets/emoji/1f44f.png'),
+  '1f451': require('../../assets/emoji/1f451.png'),
+  '1f47b': require('../../assets/emoji/1f47b.png'),
+  '1f480': require('../../assets/emoji/1f480.png'),
+  '1f494': require('../../assets/emoji/1f494.png'),
+  '1f495': require('../../assets/emoji/1f495.png'),
+  '1f496': require('../../assets/emoji/1f496.png'),
+  '1f497': require('../../assets/emoji/1f497.png'),
+  '1f498': require('../../assets/emoji/1f498.png'),
+  '1f4a9': require('../../assets/emoji/1f4a9.png'),
+  '1f4aa': require('../../assets/emoji/1f4aa.png'),
+  '1f4ac': require('../../assets/emoji/1f4ac.png'),
+  '1f4af': require('../../assets/emoji/1f4af.png'),
+  '1f525': require('../../assets/emoji/1f525.png'),
+  '1f600': require('../../assets/emoji/1f600.png'),
+  '1f602': require('../../assets/emoji/1f602.png'),
+  '1f604': require('../../assets/emoji/1f604.png'),
+  '1f605': require('../../assets/emoji/1f605.png'),
+  '1f606': require('../../assets/emoji/1f606.png'),
+  '1f607': require('../../assets/emoji/1f607.png'),
+  '1f609': require('../../assets/emoji/1f609.png'),
+  '1f60a': require('../../assets/emoji/1f60a.png'),
+  '1f60d': require('../../assets/emoji/1f60d.png'),
+  '1f60f': require('../../assets/emoji/1f60f.png'),
+  '1f612': require('../../assets/emoji/1f612.png'),
+  '1f618': require('../../assets/emoji/1f618.png'),
+  '1f61c': require('../../assets/emoji/1f61c.png'),
+  '1f621': require('../../assets/emoji/1f621.png'),
+  '1f622': require('../../assets/emoji/1f622.png'),
+  '1f629': require('../../assets/emoji/1f629.png'),
+  '1f62a': require('../../assets/emoji/1f62a.png'),
+  '1f62d': require('../../assets/emoji/1f62d.png'),
+  '1f631': require('../../assets/emoji/1f631.png'),
+  '1f633': require('../../assets/emoji/1f633.png'),
+  '1f634': require('../../assets/emoji/1f634.png'),
+  '1f644': require('../../assets/emoji/1f644.png'),
+  '1f64f': require('../../assets/emoji/1f64f.png'),
+  '1f914': require('../../assets/emoji/1f914.png'),
+  '1f917': require('../../assets/emoji/1f917.png'),
+  '1f91d': require('../../assets/emoji/1f91d.png'),
+  '1f921': require('../../assets/emoji/1f921.png'),
+  '1f923': require('../../assets/emoji/1f923.png'),
+  '1f92c': require('../../assets/emoji/1f92c.png'),
+  '1f970': require('../../assets/emoji/1f970.png'),
+  '1f973': require('../../assets/emoji/1f973.png'),
+  '1f976': require('../../assets/emoji/1f976.png'),
+  '1f97a': require('../../assets/emoji/1f97a.png'),
+  '2615': require('../../assets/emoji/2615.png'),
+  '2705': require('../../assets/emoji/2705.png'),
+  '2728': require('../../assets/emoji/2728.png'),
+  '274c': require('../../assets/emoji/274c.png'),
+  '2753': require('../../assets/emoji/2753.png'),
+  '2764': require('../../assets/emoji/2764.png'),
+}
 
 export default {
   name: 'page',
-  // nextPage: 相关推荐点击后的跳转目标页副本名.
-  // 直开 page 路由默认跳 'page2'; page2..page12 包装页传入自己的下一环,
-  // 形成 page->page2->...->page12->page 轮换栈 (同名页 navTo 只替换不叠加)
   props: {
     nextPage: { type: String, default: 'page2' }
   },
@@ -95,7 +243,27 @@ export default {
       detail: null,
       related: [],
       generation: 0,
-      entering: true   // 页面进入动画: 首次渲染后翻转为 false
+      entering: true,   // 页面进入动画: 首次渲染后翻转为 false
+      // 同页 tab: 'detail' | 'comment'
+      tab: 'detail',
+      // ---- 评论区状态 ----
+      sortMode: 'hot',   // 'hot'=热度 / 'time'=最新
+      replies: [],
+      total: 0,
+      pn: 1,
+      hasMore: false,
+      cLoading: false,
+      cLoaded: false,
+      logged: false,
+      cStatus: '',
+      posting: false,
+      ime: null,
+      cGeneration: 0
+    }
+  },
+  computed: {
+    coverSrc() {
+      return this.detail && this.detail.pic ? this.detail.pic : ''
     }
   },
   methods: {
@@ -109,15 +277,27 @@ export default {
       if (bvid === this.bvid && (this.detail || this.loading)) return
       this.bvid = bvid
       this.fallbackTitle = options.title || ''
-      // 进入新视频视为第 1 P (page 参数可通过 options.page 指定)
       this.currentPage = parseInt(options.page || '1', 10) || 1
       this.detail = null
       this.related = []
       this.error = ''
-      this.loading = true   // 立即显示「加载中…」, 同页跳转时旧内容立刻清空
+      this.loading = true
+      // 切视频: 评论状态整体作废, 停在详情 tab
+      this.resetComments()
+      this.tab = 'detail'
       this.load()
-      // 同页 navTo 停在原滚动位置 (推荐区) -> 复位到顶部
       this.scrollTop()
+    },
+
+    resetComments() {
+      this.cGeneration++
+      this.replies = []
+      this.total = 0
+      this.pn = 1
+      this.hasMore = false
+      this.cLoading = false
+      this.cLoaded = false
+      this.cStatus = ''
     },
 
     scrollTop() {
@@ -130,16 +310,18 @@ export default {
     },
 
     onShow() {
-      // 固件的自动 Page 只桥接 onShow/onHide/onUnload 等固定生命周期,
-      // 同页 navTo 的 onNewOptions 只发到 Page 实例 -> 显式挂钩到实例方法
       if (this.$page && !this._newOptionsBound) {
         this._newOptionsBound = true
         const self = this
         this.$page.onNewOptions = function (options) { self.onNewOptions(options) }
       }
+      const wasLogged = this.logged
+      this.logged = hasCookie()
       this.beginLoad()
-      // 进入动画: 等到首帧绘制完成后再翻转 entering, CSS transition 从右滑入
-      // timer 走 BasePage 托管, 页面卸载由 release() 兜底
+      // 从登录页返回: 评论 tab 之前被门禁挡住, 补一次加载
+      if (this.logged && !wasLogged && this.tab === 'comment' && this.detail && this.detail.aid && !this.cLoaded) {
+        this.loadComments(true)
+      }
       if (this.entering) {
         const self2 = this
         try {
@@ -161,14 +343,11 @@ export default {
       const gen = ++this.generation
       this.loading = true
       this.error = ''
-      // 先让首帧画出「加载中…」再发请求: bilinet.httpGet 同步阻塞 JS 线程,
-      // 不延迟的话网络差时加载态画不出来, 表现为页面卡死
       afterPaint(async () => {
         try {
           const d = await getVideoDetail(this.bvid)
           if (gen !== this.generation) return
           this.detail = d
-          // 分 P 详情: 若指定 page, 需要选中的分 P 标题覆盖展示
           if (d.pages.length > 1 && this.currentPage >= 1 && this.currentPage <= d.pages.length) {
             const p = d.pages[this.currentPage - 1]
             if (p && p.part) this.detail.title = d.title + '（' + p.part + '）'
@@ -180,7 +359,6 @@ export default {
         } finally {
           if (gen === this.generation) this.loading = false
         }
-        // 推荐失败容忍, 与主详情并行
         try {
           const rel = await getRelatedVideos(this.bvid)
           if (gen !== this.generation) return
@@ -203,6 +381,7 @@ export default {
       this.fallbackTitle = e.title
       this.detail = null
       this.related = []
+      this.resetComments()
       this.load()
     },
 
@@ -216,14 +395,123 @@ export default {
       $falcon.navTo('player', { bvid: this.bvid, page: String(this.currentPage), title: this.detail.title })
     },
 
-    openComments() {
+    switchTab(t) {
+      this.tab = t
+      if (t === 'comment' && !this.cLoaded && !this.cLoading && this.detail && this.detail.aid && this.logged) {
+        this.loadComments(true)
+      }
+    },
+
+    // ---------- 评论区 (内联) ----------
+    loadComments(reset) {
+      if (!this.detail || !this.detail.aid || this.cLoading) return
+      const gen = ++this.cGeneration
+      this.cLoading = true
+      if (reset) this.cStatus = '加载中…'
+      afterPaint(async () => {
+        try {
+          const r = await getReplies(this.detail.aid, this.pn, BUILTIN_EMOJI, this.sortMode)
+          if (gen !== this.cGeneration) return
+          if (reset) this.replies = []
+          this.appendPage(r)
+          this.cLoaded = true
+          this.cStatus = ''
+        } catch (err) {
+          if (gen !== this.cGeneration) return
+          console.log('[page] comments error: ' + (err && err.message ? err.message : err))
+          this.cStatus = err && err.message ? err.message : String(err)
+        } finally {
+          if (gen === this.cGeneration) this.cLoading = false
+        }
+      })
+    },
+
+    appendPage(r) {
+      const seen = {}
+      for (let i = 0; i < this.replies.length; i++) seen[this.replies[i].rpid] = true
+      for (let i = 0; i < r.replies.length; i++) {
+        const item = r.replies[i]
+        if (!seen[item.rpid]) {
+          this.replies.push(item)
+          seen[item.rpid] = true
+        }
+      }
+      this.total = r.total
+      this.hasMore = this.replies.length < r.total && r.replies.length > 0
+    },
+
+    loadMore() {
+      if (this.cLoading || !this.hasMore) return
+      this.pn++
+      this.loadComments(false)
+    },
+
+    switchSort(mode) {
+      if (this.sortMode === mode || this.cLoading) return
+      this.sortMode = mode
+      this.replies = []
+      this.total = 0
+      this.pn = 1
+      this.hasMore = false
+      this.cGeneration++
+      this.cStatus = '加载中…'
+      this.loadComments(true)
+    },
+
+    openSubReply(r) {
       if (!this.detail) return
-      // aid 为评论 oid; 无 aid (老数据) 不跳
-      if (!this.detail.aid) {
-        this.error = '暂无法打开评论 (缺少 aid)'
+      $falcon.navTo('subreply', {
+        aid: String(this.detail.aid),
+        root: String(r.rpid),
+        msg: r.message || '',
+        author: r.author || '',
+        face: r.face || '',
+        count: String(r.replyCount || 0),
+        title: this.detail.title || ''
+      })
+    },
+
+    goLogin() {
+      $falcon.navTo('login', {})
+    },
+
+    async openPostInput() {
+      if (!hasCookie()) {
+        this.goLogin()
         return
       }
-      $falcon.navTo('comment', { aid: String(this.detail.aid), title: this.detail.title })
+      if (this.ime == null) this.ime = createIME()
+      try {
+        const text = await this.ime.open({
+          text: '',
+          placeholder: '说点什么…',
+          maxlength: 500,
+          multiLinesEditVisible: false,
+          enterButtonText: '发送',
+          confirmText: '发送'
+        })
+        if (text === null || text.trim() === '') return
+        await this.postComment(text.trim())
+      } catch (err) {
+        this.cStatus = '输入失败: ' + (err && err.message ? err.message : err)
+      }
+    },
+
+    async postComment(message) {
+      if (this.posting || !this.detail || !this.detail.aid) return
+      this.posting = true
+      this.cStatus = '发送中…'
+      try {
+        await addReply(this.detail.aid, message)
+        this.pn = 1
+        this.replies = []
+        this.cStatus = '✓ 已发送'
+        this.loadComments(true)
+      } catch (err) {
+        this.cStatus = '发送失败: ' + (err && err.message ? err.message : err)
+      } finally {
+        this.posting = false
+      }
     },
 
     openUp() {
@@ -236,13 +524,14 @@ export default {
       this.$page.finish()
     },
 
-    // 一键回主页: navTo 已存在的 index 页面 -> 框架把它暂时提到前台 (onNewOptions 会刷新刚发布的内容)
     goHome() {
       $falcon.navTo('index', {})
     },
 
     onUnload() {
       this.generation++
+      this.cGeneration++
+      if (this.ime) { try { this.ime.destroy() } catch (e) {} }
     }
   }
 }
@@ -250,107 +539,131 @@ export default {
 
 <style scoped>
 .page {
+  position: absolute;
+  left: 0px;
+  top: 0px;
   width: 960px;
   height: 266px;
   background-color: #141414;
-  display: flex;
-  flex-direction: column;
-  transition-property: transform;
-  transition-duration: 260ms;
-  transition-timing-function: ease-out;
-}
-.page-enter {
-  transform: translateX(960px);
-}
-.header {
-  width: 960px;
-  height: 44px;
-  display: flex;
   flex-direction: row;
-  align-items: center;
+}
+/* ---------- 左栏: 封面 ---------- */
+.left {
+  width: 300px;
+  height: 266px;
+  flex-direction: column;
+  background-color: #000000;
+}
+.cover {
+  width: 300px;
+  height: 226px;
+}
+.cover-ph {
   background-color: #1f1f1f;
 }
-.back {
-  width: 120px;
-  height: 34px;
-  margin-left: 12px;
-  border-radius: 17px;
-  background-color: #2c2c2c;
-  justify-content: center;
-  align-items: center;
-}
-.back-text {
-  font-size: 22px;
+.dur {
+  position: absolute;
+  right: 8px;
+  top: 198px;
+  font-size: 15px;
   color: #ffffff;
+  background-color: rgba(0, 0, 0, 0.6);
+  padding-left: 6px;
+  padding-right: 6px;
 }
-.header-title {
-  font-size: 24px;
-  color: #ffffff;
-  margin-left: 24px;
-}
-.homebtn {
-  width: 110px;
-  height: 34px;
-  margin-left: 560px;
-  border-radius: 17px;
+.playbar {
+  width: 300px;
+  height: 40px;
   background-color: #fb7299;
   justify-content: center;
   align-items: center;
 }
-.home-text {
-  font-size: 22px;
+.playbar-text {
+  font-size: 19px;
   color: #ffffff;
 }
-.content {
-  width: 960px;
-  height: 222px;
-  display: flex;
+/* ---------- 右栏 ---------- */
+.right {
+  width: 660px;
+  height: 266px;
   flex-direction: column;
+  background-color: #16181c;
 }
-.top {
-  width: 920px;
-  margin-left: 20px;
-  margin-top: 12px;
-  display: flex;
+.tabbar {
+  width: 660px;
+  height: 36px;
   flex-direction: row;
+  align-items: center;
+  background-color: #21242b;
 }
-.cover {
-  width: 320px;
-  height: 180px;
-  border-radius: 12px;
-  background-color: #2c2c2c;
+.tab {
+  width: 88px;
+  height: 36px;
+  justify-content: center;
+  align-items: center;
+  margin-left: 8px;
 }
-.info {
-  width: 580px;
-  margin-left: 20px;
-  display: flex;
+.tab-on {
+  border-bottom-width: 3px;
+  border-bottom-color: #fb7299;
+}
+.tab-text {
+  font-size: 19px;
+  color: #8a94a6;
+}
+.tab-text-on {
+  color: #fb7299;
+}
+.tab-spacer {
+  flex: 1;
+}
+.mini-btn {
+  width: 44px;
+  height: 28px;
+  border-radius: 14px;
+  background-color: #37404a;
+  justify-content: center;
+  align-items: center;
+  margin-right: 8px;
+}
+.mini-text {
+  font-size: 20px;
+  color: #ffffff;
+}
+/* ---------- 详情 tab ---------- */
+.detail-scroll {
+  width: 660px;
+  height: 230px;
   flex-direction: column;
+  padding-left: 14px;
+  padding-right: 14px;
 }
 .title {
-  font-size: 24px;
+  font-size: 22px;
   color: #ffffff;
-  max-lines: 2;
+  margin-top: 8px;
+  lines: 2;
   text-overflow: ellipsis;
   overflow: hidden;
 }
 .author {
-  font-size: 20px;
+  font-size: 18px;
   color: #fb7299;
-  margin-top: 8px;
+  margin-top: 6px;
 }
 .stat {
-  font-size: 18px;
+  font-size: 16px;
   color: #888888;
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .btnrow {
   flex-direction: row;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 .playbtn {
-  width: 160px;
-  height: 40px;
-  border-radius: 20px;
+  width: 130px;
+  height: 38px;
+  border-radius: 19px;
   background-color: #fb7299;
   justify-content: center;
   align-items: center;
@@ -360,90 +673,256 @@ export default {
   background-color: #2a2f38;
 }
 .play-text {
-  font-size: 22px;
+  font-size: 19px;
   color: #ffffff;
 }
 .state-inline {
-  font-size: 20px;
+  font-size: 18px;
   color: #e6a23c;
-  margin-left: 20px;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 .section {
-  width: 920px;
-  margin-left: 20px;
   margin-top: 12px;
-  display: flex;
   flex-direction: column;
 }
 .sec-title {
-  font-size: 20px;
-  color: #fb7299;
+  font-size: 18px;
+  color: #ffffff;
+  margin-bottom: 4px;
 }
 .desc {
-  font-size: 20px;
-  color: #cccccc;
-  margin-top: 8px;
-  line-height: 30px;
+  font-size: 16px;
+  color: #a8b2c0;
+  lines: 4;
+  text-overflow: ellipsis;
 }
 .plist {
-  width: 920px;
-  height: 52px;
-  margin-top: 8px;
-  display: flex;
+  width: 632px;
+  height: 40px;
   flex-direction: row;
 }
 .pitem {
-  font-size: 20px;
-  color: #ffffff;
-  background-color: #2c2c2c;
-  border-radius: 20px;
-  padding-left: 16px;
-  padding-right: 16px;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  margin-right: 10px;
-  max-lines: 1;
-  text-overflow: ellipsis;
-  overflow: hidden;
+  height: 32px;
+  padding-left: 12px;
+  padding-right: 12px;
+  margin-right: 8px;
+  border-radius: 16px;
+  background-color: #2a2f38;
+  color: #c8d2de;
+  font-size: 16px;
+  text-align: center;
 }
 .pitem-active {
   background-color: #fb7299;
+  color: #ffffff;
 }
 .ritem {
-  width: 920px;
-  margin-top: 10px;
-  display: flex;
+  width: 632px;
   flex-direction: row;
+  margin-top: 8px;
   background-color: #1f1f1f;
-  border-radius: 12px;
+  border-radius: 10px;
 }
 .rcover {
-  width: 160px;
-  height: 96px;
-  border-top-left-radius: 12px;
-  border-bottom-left-radius: 12px;
+  width: 150px;
+  height: 94px;
+  border-top-left-radius: 10px;
+  border-bottom-left-radius: 10px;
 }
 .rmeta {
-  width: 740px;
-  height: 96px;
-  display: flex;
+  width: 470px;
+  height: 94px;
   flex-direction: column;
 }
 .rtitle {
-  font-size: 20px;
+  font-size: 17px;
   color: #ffffff;
-  margin-left: 16px;
-  margin-top: 8px;
-  margin-right: 12px;
-  max-lines: 2;
+  margin-left: 10px;
+  margin-top: 6px;
+  margin-right: 10px;
+  lines: 2;
   text-overflow: ellipsis;
   overflow: hidden;
 }
 .rstat {
-  font-size: 18px;
+  font-size: 15px;
   color: #888888;
+  margin-left: 10px;
+  margin-top: 4px;
+}
+/* ---------- 评论 tab ---------- */
+.cwrap {
+  width: 660px;
+  height: 230px;
+  flex-direction: column;
+}
+.sortbar {
+  width: 660px;
+  height: 26px;
+  flex-direction: row;
+  background-color: #1a1d22;
+}
+.sort-item {
+  width: 80px;
+  height: 26px;
+  justify-content: center;
+  align-items: center;
+  margin-left: 10px;
+  border-radius: 13px;
+}
+.sort-on {
+  background-color: #2c313a;
+}
+.sort-text {
+  font-size: 16px;
+  color: #8a94a6;
+}
+.sort-text-on {
+  color: #fb7299;
+}
+.clist {
+  width: 660px;
+  height: 160px;
+  flex-direction: column;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.c-status {
+  font-size: 17px;
+  color: #e6a23c;
+  margin-top: 6px;
+  margin-bottom: 6px;
+}
+.reply {
+  flex-direction: row;
+  padding-top: 8px;
+  padding-bottom: 8px;
+  border-bottom-width: 1px;
+  border-bottom-color: #262b33;
+}
+.face {
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  margin-right: 10px;
+}
+.reply-main {
+  width: 570px;
+  flex-direction: column;
+}
+.reply-head {
+  flex-direction: row;
+  align-items: center;
+  margin-bottom: 2px;
+}
+.reply-author {
+  font-size: 17px;
+  color: #8a94a6;
+  margin-right: 12px;
+}
+.reply-time {
+  font-size: 15px;
+  color: #5c6672;
+}
+.reply-msg {
+  font-size: 18px;
+  color: #e8edf3;
+  lines: 3;
+  margin-top: 2px;
+}
+.reply-meta {
+  flex-direction: row;
+  align-items: center;
+  margin-top: 3px;
+}
+.meta-text {
+  font-size: 15px;
+  color: #6a7684;
+}
+.meta-reply {
+  font-size: 15px;
+  color: #fb7299;
   margin-left: 16px;
+}
+.load-more {
+  font-size: 17px;
+  color: #fb7299;
+  text-align: center;
   margin-top: 8px;
+  margin-bottom: 8px;
+}
+.empty {
+  font-size: 17px;
+  color: #6a7684;
+  margin-top: 16px;
+  text-align: center;
+}
+.gate {
+  width: 636px;
+  height: 120px;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.gate-text {
+  font-size: 19px;
+  color: #8a94a6;
+  margin-bottom: 12px;
+}
+.gate-btn {
+  width: 280px;
+  height: 38px;
+  border-radius: 19px;
+  background-color: #fb7299;
+  justify-content: center;
+  align-items: center;
+}
+.gate-btn-text {
+  font-size: 18px;
+  color: #ffffff;
+}
+.postbar {
+  width: 660px;
+  height: 44px;
+  flex-direction: row;
+  align-items: center;
+  background-color: #21242b;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.post-input {
+  width: 500px;
+  height: 32px;
+  border-radius: 16px;
+  background-color: #2a2f38;
+  justify-content: center;
+  padding-left: 14px;
+}
+.post-input-text {
+  font-size: 18px;
+  color: #8a94a6;
+}
+.post-btn {
+  width: 90px;
+  height: 32px;
+  border-radius: 16px;
+  background-color: #fb7299;
+  justify-content: center;
+  align-items: center;
+  margin-left: 10px;
+}
+.post-btn-text {
+  font-size: 18px;
+  color: #ffffff;
+}
+/* 进入动画: 从右滑入 */
+.page-enter {
+  transform: translateX(60px);
+  opacity: 0;
+}
+.page {
+  transition-property: transform, opacity;
+  transition-duration: 200ms;
+  transition-timing-function: ease-out;
 }
 </style>
