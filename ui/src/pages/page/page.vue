@@ -1,13 +1,10 @@
 <template>
   <div class="page" :class="entering ? 'page-enter' : ''">
-    <!-- 左栏: 封面 (不放播放器, 点封面/播放条进播放器页) -->
+    <!-- 左栏: 封面 (不放播放器也不放播放条, 点封面进播放器页; 播放按钮在右栏详情 tab) -->
     <div class="left">
       <image v-if="coverSrc" class="cover" :src="coverSrc" resize="cover" @click="openPlayer"></image>
       <div v-else class="cover cover-ph"></div>
       <text v-if="detail" class="dur">{{ detail.duration }}</text>
-      <div class="playbar" @click="openPlayer">
-        <text class="playbar-text">▶ 播放</text>
-      </div>
     </div>
 
     <!-- 右栏: 详情 / 评论 同页 tab 切换 -->
@@ -560,7 +557,7 @@ export default {
 }
 .cover {
   width: 300px;
-  height: 226px;
+  height: 266px;
 }
 .cover-ph {
   background-color: #1f1f1f;
@@ -568,23 +565,12 @@ export default {
 .dur {
   position: absolute;
   right: 8px;
-  top: 198px;
+  top: 232px;
   font-size: 15px;
   color: #ffffff;
   background-color: rgba(0, 0, 0, 0.6);
   padding-left: 6px;
   padding-right: 6px;
-}
-.playbar {
-  width: 300px;
-  height: 40px;
-  background-color: #fb7299;
-  justify-content: center;
-  align-items: center;
-}
-.playbar-text {
-  font-size: 19px;
-  color: #ffffff;
 }
 /* ---------- 右栏 ---------- */
 .right {
