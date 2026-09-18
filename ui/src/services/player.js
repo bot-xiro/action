@@ -35,11 +35,13 @@ export function isSupported() {
 // `send_event touch move` 输入事件重置计时器 —— move 不产生点击, 不干扰 UI.
 // 命令在真机上验证后调整 (若 move 不重置计时器, 换 press/release 短按).
 
-/** 注入一次防息屏输入事件 (同步, ~10ms). exec 缺失/失败静默. */
+/** 注入一次防息屏输入事件 (同步, ~10ms). exec 缺失/失败静默.
+ *  真机实测: send_event 支持 action=press/release/slip (无 move);
+ *  `touch slip` 连续 28s 每 4s 一次可让屏幕常亮, 且不产生点击副作用. */
 export function keepAwakeTick() {
   if (!bilinet || typeof bilinet.exec !== 'function') return
   try {
-    bilinet.exec('send_event touch move 240 479')
+    bilinet.exec('send_event touch slip 240 479')
   } catch (e) {
     console.log(LOG + 'keepAwake exec failed: ' + (e && e.message ? e.message : e))
   }
