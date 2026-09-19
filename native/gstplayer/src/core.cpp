@@ -14,6 +14,7 @@
 #include "core.h"
 
 #include <syslog.h>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
@@ -43,6 +44,66 @@ static void ensureGstInit()
     gst_init(NULL, NULL);
     GP_LOG("gst_init done");
     inited = true;
+}
+
+// 检测已连接的蓝牙 A2DP 耳机 (bluealsa), 返回 alsasink 的 device 串:
+//   "bluealsa:DEV=xx:xx:xx:xx:xx:xx,PROFILE=a2dp"   有连接
+//   ""                                              无连接 (走系统 default 扬声器)
+//
+// 背景: 设备蓝牙音频走 bluealsa (a2dp-source 常驻), 系统 asound.conf 的 default
+// 只指向扬声器 —— 直接用 default 时连蓝牙耳机没有声音. 通过 bluealsa 的
+// D-Bus Manager1.GetPCMs 查 A2DP PCM 是否存在 (设备路径含 dev_<mac>);
+// 显式带 DEV 才能解析 PCM (裸 "bluealsa" 缺 defaults.bluealsa.device, 真机实测报
+// "Unknown PCM bluealsa")。
+static std::string detectBtAudioDevice()
+{
+    FILE* fp = popen("dbus-send --system --print-reply --dest=org.bluealsa "
+                     "/org/bluealsa org.bluealsa.Manager1.GetPCMs 2>/dev/null", "r");
+    if (!fp) {
+        GP_LOG("bt detect: popen failed");
+        return "";
+    }
+    std::string out;
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), fp)) > 0) out.append(buf, n);
+    pclose(fp);
+    if (out.find("a2dp") == std::string::npos) return "";  // 无 A2DP PCM = 没连耳机
+
+    std::string mac;
+    // 形态 1: 设备路径里的 dev_11_22_33_44_55_66
+    size_t pos = out.find("dev_");
+    if (pos != std::string::npos && pos + 4 + 17 <= out.size()) {
+        std::string s = out.substr(pos + 4, 17);
+        bool ok = true;
+        for (int i = 0; i < 17; i++) {
+            if (i % 3 == 2) { if (s[i] != '_') { ok = false; break; } }
+            else if (!isxdigit((unsigned char)s[i])) { ok = false; break; }
+        }
+        if (ok) {
+            mac = s;
+            for (int i = 2; i < 17; i += 3) mac[i] = ':';
+        }
+    }
+    // 形态 2: 属性里的 xx:xx:xx:xx:xx:xx
+    if (mac.empty()) {
+        for (size_t i = 0; i + 17 <= out.size(); i++) {
+            std::string s = out.substr(i, 17);
+            bool ok = true;
+            for (int j = 0; j < 17; j++) {
+                if (j % 3 == 2) { if (s[j] != ':') { ok = false; break; } }
+                else if (!isxdigit((unsigned char)s[j])) { ok = false; break; }
+            }
+            if (ok) { mac = s; break; }
+        }
+    }
+    if (mac.empty()) {
+        GP_LOG("bt detect: a2dp pcm found but mac not parsed");
+        return "";
+    }
+    std::string dev = "bluealsa:DEV=" + mac + ",PROFILE=a2dp";
+    GP_LOG("bt detect: %s", dev.c_str());
+    return dev;
 }
 
 void PlayCore::setEventCallback(EventFn fn, void* userData)
@@ -344,6 +405,16 @@ void PlayCore::onDemuxPadAdded(GstElement* demux, GstPad* pad, void* self)
             GP_LOG("audio factory failed q=%d d=%d c=%d r=%d v=%d s=%d",
                    !!queueA, !!decode, !!convert, !!resample, !!volume, !!sink);
             return;
+        }
+        // 音频出口: 连了蓝牙耳机就切 bluealsa, 否则系统 default (扬声器)
+        if (sink) {
+            std::string btDev = detectBtAudioDevice();
+            if (!btDev.empty()) {
+                g_object_set(G_OBJECT(sink), "device", btDev.c_str(), NULL);
+                GP_LOG("audio sink -> bluealsa");
+            } else {
+                GP_LOG("audio sink -> default (speaker)");
+            }
         }
         gst_bin_add_many(GST_BIN(core->m_pipeline), queueA, decode, convert,
                          resample, volume, sink, NULL);

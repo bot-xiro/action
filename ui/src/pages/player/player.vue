@@ -327,20 +327,28 @@ export default {
     },
 
     // ---------------- 层级修复 + 防息屏 ----------------
-    // 真机实测: 视频偶发盖住整个 UI (层级错乱), 用户点一下屏幕后恢复.
+    // 真机实测: 视频面 (waylandsink) 初始盖在整个 UI 之上, 点一下屏幕 UI 重新置顶.
     // 首播出画后自动等效「点一下」: exec 注入合成点击 (press+release);
-    // 点击会触发 toggleBar, 300ms 后统一 showBar 收拾状态 (随后按既有逻辑自动隐藏).
+    // 起播后连踢三次 (0 / 0.8s / 2s), 覆盖 surface 创建 / 首帧渲染 / 稳定三个时机.
     // exec 不可用时退化为控制条 v-if 翻转强制 UI 重新合成.
     fixLayer: function () {
       var self = this
-      if (player.keepAwakeSupported()) {
-        player.tapScreen()
-        setTimer(this, 300, function () { self.showBar() })
-      } else {
+      if (!player.keepAwakeSupported()) {
         var was = this.barVisible
         this.barVisible = !this.barVisible
         setTimer(this, 120, function () { self.barVisible = was })
+        return
       }
+      this.kickLayer()
+      setTimer(this, 800, function () { if (self.playing) self.kickLayer() })
+      setTimer(this, 2000, function () { if (self.playing) self.kickLayer() })
+    },
+
+    // 合成一次点击 (让 UI 重新置顶), 随后把控制条恢复为显示态
+    kickLayer: function () {
+      var self = this
+      player.tapScreen()
+      setTimer(this, 260, function () { self.showBar() })
     },
 
     // 播放中防息屏: 官方 JSAPI 优先 (系统播放器同款三件套, 见 services/screenon.js),

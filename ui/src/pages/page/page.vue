@@ -45,22 +45,22 @@
           </div>
           <text v-if="actStatus !== ''" class="act-status">{{ actStatus }}</text>
         </div>
-        <!-- 交互行: 点赞/投币/收藏/三连/稍后再看 (登录后可用, 状态高亮) -->
+        <!-- 交互行: 点赞/投币/收藏/三连/稍后再看 (状态高亮; 均可再点取消, 投币除外) -->
         <div v-if="detail" class="actrow">
           <div :class="['act-btn', detail.reqLike ? 'act-on' : '']" @click="doLike">
             <text :class="['act-text', detail.reqLike ? 'act-text-on' : '']">{{ detail.reqLike ? '已赞' : '点赞' }}</text>
           </div>
-          <div :class="['act-btn', detail.reqCoin ? 'act-on' : '']" @click="doCoin">
+          <div :class="['act-btn', detail.reqCoin ? 'act-on' : '']" @click="openCoinPicker">
             <text :class="['act-text', detail.reqCoin ? 'act-text-on' : '']">{{ detail.reqCoin ? '已币' : '投币' }}</text>
           </div>
-          <div :class="['act-btn', detail.reqFav ? 'act-on' : '']" @click="doFav">
+          <div :class="['act-btn', detail.reqFav ? 'act-on' : '']" @click="onFavTap">
             <text :class="['act-text', detail.reqFav ? 'act-text-on' : '']">{{ detail.reqFav ? '已藏' : '收藏' }}</text>
           </div>
           <div class="act-btn act-triple" @click="doTriple">
             <text class="act-text">三连</text>
           </div>
-          <div class="act-btn" @click="doToview">
-            <text class="act-text">稍后看</text>
+          <div :class="['act-btn', detail.reqToview ? 'act-on' : '']" @click="doToview">
+            <text :class="['act-text', detail.reqToview ? 'act-text-on' : '']">{{ detail.reqToview ? '已加' : '稍后看' }}</text>
           </div>
         </div>
 
@@ -163,6 +163,32 @@
         </div>
       </div>
     </div>
+
+    <!-- 选择器浮层: 收藏夹 / 投币数量 (遮罩不绑点击, 只能点「取消」关闭, 防误触) -->
+    <div v-if="pickerMode !== ''" class="picker-mask">
+      <div class="picker">
+        <text class="picker-title">{{ pickerMode === 'fav' ? '选择收藏夹' : '投币数量' }}</text>
+        <div v-if="pickerMode === 'coin'" class="picker-row">
+          <div class="picker-coin" @click="pickCoin(1)">
+            <text class="picker-coin-text">投 1 币</text>
+          </div>
+          <div class="picker-coin" @click="pickCoin(2)">
+            <text class="picker-coin-text">投 2 币</text>
+          </div>
+        </div>
+        <scroller v-else class="picker-list" scroll-direction="vertical" :show-scrollbar="true">
+          <text v-if="favLoading" class="picker-state">加载收藏夹…</text>
+          <text v-else-if="favFolders.length === 0" class="picker-state">没有可用收藏夹 (可在网页端创建)</text>
+          <div v-for="f in favFolders" :key="f.id" class="picker-item" @click="pickFolder(f)">
+            <text class="picker-item-title">{{ f.title }}</text>
+            <text class="picker-item-sub">{{ f.mediaCount }} 个</text>
+          </div>
+        </scroller>
+        <div class="picker-cancel" @click="closePicker">
+          <text class="picker-cancel-text">取消</text>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -174,7 +200,7 @@
 import { createIME } from '../../services/ime.js'
 import {
   getVideoDetail, getRelatedVideos, getReplies, addReply,
-  likeVideo, addCoin, dealFav, addToViewLater, getFavFolders
+  likeVideo, addCoin, dealFav, addToViewLater, delToViewLater, isInToView, getFavFolders
 } from '../../services/bili.js'
 import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
@@ -289,7 +315,10 @@ export default {
       // ---- 交互操作 (赞/币/藏/三连/稍后再看) ----
       actStatus: '',
       actBusy: false,
-      favFolders: null,   // 收藏夹列表缓存 (含 favoured 状态, 按当前 aid 拉取)
+      favFolders: [],     // 收藏夹列表 (含 favoured 状态, 按当前 aid 拉取)
+      favFoldersAid: 0,   // 缓存对应的 aid (0 = 未加载)
+      favLoading: false,
+      pickerMode: '',     // '' | 'fav'(收藏夹选择) | 'coin'(投币数量选择)
       // ---- 评论区状态 ----
       sortMode: 'hot',   // 'hot'=热度 / 'time'=最新
       replies: [],
@@ -332,7 +361,9 @@ export default {
       this.descExpanded = false
       this.tab = 'detail'
       this.actStatus = ''
-      this.favFolders = null
+      this.pickerMode = ''
+      this.favFolders = []
+      this.favFoldersAid = 0
       this.load()
       this.scrollTop()
     },
@@ -362,6 +393,16 @@ export default {
         this._newOptionsBound = true
         const self = this
         this.$page.onNewOptions = function (options) { self.onNewOptions(options) }
+      }
+      // 本页自带「左右滑动切 详情/评论」手势, 必须关掉框架的滑动返回
+      // (真机实测: 横滑会触发系统左滑退出, 直接把应用退出到上一个 app)
+      if (this.$page && this.$page.$npage && !this._backDisabled) {
+        try {
+          this.$page.$npage.setSupportBack(false)
+          this._backDisabled = true
+        } catch (e) {
+          console.log('[page] setSupportBack(false) failed: ' + (e && e.message ? e.message : e))
+        }
       }
       const wasLogged = this.logged
       this.logged = hasCookie()
@@ -401,6 +442,15 @@ export default {
             const p = d.pages[this.currentPage - 1]
             if (p && p.part) this.detail.title = d.title + '（' + p.part + '）'
           }
+          // 稍后再看状态: view 接口不返回, 异步查一次 (失败静默, 按钮退化为未加入态)
+          if (this.logged && d.aid) {
+            const self2 = this
+            isInToView(d.aid).then(function (inList) {
+              if (gen === self2.generation && self2.detail && self2.detail.aid === d.aid) {
+                self2.detail.reqToview = inList
+              }
+            })
+          }
         } catch (err) {
           if (gen !== this.generation) return
           console.log('[bili] detail error: ' + (err && err.message ? err.message : err))
@@ -432,7 +482,9 @@ export default {
       this.related = []
       this.titleExpanded = false
       this.descExpanded = false
-      this.favFolders = null
+      this.pickerMode = ''
+      this.favFolders = []
+      this.favFoldersAid = 0
       this.resetComments()
       this.load()
     },
@@ -508,7 +560,7 @@ export default {
       if (this.tab === 'detail') {
         if (this.loading) return
         // 保留展开态, 强拉最新详情 (交互后状态刷新也走这里)
-        this.favFolders = null
+        this.favFoldersAid = 0
         this.reloadDetail()
       } else {
         if (this.cLoading || !this.logged) return
@@ -556,20 +608,33 @@ export default {
       }
     },
 
-    async doCoin() {
+    // 投币: 打开数量选择器 (1 币 / 2 币)
+    openCoinPicker() {
       if (!this.detail || !this.detail.aid || this.actBusy) return
       if (!this.requireLogin()) return
       if (this.detail.reqCoin) {
         this.actStatus = '该视频已投过币'
         return
       }
+      this.actStatus = ''
+      this.pickerMode = 'coin'
+    },
+
+    pickCoin(n) {
+      this.closePicker()
+      this.doCoin(n)
+    },
+
+    async doCoin(n) {
+      if (!this.detail || !this.detail.aid || this.actBusy) return
+      const num = n === 2 ? 2 : 1
       this.actBusy = true
       this.actStatus = '投币中…'
       try {
-        const r = await addCoin(this.detail.aid, 1, false)
+        const r = await addCoin(this.detail.aid, num, false)
         this.detail.reqCoin = true
         if (r && r.like) this.detail.reqLike = true
-        this.actStatus = '✓ 已投 1 币'
+        this.actStatus = '✓ 已投 ' + num + ' 币'
         this.reloadDetail()
       } catch (err) {
         this.actStatus = '投币失败: ' + (err && err.message ? err.message : String(err))
@@ -578,53 +643,101 @@ export default {
       }
     },
 
-    async ensureFavFolders() {
-      if (!this.detail) return null
-      if (this.favFolders && this.favFolders._aid === this.detail.aid) return this.favFolders
-      const list = await getFavFolders(this.detail.aid)
-      list._aid = this.detail.aid
-      this.favFolders = list
-      return list
-    },
-
-    // 默认收藏夹 = list-all 首个 (未收藏时用); 已收藏时取 favoured 的那个 (取消用)
-    pickFavFolder(folders) {
-      if (!folders || folders.length === 0) return null
-      for (let i = 0; i < folders.length; i++) {
-        if (folders[i].favoured) return folders[i]
-      }
-      return folders[0]
-    },
-
-    async doFav() {
+    // 收藏: 未收藏 -> 弹收藏夹选择; 已收藏 -> 再点即取消
+    onFavTap() {
       if (!this.detail || !this.detail.aid || this.actBusy) return
       if (!this.requireLogin()) return
+      if (this.detail.reqFav) {
+        this.doFavCancel()
+        return
+      }
+      this.actStatus = ''
+      this.pickerMode = 'fav'
+      this.loadFavFolders()
+    },
+
+    closePicker() {
+      this.pickerMode = ''
+    },
+
+    // 收藏夹列表 (含 favoured 状态), 按 aid 缓存
+    loadFavFolders() {
+      if (!this.detail || !this.detail.aid) return
+      if (this.favFoldersAid === this.detail.aid && this.favFolders.length > 0) return
+      const gen = this.generation
+      const self = this
+      this.favLoading = true
+      getFavFolders(this.detail.aid).then(function (list) {
+        if (gen !== self.generation) return
+        self.favFolders = list
+        self.favFoldersAid = self.detail ? self.detail.aid : 0
+        self.favLoading = false
+      }).catch(function (err) {
+        if (gen !== self.generation) return
+        self.favLoading = false
+        self.favFolders = []
+        self.actStatus = '收藏夹加载失败: ' + (err && err.message ? err.message : String(err))
+      })
+    },
+
+    pickFolder(f) {
+      this.closePicker()
+      this.doFavAdd(f)
+    },
+
+    async doFavAdd(folder) {
+      if (!this.detail || !this.detail.aid || this.actBusy) return
       this.actBusy = true
-      const want = !this.detail.reqFav
-      this.actStatus = want ? '收藏中…' : '取消中…'
+      this.actStatus = '收藏中…'
       try {
-        const folders = await this.ensureFavFolders()
-        const folder = this.pickFavFolder(folders)
-        if (!folder) throw new Error('没有可用收藏夹, 请先在网页端创建')
-        await dealFav(this.detail.aid, folder.id, want)
-        this.detail.reqFav = want
-        this.actStatus = want ? ('✓ 已收藏·' + folder.title) : '已取消收藏'
+        await dealFav(this.detail.aid, folder.id, true)
+        this.detail.reqFav = true
+        this.favFoldersAid = 0   // 收藏状态变了, 缓存作废
+        this.actStatus = '✓ 已收藏·' + folder.title
         this.reloadDetail()
       } catch (err) {
-        this.favFolders = null
         this.actStatus = '收藏失败: ' + (err && err.message ? err.message : String(err))
       } finally {
         this.actBusy = false
       }
     },
 
-    // 三连: 点赞 + 投币 + 收藏 一次完成 (已做过的步骤跳过)
+    async doFavCancel() {
+      if (!this.detail || !this.detail.aid || this.actBusy) return
+      this.actBusy = true
+      this.actStatus = '取消收藏中…'
+      try {
+        // 从 favoured 的收藏夹移除 (缓存没有就先拉一次)
+        if (this.favFoldersAid !== this.detail.aid || this.favFolders.length === 0) {
+          this.favFolders = await getFavFolders(this.detail.aid)
+          this.favFoldersAid = this.detail.aid
+        }
+        let folder = null
+        for (let i = 0; i < this.favFolders.length; i++) {
+          if (this.favFolders[i].favoured) { folder = this.favFolders[i]; break }
+        }
+        if (!folder && this.favFolders.length > 0) folder = this.favFolders[0]
+        if (!folder) throw new Error('找不到收藏夹')
+        await dealFav(this.detail.aid, folder.id, false)
+        this.detail.reqFav = false
+        this.favFoldersAid = 0
+        this.actStatus = '已取消收藏'
+        this.reloadDetail()
+      } catch (err) {
+        this.actStatus = '取消失败: ' + (err && err.message ? err.message : String(err))
+      } finally {
+        this.actBusy = false
+      }
+    },
+
+    // 三连: 点赞 + 投币(1) + 收藏 一次完成 (已做过的步骤跳过; 收藏用默认/已收藏的夹)
     async doTriple() {
       if (!this.detail || !this.detail.aid || this.actBusy) return
       if (!this.requireLogin()) return
       this.actBusy = true
       this.actStatus = '三连中…'
       const aid = this.detail.aid
+      const gen = this.generation
       try {
         if (!this.detail.reqLike) {
           await likeVideo(aid, 1)
@@ -635,32 +748,47 @@ export default {
           this.detail.reqCoin = true
         }
         if (!this.detail.reqFav) {
-          const folders = await this.ensureFavFolders()
-          const folder = this.pickFavFolder(folders)
+          const list = await getFavFolders(aid)
+          let folder = null
+          for (let i = 0; i < list.length; i++) {
+            if (list[i].favoured) { folder = list[i]; break }
+          }
+          if (!folder && list.length > 0) folder = list[0]
           if (!folder) throw new Error('没有可用收藏夹')
           await dealFav(aid, folder.id, true)
           this.detail.reqFav = true
+          this.favFoldersAid = 0
         }
+        if (gen !== this.generation) return
         this.actStatus = '✓ 三连成功！'
         this.reloadDetail()
       } catch (err) {
-        this.favFolders = null
         this.actStatus = '三连失败: ' + (err && err.message ? err.message : String(err))
       } finally {
         this.actBusy = false
       }
     },
 
+    // 稍后再看: 未加入 -> 加入; 已加入 -> 再点即移出
     async doToview() {
       if (!this.detail || !this.detail.aid || this.actBusy) return
       if (!this.requireLogin()) return
       this.actBusy = true
-      this.actStatus = '添加中…'
+      const want = !this.detail.reqToview
+      this.actStatus = want ? '添加中…' : '移除中…'
       try {
-        await addToViewLater(this.detail.aid)
-        this.actStatus = '✓ 已加入稍后再看'
+        if (want) {
+          await addToViewLater(this.detail.aid)
+          this.detail.reqToview = true
+          this.actStatus = '✓ 已加入稍后再看'
+        } else {
+          await delToViewLater(this.detail.aid)
+          this.detail.reqToview = false
+          this.actStatus = '已移出稍后再看'
+        }
       } catch (err) {
-        this.actStatus = '添加失败: ' + (err && err.message ? err.message : String(err))
+        this.actStatus = (want ? '添加失败: ' : '移除失败: ') +
+          (err && err.message ? err.message : String(err))
       } finally {
         this.actBusy = false
       }
@@ -1263,5 +1391,94 @@ export default {
 /* 进入动画: 从右滑入 (0.9.1 教训: 别用 opacity, transition 不支持会黑屏) */
 .page-enter {
   transform: translateX(960px);
+}
+/* ---------- 选择器浮层 (收藏夹 / 投币数量) ---------- */
+.picker-mask {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 960px;
+  height: 266px;
+  background-color: rgba(0, 0, 0, 0.65);
+  justify-content: center;
+  align-items: center;
+}
+.picker {
+  width: 520px;
+  background-color: #21242b;
+  border-radius: 14px;
+  flex-direction: column;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+.picker-title {
+  font-size: 20px;
+  color: #ffffff;
+  margin-bottom: 8px;
+  text-align: center;
+}
+.picker-list {
+  width: 492px;
+  height: 116px;
+  flex-direction: column;
+}
+.picker-state {
+  font-size: 17px;
+  color: #8a94a6;
+  margin-top: 10px;
+  text-align: center;
+}
+.picker-item {
+  height: 50px;
+  flex-direction: row;
+  align-items: center;
+  border-bottom-width: 1px;
+  border-bottom-color: #2c313a;
+}
+.picker-item-title {
+  font-size: 19px;
+  color: #e8edf3;
+  flex: 1;
+  lines: 1;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.picker-item-sub {
+  font-size: 16px;
+  color: #6a7684;
+}
+.picker-row {
+  flex-direction: row;
+  justify-content: center;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+.picker-coin {
+  width: 170px;
+  height: 60px;
+  border-radius: 30px;
+  background-color: #fb7299;
+  justify-content: center;
+  align-items: center;
+  margin-left: 12px;
+  margin-right: 12px;
+}
+.picker-coin-text {
+  font-size: 22px;
+  color: #ffffff;
+}
+.picker-cancel {
+  height: 44px;
+  border-radius: 22px;
+  background-color: #2c313a;
+  justify-content: center;
+  align-items: center;
+  margin-top: 8px;
+}
+.picker-cancel-text {
+  font-size: 19px;
+  color: #c8d2de;
 }
 </style>

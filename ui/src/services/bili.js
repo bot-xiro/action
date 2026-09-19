@@ -509,6 +509,9 @@ export async function getVideoDetail(bvid, noCache) {
     reqLike: ru.like === 1,
     reqCoin: (Number(ru.coin) || 0) > 0,
     reqFav: ru.favorite === 1,
+    // 稍后再看状态 view 接口不返回, 由页面异步查 isInToView 后回填;
+    // 这里先声明字段 (Vue2 新增属性不响应, 必须建对象时就带上)
+    reqToview: false,
     mid: (d.owner && d.owner.mid) || 0,
     // 分 P (同稿件多段)
     pages: (d.pages || []).map(function (p) {
@@ -838,6 +841,41 @@ export async function addToViewLater(aid) {
     throw new Error(body.message || ('添加失败 code=' + body.code))
   }
   return true
+}
+
+/**
+ * 取消稍后再看 (x/v2/history/toview/del, 需登录 + csrf)
+ */
+export async function delToViewLater(aid) {
+  const csrf = needCsrf()
+  const data = 'aid=' + encodeURIComponent(aid) + '&csrf=' + encodeURIComponent(csrf)
+  const body = postJson('https://api.bilibili.com/x/v2/history/toview/del', data, 15)
+  if (body.code !== 0) {
+    if (body.code === -101) throw new Error('登录已过期, 请重新登录')
+    if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
+    throw new Error(body.message || ('取消失败 code=' + body.code))
+  }
+  return true
+}
+
+/**
+ * 查询某视频是否已在稍后再看列表 (只看第一页 20 条, 够用且省请求).
+ * 失败返回 false (不阻塞详情页, 按钮退化为「未加入」态).
+ */
+export async function isInToView(aid) {
+  if (!auth.hasCookie()) return false
+  try {
+    const url = 'https://api.bilibili.com/x/v2/history/toview/web?pn=1&ps=20'
+    const body = getJson(url, 10)
+    if (body.code !== 0 || !body.data) return false
+    const list = body.data.list || []
+    for (let i = 0; i < list.length; i++) {
+      if (list[i] && Number(list[i].aid) === Number(aid)) return true
+    }
+  } catch (e) {
+    console.log('[bili] toview 状态查询失败: ' + (e && e.message ? e.message : e))
+  }
+  return false
 }
 
 // ================= 我的页面子列表 (历史记录/收藏/稍后再看, 需登录) =================
