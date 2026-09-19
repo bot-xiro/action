@@ -788,7 +788,11 @@ export async function addCoin(aid, multiply, withLike) {
  */
 export async function getFavFolders(rid) {
   if (!auth.hasCookie()) throw new Error('登录后才能查看收藏夹')
-  const url = 'https://api.bilibili.com/x/v3/fav/folder/created/list-all?type=2'
+  // up_mid 必填 (缺了返回 -400 请求错误, 真机实测): 用登录 cookie 里的 DedeUserID
+  const mid = auth.getMid()
+  if (!mid) throw new Error('Cookie 缺少 DedeUserID (请重新登录)')
+  const url = 'https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid='
+    + encodeURIComponent(mid) + '&type=2'
     + (rid ? '&rid=' + encodeURIComponent(rid) : '')
   const body = getJson(url, 15)
   if (body.code !== 0 || !body.data) {

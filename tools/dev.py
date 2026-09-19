@@ -115,6 +115,17 @@ if __name__ == '__main__':
     a = sys.argv[2:]
     if cmd == 'keepalive':
         keepalive(int(a[0]) if a else 600)
+    elif cmd == 'cap':
+        # 纯截图 (不注入任何事件), 供精确时序验证用
+        nm = a[0] if a else 'cap'
+        os.makedirs(OUT, exist_ok=True)
+        sh('miniapp_cli capture %s/%s.png' % (REMOTE, nm))
+        dst = os.path.join(OUT, nm + '.png')
+        run(['pull', '%s/%s.png' % (REMOTE, nm), dst])
+        print('cap %s %d bytes' % (dst, os.path.getsize(dst) if os.path.exists(dst) else 0))
+    elif cmd == 'tapshot':
+        # tapshot <name> <ax> <ay> <wx> <wy> [wait]
+        tapshot(a[0], a[1], a[2], a[3], a[4], a[5] if len(a) > 5 else 4.0)
     elif cmd == 'shot':
         # shot <name> [tapX tapY]  —— 可选: 截图前先点一下安全位置唤醒+重绘
         nm = a[0] if a else 'dev'

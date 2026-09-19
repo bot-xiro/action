@@ -128,6 +128,11 @@ export function getCsrf() {
   return memory.biliJct
 }
 
+/** 当前登录用户 mid (即 DedeUserID cookie 值); 未登录返回 '' */
+export function getMid() {
+  return memory.dedeUserId || ''
+}
+
 export function saveLogin(sessdata, biliJct, dedeUserId, profile) {
   memory.sessdata = sessdata || ''
   memory.biliJct = biliJct || ''
