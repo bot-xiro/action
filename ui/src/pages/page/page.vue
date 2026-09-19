@@ -200,7 +200,8 @@
 import { createIME } from '../../services/ime.js'
 import {
   getVideoDetail, getRelatedVideos, getReplies, addReply,
-  likeVideo, addCoin, dealFav, addToViewLater, delToViewLater, isInToView, getFavFolders
+  likeVideo, addCoin, dealFav, addToViewLater, delToViewLater, isInToView, getFavFolders,
+  getInteractState
 } from '../../services/bili.js'
 import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
@@ -442,14 +443,24 @@ export default {
             const p = d.pages[this.currentPage - 1]
             if (p && p.part) this.detail.title = d.title + '（' + p.part + '）'
           }
-          // 稍后再看状态: view 接口不返回, 异步查一次 (失败静默, 按钮退化为未加入态)
+          // 交互状态 (赞/币/藏) 与稍后再看: view 的 req_user 对本应用恒为空,
+          // 用专用状态接口异步补齐 (失败静默, 按钮退化为未操作态)
           if (this.logged && d.aid) {
             const self2 = this
+            // 状态查询是同步阻塞请求, 延后一拍让详情先画出来
+            afterPaint(function () {
+            getInteractState(d.aid).then(function (st) {
+              if (gen !== self2.generation || !self2.detail || self2.detail.aid !== d.aid) return
+              self2.detail.reqLike = st.like
+              self2.detail.reqCoin = st.coin
+              self2.detail.reqFav = st.fav
+            })
             isInToView(d.aid).then(function (inList) {
               if (gen === self2.generation && self2.detail && self2.detail.aid === d.aid) {
                 self2.detail.reqToview = inList
               }
             })
+            }, 30)
           }
         } catch (err) {
           if (gen !== this.generation) return
@@ -577,9 +588,8 @@ export default {
         this.detail.coinText = d.coinText
         this.detail.favText = d.favText
         this.detail.shareText = d.shareText
-        this.detail.reqLike = d.reqLike
-        this.detail.reqCoin = d.reqCoin
-        this.detail.reqFav = d.reqFav
+        // 注意: 不要用 d.reqLike/reqCoin/reqFav 覆盖 —— view 的 req_user 对本应用
+        // 恒为空对象, 覆盖会把刚点亮的按钮状态打回未操作态 (真机踩过)
       }).catch(() => {})
     },
 

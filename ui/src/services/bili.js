@@ -989,6 +989,42 @@ export async function getToViewList(pn) {
   return { items: items, count: body.data.count || 0 }
 }
 
+/**
+ * 稿件交互状态 (赞/币/藏).
+ * 背景: view 接口的 req_user 对本应用请求恒为空对象 (真机实测, 带 buvid3 也一样),
+ * 改用三个专用状态接口: has/like / archive/coins / 收藏夹 list-all(rid).favoured.
+ * 各接口失败静默 (对应按钮退化为未操作态, 不阻塞详情页).
+ * @returns {Promise<{like:boolean, coin:boolean, coinCount:number, fav:boolean}>}
+ */
+export async function getInteractState(aid) {
+  const out = { like: false, coin: false, coinCount: 0, fav: false }
+  if (!auth.hasCookie() || !aid) return out
+  try {
+    const b = getJson('https://api.bilibili.com/x/web-interface/archive/has/like?aid='
+      + encodeURIComponent(aid), 10)
+    out.like = Number(b && b.data) === 1
+  } catch (e) {
+    console.log('[bili] has/like 查询失败: ' + (e && e.message ? e.message : e))
+  }
+  try {
+    const b2 = getJson('https://api.bilibili.com/x/web-interface/archive/coins?aid='
+      + encodeURIComponent(aid), 10)
+    out.coinCount = (b2 && b2.data && Number(b2.data.multiply)) || 0
+    out.coin = out.coinCount > 0
+  } catch (e) {
+    console.log('[bili] coins 查询失败: ' + (e && e.message ? e.message : e))
+  }
+  try {
+    const folders = await getFavFolders(aid)
+    for (let i = 0; i < folders.length; i++) {
+      if (folders[i].favoured) { out.fav = true; break }
+    }
+  } catch (e) {
+    console.log('[bili] 收藏状态查询失败: ' + (e && e.message ? e.message : e))
+  }
+  return out
+}
+
 // ================= 登录 (二维码 + Cookie) / 我的 / 动态 / 评论 =================
 
 /**
