@@ -4,7 +4,7 @@
 #   gh-ci.py status                查询 miniapp 最新 run 状态
 #   gh-ci.py watch                 轮询直到完成
 #   gh-ci.py download [latest|ID] [dest]   下载 run 产物 zip
-import sys, os, json, time, urllib.request
+import sys, subprocess, os, json, time, urllib.request
 
 # 2026-10-01: 仓库已从 soarnext/bilibilipan 快进合并到 bot-xiro/action 的 miniapp 分支, 旧仓库已删除
 OWNER = 'bot-xiro'
@@ -15,9 +15,37 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.normpath(os.path.join(ROOT, '..', '..', '.ghtok'))
 
 
+
+def token_from_gh_cli():
+    """退化: 用 gh CLI 的登录 token (keyring). 这样不需要在磁盘上留 token 文件."""
+    try:
+        p = subprocess.run(['gh', 'auth', 'token'], capture_output=True, text=True, timeout=20)
+        if p.returncode == 0 and p.stdout.strip():
+            return p.stdout.strip()
+    except Exception:
+        pass
+    return ''
+
 def token():
-    with open(TOKEN_FILE, 'r', encoding='utf-8') as f:
-        return f.read().strip()
+    """token 取值顺序: 环境变量 GH_TOKEN/GITHUB_TOKEN -> ../../.ghtok -> 空.
+    2026-10-01 起主仓库 bot-xiro/action 是公开仓库, 无 token 也能查 runs / 下产物."""
+    t = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    if t:
+        return t.strip()
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    return token_from_gh_cli()
+
+
+def auth_headers(extra=None):
+    h = {'Accept': 'application/vnd.github+json', 'User-Agent': 'bilibilipan-ci'}
+    t = token()
+    if t:
+        h['Authorization'] = 'Bearer ' + t
+    if extra:
+        h.update(extra)
+    return h
 
 
 def opener(use_proxy=False):
@@ -32,11 +60,7 @@ def opener(use_proxy=False):
 def api(path, tries=4):
     last = None
     for i in range(tries):
-        req = urllib.request.Request('https://api.github.com' + path, headers={
-            'Authorization': 'Bearer ' + token(),
-            'Accept': 'application/vnd.github+json',
-            'User-Agent': 'bilibilipan-ci',
-        })
+        req = urllib.request.Request('https://api.github.com' + path, headers=auth_headers())
         try:
             return json.load(opener().open(req, timeout=60))
         except Exception as e:
@@ -83,10 +107,7 @@ def download(run_id, dest):
     os.makedirs(dest, exist_ok=True)
     for a in art.get('artifacts', []):
         print('artifact %s (%d bytes)' % (a['name'], a['size_in_bytes']))
-        req = urllib.request.Request(a['archive_download_url'], headers={
-            'Authorization': 'Bearer ' + token(),
-            'User-Agent': 'bilibilipan-ci',
-        })
+        req = urllib.request.Request(a['archive_download_url'], headers=auth_headers())
         # 1) 带 auth + 不跟随重定向, 拿 blob Location
         op1 = urllib.request.build_opener(NoRedirect)
         loc = None

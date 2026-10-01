@@ -9,7 +9,7 @@
 # 说明:
 #   - 配额按账号统计, 私有仓库的 artifact + 日志 + 缓存都算; 公开仓库免费不计入.
 #   - 只删旧产物/旧 run, 不动最新一次构建 (gh-ci.py download latest 仍然可用).
-import sys, os, json, time, urllib.request, urllib.error
+import sys, os, json, time, subprocess, urllib.request, urllib.error
 
 # 仅默认示例; private_repos() 直接走 /user/repos 取当前 token 账号的全部私有仓库
 OWNER = 'soarnext'
@@ -17,19 +17,40 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.normpath(os.path.join(ROOT, '..', '..', '.ghtok'))
 
 
+
+def token_from_gh_cli():
+    """退化: 用 gh CLI 的登录 token (keyring). 这样不需要在磁盘上留 token 文件."""
+    try:
+        p = subprocess.run(['gh', 'auth', 'token'], capture_output=True, text=True, timeout=20)
+        if p.returncode == 0 and p.stdout.strip():
+            return p.stdout.strip()
+    except Exception:
+        pass
+    return ''
+
 def token():
-    with open(TOKEN_FILE, 'r', encoding='utf-8') as f:
-        return f.read().strip()
+    """环境变量 GH_TOKEN/GITHUB_TOKEN -> ../../.ghtok -> 空 (空时只能看公开仓库)."""
+    t = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    if t:
+        return t.strip()
+    if os.path.exists(TOKEN_FILE):
+        with open(TOKEN_FILE, 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    return token_from_gh_cli()
+
+
+def headers():
+    h = {'Accept': 'application/vnd.github+json', 'User-Agent': 'bilibilipan-ci'}
+    t = token()
+    if t:
+        h['Authorization'] = 'Bearer ' + t
+    return h
 
 
 def api(path, method='GET', tries=4):
     last = None
     for i in range(tries):
-        req = urllib.request.Request('https://api.github.com' + path, method=method, headers={
-            'Authorization': 'Bearer ' + token(),
-            'Accept': 'application/vnd.github+json',
-            'User-Agent': 'bilibilipan-ci',
-        })
+        req = urllib.request.Request('https://api.github.com' + path, method=method, headers=headers())
         try:
             r = urllib.request.build_opener().open(req, timeout=60)
             body = r.read()
@@ -49,11 +70,7 @@ def api(path, method='GET', tries=4):
 def paged(path):
     out, url = [], 'https://api.github.com' + path
     while url:
-        req = urllib.request.Request(url, headers={
-            'Authorization': 'Bearer ' + token(),
-            'Accept': 'application/vnd.github+json',
-            'User-Agent': 'bilibilipan-ci',
-        })
+        req = urllib.request.Request(url, headers=headers())
         r = urllib.request.build_opener().open(req, timeout=60)
         data = json.loads(r.read() or b'{}')
         if isinstance(data, dict):
