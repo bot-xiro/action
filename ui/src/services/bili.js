@@ -785,6 +785,12 @@ export async function addCoin(aid, multiply, withLike) {
  * 收藏夹列表 (x/v3/fav/folder/created/list-all, 需登录)
  * @param {number} rid 稿件 aid (传入时返回该稿件的收藏状态)
  * @returns {Promise<Array<{id,title,mediaCount,favoured}>>}
+ *
+ * 2026-10-01 真机+实账号实测 (关键坑):
+ *   传 rid 时每个收藏夹返回的是 **fav_state** (int), 该稿件在这个夹里就是 1, 否则 0.
+ *   接口**不返回 favoured** 字段 —— 之前按 favoured===1 判断导致收藏按钮状态永远是未收藏.
+ *   实测: rid=116809621572499 (已收藏) -> 默认收藏夹 fav_state=1, 其余 12 个夹全 0.
+ *   另有轻量接口 x/v2/fav/video/favoured?aid= 直接返回 {count, favoured:true/false}.
  */
 export async function getFavFolders(rid) {
   if (!auth.hasCookie()) throw new Error('登录后才能查看收藏夹')
@@ -808,7 +814,8 @@ export async function getFavFolders(rid) {
       id: f.id || 0,
       title: f.title || '收藏夹',
       mediaCount: f.media_count || 0,
-      favoured: f.favoured === 1
+      // fav_state=1 表示该稿件在此收藏夹中; 兼容个别版本直接返回 favoured 的情况
+      favoured: f.fav_state === 1 || f.favoured === 1 || f.favoured === true
     })
   }
   return out
@@ -992,7 +999,7 @@ export async function getToViewList(pn) {
 /**
  * 稿件交互状态 (赞/币/藏).
  * 背景: view 接口的 req_user 对本应用请求恒为空对象 (真机实测, 带 buvid3 也一样),
- * 改用三个专用状态接口: has/like / archive/coins / 收藏夹 list-all(rid).favoured.
+ * 改用三个专用状态接口: has/like / archive/coins / fav/video/favoured (旧注释里的 list-all(rid).favoured 是错的, 见 getFavFolders 注释).
  * 各接口失败静默 (对应按钮退化为未操作态, 不阻塞详情页).
  * @returns {Promise<{like:boolean, coin:boolean, coinCount:number, fav:boolean}>}
  */
@@ -1014,13 +1021,26 @@ export async function getInteractState(aid) {
   } catch (e) {
     console.log('[bili] coins 查询失败: ' + (e && e.message ? e.message : e))
   }
+  // 收藏状态: 先用轻量专用接口 (一次请求就给 true/false),
+  // 失败再退化成扫收藏夹的 fav_state (list-all 传 rid)
   try {
-    const folders = await getFavFolders(aid)
-    for (let i = 0; i < folders.length; i++) {
-      if (folders[i].favoured) { out.fav = true; break }
+    const b3 = getJson('https://api.bilibili.com/x/v2/fav/video/favoured?aid='
+      + encodeURIComponent(aid), 10)
+    if (b3 && b3.code === 0 && b3.data && typeof b3.data.favoured === 'boolean') {
+      out.fav = b3.data.favoured
+    } else {
+      throw new Error('favoured 接口 code=' + (b3 && b3.code))
     }
   } catch (e) {
-    console.log('[bili] 收藏状态查询失败: ' + (e && e.message ? e.message : e))
+    console.log('[bili] fav/video/favoured 失败, 退化扫收藏夹: ' + (e && e.message ? e.message : e))
+    try {
+      const folders = await getFavFolders(aid)
+      for (let i = 0; i < folders.length; i++) {
+        if (folders[i].favoured) { out.fav = true; break }
+      }
+    } catch (e2) {
+      console.log('[bili] 收藏状态查询失败: ' + (e2 && e2.message ? e2.message : e2))
+    }
   }
   return out
 }
