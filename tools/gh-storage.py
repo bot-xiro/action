@@ -4,13 +4,14 @@
 #   py -3 tools/gh-storage.py report
 #       # 列出所有私有仓库的 artifact / 缓存占用与总量
 #   py -3 tools/gh-storage.py prune [--keep 1] [--runs-days 7] [--runs-keep 3]
-#                                   [--repo soarnext/bilibilipan] [--dry-run]
+#                                   [--repo owner/repo] [--dry-run]
 #       # 每个 artifact 名字只保留最新 keep 个; 删除 runs-days 天前且不在最新 runs-keep 个之内的 run (连带日志)
 # 说明:
 #   - 配额按账号统计, 私有仓库的 artifact + 日志 + 缓存都算; 公开仓库免费不计入.
 #   - 只删旧产物/旧 run, 不动最新一次构建 (gh-ci.py download latest 仍然可用).
 import sys, os, json, time, urllib.request, urllib.error
 
+# 仅默认示例; private_repos() 直接走 /user/repos 取当前 token 账号的全部私有仓库
 OWNER = 'soarnext'
 ROOT = os.path.dirname(os.path.abspath(__file__))
 TOKEN_FILE = os.path.normpath(os.path.join(ROOT, '..', '..', '.ghtok'))

@@ -6,8 +6,9 @@
 #   gh-ci.py download [latest|ID] [dest]   下载 run 产物 zip
 import sys, os, json, time, urllib.request
 
-OWNER = 'soarnext'
-REPO = 'bilibilipan'
+# 2026-10-01: 仓库已从 soarnext/bilibilipan 快进合并到 bot-xiro/action 的 miniapp 分支, 旧仓库已删除
+OWNER = 'bot-xiro'
+REPO = 'action'
 BRANCH = 'miniapp'
 PROXY = 'http://127.0.0.1:10808'
 ROOT = os.path.dirname(os.path.abspath(__file__))
