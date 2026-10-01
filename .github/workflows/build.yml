@@ -1,11 +1,47 @@
 name: Build AMR
 
+# 存储策略 (账号 0.5GB Actions 配额, 私有仓库 artifact 全量计入):
+#   - 产物 retention-days: 2 (默认 90 天会迅速吃满配额)
+#   - 每次构建后只保留同名产物最新 2 份 (Prune 步骤, 需 actions: write)
+#   - probe 探测应用只在 probe/** 变更时构建, 避免每次推送都产出一份
+#   - 同分支并发构建自动取消 (省 runner 分钟, 也少一份产物)
 on:
   push:
     branches: [main, miniapp]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+
 jobs:
+  changes:
+    # 判断本次是否真的动了 probe/ (或手动触发), 决定要不要跑 probe 任务
+    runs-on: ubuntu-22.04
+    outputs:
+      probe: ${{ steps.filter.outputs.probe }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: filter
+        name: Detect probe changes
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "probe=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only HEAD^ HEAD 2>/dev/null | grep -qE '^(probe/|\.github/workflows/build\.yml)'; then
+            echo "probe=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "probe=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
     # ubuntu-22.04: GCC 11.4 (GLIBCXX_3.4.29) + glibc 2.35,
     # 低于设备 libstdc++/libc 上限, 产物可直接加载
@@ -100,11 +136,31 @@ jobs:
           name: bilibilipan-amr
           path: ./ui/*.amr
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 2
+
+      - name: Prune old artifacts (0.5GB quota)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          # 同名产物只保留最新 2 份 (含本次), 其余立刻删除, 避免默认 90 天留存吃满配额
+          # 清理失败不影响构建结果 (配额问题不该让产物作废)
+          ids=$(gh api "/repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+                  --jq '.artifacts | group_by(.name) | map(sort_by(.created_at) | reverse | .[2:]) | flatten | .[].id' || true)
+          for id in $ids; do
+            gh api -X DELETE "/repos/${{ github.repository }}/actions/artifacts/$id" \
+              && echo "pruned artifact $id" || echo "prune failed: $id"
+          done
+          echo "剩余产物:"
+          gh api "/repos/${{ github.repository }}/actions/artifacts?per_page=100" \
+            --jq '.artifacts[] | "  \(.name) \(.size_in_bytes/1048576|floor)MB \(.created_at)"' || true
 
   # 独立探测 app videoprobe (appid 8001812345678999):
   # 跟随 skill media-kms.md 从零实现, 不复用主工程代码, 用于分层/方向可行性确认.
+  # 仅在 probe/** 变更或手动触发时构建 (省额度, 也少一份产物).
   probe:
+    needs: changes
+    if: needs.changes.outputs.probe == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -162,4 +218,4 @@ jobs:
           name: videoprobe-amr
           path: ./probe/ui/*.amr
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 2
