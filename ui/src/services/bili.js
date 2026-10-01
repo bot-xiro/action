@@ -249,7 +249,19 @@ function thumb(url, w, h) {
   return url + '@' + w + 'w_' + h + 'h_1c.jpg'
 }
 
+// 详情页封面: 只限宽度, 保留原始比例 (不能用 _1c 裁切版本, 否则 16:9 会被压成 16:10 裁掉两边)
+function thumbAspect(url, w) {
+  if (!url) return ''
+  if (url.indexOf('//') === 0) url = 'https:' + url
+  if (url.indexOf('http://') === 0) url = 'https://' + url.substring(7)
+  if (url.indexOf('@') > 0) return url
+  return url + '@' + w + 'w.jpg'
+}
+
 // ================= 评论表情 (B 站 emote 优先 + unicode emoji 内置图) =================
+
+// 内置图未覆盖的 emoji 走 twemoji CDN (真机实测可达: 200 + 806B), 兜底不再显示空白.
+const TWEMOJI_CDN = 'https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/'
 
 // unicode emoji 设备字体渲染不出 (豆腐块), 常用的转成内置 PNG (CLI 编译时打包进应用,
 // 不依赖网络/CDN —— 防止系统不显示). key 为 twemoji 文件名 (不带 .png).
@@ -330,13 +342,17 @@ function scanEmoji(text, segs, builtin) {
     }
     if (convert) {
       // 优先内置图片 (打包文件, 不依赖网络); 未内置的保持原字符
-      const img = builtin ? builtin[names.join('-')] : null
+      const key = names.join('-')
+      const img = builtin ? builtin[key] : null
       if (img) {
         pushText(segs, buf)
         buf = ''
         segs.push({ t: 1, v: img, w: 30, h: 30 })
       } else {
-        buf += slice
+        // 内置图没有 -> 走 CDN (设备字体渲染不出 emoji, 留原字符等于空白)
+        pushText(segs, buf)
+        buf = ''
+        segs.push({ t: 1, v: TWEMOJI_CDN + key + '.png', w: 30, h: 30 })
       }
     } else {
       buf += slice   // ©®™ 单独出现, 保持文本
@@ -490,11 +506,18 @@ export async function getVideoDetail(bvid, noCache) {
   const ru = d.req_user || {}
   let pic = d.pic || ''
   if (pic.indexOf('//') === 0) pic = 'https:' + pic
+  // 封面比例: 优先用接口 dimension, 缺失时按 16:9 兜底
+  const dim = d.dimension || {}
+  let dimW = Number(dim.width) || 16, dimH = Number(dim.height) || 9
+  if (Number(dim.rotate) === 1) { const t = dimW; dimW = dimH; dimH = t }
+  if (dimW <= 0 || dimH <= 0) { dimW = 16; dimH = 9 }
   const out = {
     bvid: d.bvid || bvid,
     aid: d.aid || 0,
     title: d.title || '',
-    pic: thumb(pic, 640, 400),
+    pic: thumbAspect(pic, 640),
+    // 封面原始宽高 (按比例显示用; rotate=1 表示横竖互换)
+    dimW: dimW, dimH: dimH,
     desc: d.desc || '',
     author: (d.owner && d.owner.name) || '',
     duration: formatDuration(d.duration),
@@ -819,6 +842,36 @@ export async function getFavFolders(rid) {
     })
   }
   return out
+}
+
+/**
+ * 是否已收藏 (x/v2/fav/video/favoured, 一次请求给权威结果; 同步, 失败抛错)
+ * 注意: x/v2/fav/video/del 实测返回 code=0 但**并不会真的取消收藏**(真机+实账号验证),
+ * 取消必须走 deal + del_media_ids 且要带上"包含该稿件"的收藏夹 id.
+ */
+export function isFavoured(aid) {
+  if (!auth.hasCookie()) throw new Error('登录后才能查询收藏状态')
+  const b = getJson('https://api.bilibili.com/x/v2/fav/video/favoured?aid='
+    + encodeURIComponent(aid), 10)
+  if (!b || b.code !== 0 || !b.data) throw new Error('收藏状态接口错误 code=' + (b && b.code))
+  return b.data.favoured === true
+}
+
+/**
+ * 取消收藏: 逐个收藏夹 deal(del). 稿件可能同时在多个夹里 (B 站允许),
+ * 只删一个会出现"界面显示已取消但实际还在收藏夹"的假成功.
+ * @returns {Promise<Array<{id,title,msg}>>} 失败的夹 (空数组=全部成功)
+ */
+export async function cancelFav(aid, folders) {
+  const failed = []
+  for (let i = 0; i < folders.length; i++) {
+    try {
+      await dealFav(aid, folders[i].id, false)
+    } catch (e) {
+      failed.push({ id: folders[i].id, title: folders[i].title, msg: (e && e.message) ? e.message : String(e) })
+    }
+  }
+  return failed
 }
 
 /**
@@ -1206,6 +1259,16 @@ export async function getDynamicFeed(offset) {
   }
 }
 
+// 估算文本占用行数 (CJK 全角算 1, 其余 0.55): 评论列宽 ~630px / 18px 字号 ≈ 35 字/行
+function visualWidth(text) {
+  const t = String(text == null ? '' : text)
+  let w = 0
+  for (let i = 0; i < t.length; i++) w += t.charCodeAt(i) > 0x2e80 ? 1 : 0.55
+  return w
+}
+// 超过 3 行 -> 折叠时显示省略号
+function isLongMessage(text) { return visualWidth(text) > 35 * 3 }
+
 /**
  * 视频评论列表 (x/v2/reply, 匿名可读; type=1 视频评论区)
  * @param {number} aid 视频 aid
@@ -1242,6 +1305,7 @@ export async function getReplies(aid, pn, builtinEmoji, sort) {
       // segs: 图文混排段 (B 站 emote + unicode emoji -> 图片); message 保留纯文本兜底
       message: stripTags(content.message),
       segs: parseMessage(content.message, content.emote, builtinEmoji),
+      long: isLongMessage(stripTags(content.message)),   // 折叠时要不要显示省略号
       likeText: formatPlay(r.like),
       timeText: formatRelative(r.ctime),
       replyCount: r.rcount || 0
@@ -1285,6 +1349,7 @@ export async function getSubReplies(aid, root, pn, builtinEmoji) {
       face: thumb(face, 60, 60),
       message: stripTags(content.message),
       segs: parseMessage(content.message, content.emote, builtinEmoji),
+      long: isLongMessage(stripTags(content.message)),
       likeText: formatPlay(r.like),
       timeText: formatRelative(r.ctime)
     })

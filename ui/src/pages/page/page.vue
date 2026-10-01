@@ -2,8 +2,11 @@
   <div class="page" :class="entering ? 'page-enter' : ''">
     <!-- 左栏: 封面 (不放播放器也不放播放条, 点封面进播放器页; 播放按钮在右栏详情 tab) -->
     <div class="left">
-      <image v-if="coverSrc" class="cover" :src="coverSrc" resize="cover" @click="openPlayer"></image>
-      <div v-else class="cover cover-ph"></div>
+      <!-- 封面: 按原始比例等比显示, 不裁切 (盒子本身就是同比例) -->
+      <div class="cover-wrap" @click="openPlayer">
+        <image v-if="coverSrc" :style="coverStyle" :src="coverSrc" resize="cover"></image>
+        <div v-else class="cover-ph" :style="coverStyle"></div>
+      </div>
       <text v-if="detail" class="dur">{{ detail.duration }}</text>
       <!-- 返回按钮: 左上角悬浮于封面上 (0.9.5 需求: 返回按钮放左上角) -->
       <div class="backbtn" @click="goBack">
@@ -31,11 +34,17 @@
       <scroller v-if="tab === 'detail'" class="detail-scroll" scroll-direction="vertical" :show-scrollbar="true"
                 @scroll="onListScroll">
         <div ref="topRef"></div>
-        <!-- 标题: 默认 2 行截断 (...), 点击展开/收起.
+        <!-- 标题: 默认 2 行截断 (...), 点击展开/收起. emoji 走 richtext 渲成图片
+             (设备字体无 emoji 字形, 直接放 text 里会整段空白).
              :key 强制换元素重建 —— Falcon text 的 lines 样式创建后不随 class 更新
              (0.9.4 简介点了要切 tab 再回来才展开的根因), 只能重建生效 -->
-        <text :key="'t' + (titleExpanded ? 1 : 0)"
-              :class="['title', titleExpanded ? 'title-open' : '']" @click="toggleTitle">{{ detail ? detail.title : fallbackTitle }}</text>
+        <richtext :key="'t' + (titleExpanded ? 1 : 0)"
+                  :class="['title', titleExpanded ? 'title-open' : '']" @click="toggleTitle">
+          <template v-for="(seg, si) in titleSegs">
+            <span v-if="seg.t === 0" :key="'ts' + si">{{ seg.v }}</span>
+            <image v-else :key="'te' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
+          </template>
+        </richtext>
         <text class="author" @click="openUp">{{ detail ? (detail.author + ' › · ') : '' }}{{ detail ? detail.pubdateText : '' }}</text>
         <text v-if="detail" class="stat">播放 {{ detail.playText }} · 弹幕 {{ detail.danmakuText }} · {{ detail.duration }}</text>
         <text v-if="detail" class="stat">赞 {{ detail.likeText }} · 币 {{ detail.coinText }} · 藏 {{ detail.favText }} · 转 {{ detail.shareText }}</text>
@@ -135,13 +144,17 @@
                 </div>
                 <!-- 图文混排: B 站表情 + emoji 转图片 (设备字体无 emoji 字形); 超 3 行收起, 点击展开.
                      :key 重建生效 (lines 不随 class 更新) -->
-                <richtext :key="'r' + r.rpid + (r.expanded ? 1 : 0)"
-                          :class="['reply-msg', r.expanded ? 'reply-msg-open' : '']" @click="toggleReply(r)">
-                  <template v-for="(seg, si) in r.segs">
-                    <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
-                    <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
-                  </template>
-                </richtext>
+                <div class="reply-wrap">
+                  <richtext :key="'r' + r.rpid + (r.expanded ? 1 : 0)"
+                            :class="['reply-msg', r.expanded ? 'reply-msg-open' : '']" @click="toggleReply(r)">
+                    <template v-for="(seg, si) in r.segs">
+                      <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
+                      <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
+                    </template>
+                  </richtext>
+                  <!-- 折叠态右下角省略号 (richtext 被 lines 截断时不会自己带 ...) -->
+                  <text v-if="!r.expanded && r.long" class="reply-more" @click="toggleReply(r)">…</text>
+                </div>
                 <div class="reply-meta">
                   <text class="meta-text">赞 {{ r.likeText }}</text>
                   <text class="meta-reply" @click="openSubReply(r)">回复 {{ r.replyCount }}</text>
@@ -201,7 +214,7 @@ import { createIME } from '../../services/ime.js'
 import {
   getVideoDetail, getRelatedVideos, getReplies, addReply,
   likeVideo, addCoin, dealFav, addToViewLater, delToViewLater, isInToView, getFavFolders,
-  getInteractState
+  getInteractState, isFavoured, cancelFav, parseMessage
 } from '../../services/bili.js'
 import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
@@ -338,6 +351,23 @@ export default {
   computed: {
     coverSrc() {
       return this.detail && this.detail.pic ? this.detail.pic : ''
+    },
+    // 封面显示尺寸: 按原始宽高等比缩放, 完整显示不裁切 (左栏 300x266)
+    coverStyle() {
+      let dw = (this.detail && this.detail.dimW) || 16
+      let dh = (this.detail && this.detail.dimH) || 9
+      if (!(dw > 0) || !(dh > 0)) { dw = 16; dh = 9 }
+      const s = Math.min(300 / dw, 266 / dh)
+      return { width: Math.round(dw * s) + 'px', height: Math.round(dh * s) + 'px' }
+    },
+    // 标题分段 (emoji -> 图片; 设备字体没有 emoji 字形, 直接 text 渲染会空白)
+    titleSegs() {
+      const t = this.detail ? this.detail.title : this.fallbackTitle
+      try {
+        return parseMessage(t, null, BUILTIN_EMOJI)
+      } catch (e) {
+        return [{ t: 0, v: String(t == null ? '' : t) }]
+      }
     }
   },
   methods: {
@@ -712,27 +742,44 @@ export default {
       }
     },
 
+    // 取消收藏 (0.9.10 重写): 稿件可能同时在多个收藏夹里, 必须逐个删;
+    // 删完用权威接口复核, 避免出现「界面说取消了, 实际还在收藏夹」的假成功.
     async doFavCancel() {
       if (!this.detail || !this.detail.aid || this.actBusy) return
+      const aid = this.detail.aid
       this.actBusy = true
       this.actStatus = '取消收藏中…'
       try {
-        // 从 favoured 的收藏夹移除 (缓存没有就先拉一次)
-        if (this.favFoldersAid !== this.detail.aid || this.favFolders.length === 0) {
-          this.favFolders = await getFavFolders(this.detail.aid)
-          this.favFoldersAid = this.detail.aid
+        // 状态可能过期, 先复核一次; 本来就没收藏就只刷状态
+        let nowFav = true
+        try { nowFav = isFavoured(aid) } catch (e) { nowFav = true }
+        if (!nowFav) {
+          this.detail.reqFav = false
+          this.favFoldersAid = 0
+          this.actStatus = '本来就没收藏'
+          return
         }
-        let folder = null
-        for (let i = 0; i < this.favFolders.length; i++) {
-          if (this.favFolders[i].favoured) { folder = this.favFolders[i]; break }
-        }
-        if (!folder && this.favFolders.length > 0) folder = this.favFolders[0]
-        if (!folder) throw new Error('找不到收藏夹')
-        await dealFav(this.detail.aid, folder.id, false)
-        this.detail.reqFav = false
+        // 总是拉最新收藏夹列表 (fav_state=1 标出稿件所在夹), 不用缓存
+        const list = await getFavFolders(aid)
+        this.favFolders = list
+        this.favFoldersAid = aid
+        const targets = []
+        for (let i = 0; i < list.length; i++) { if (list[i].favoured) targets.push(list[i]) }
+        if (targets.length === 0) throw new Error('收藏夹列表里没标出所在夹, 请稍后重试')
+        const failed = await cancelFav(aid, targets)
+        // 复核: 只有权威接口说不在了才算成功
+        let still = true
+        try { still = isFavoured(aid) } catch (e) { still = failed.length > 0 }
+        this.detail.reqFav = still
         this.favFoldersAid = 0
-        this.actStatus = '已取消收藏'
-        this.reloadDetail()
+        if (!still) {
+          this.actStatus = '✓ 已取消收藏' + (targets.length > 1 ? ' (共 ' + targets.length + ' 个夹)' : '')
+          this.reloadDetail()
+        } else if (failed.length > 0) {
+          this.actStatus = '取消失败: ' + failed[0].title + ' ' + failed[0].msg
+        } else {
+          this.actStatus = '取消失败: 稿件仍在收藏夹中'
+        }
       } catch (err) {
         this.actStatus = '取消失败: ' + (err && err.message ? err.message : String(err))
       } finally {
@@ -978,9 +1025,12 @@ export default {
   flex-direction: column;
   background-color: #000000;
 }
-.cover {
+.cover-wrap {
   width: 300px;
   height: 266px;
+  align-items: center;
+  justify-content: center;
+  background-color: #000000;
 }
 .cover-ph {
   background-color: #1f1f1f;
@@ -1303,7 +1353,24 @@ export default {
   font-size: 18px;
   color: #e8edf3;
   lines: 3;
+  text-overflow: ellipsis;
+  overflow: hidden;
   margin-top: 2px;
+}
+/* 评论容器: 省略号浮层定位基准 */
+.reply-wrap {
+  position: relative;
+  width: 100%;
+}
+/* 折叠态右下角省略号 (richtext 的 lines 截断不会自己带 ..., 只能补一个浮层) */
+.reply-more {
+  position: absolute;
+  right: 0px;
+  bottom: 0px;
+  padding-left: 8px;
+  font-size: 18px;
+  color: #e8edf3;
+  background-color: #16181c;
 }
 .reply-msg-open {
   lines: 0;

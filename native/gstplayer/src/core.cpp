@@ -106,6 +106,24 @@ static std::string detectBtAudioDevice()
     return dev;
 }
 
+// 蓝牙 A2DP 音画同步补偿 (毫秒).
+// A2DP 链路 (bluealsa + 耳机固件) 有 ~150-250ms 的缓冲延迟, 声卡上报的 delay 补不回来,
+// 现象: 画面明显超前声音. 这里在音频 sink pad 上加正偏移把声音整体后延.
+// 数值不写死: 真机上改 /userdisk/xiro/btaudio_ms (整数毫秒) 后重新播放即生效,
+// 不需要重编 CI —— 调好之后再固化成缺省值. 文件不存在/非法则用缺省 200ms.
+//   0  = 不做补偿 (怀疑是声音超前时用)
+//   300 = 画面仍超前就加大
+static int readBtAudioDelayMs()
+{
+    FILE* f = fopen("/userdisk/xiro/btaudio_ms", "r");
+    if (!f) return 200;
+    int v = -1;
+    if (fscanf(f, "%d", &v) != 1) v = -1;
+    fclose(f);
+    if (v < -500 || v > 800) { GP_LOG("bt audio delay file invalid (%d), use 200", v); return 200; }
+    return v;
+}
+
 void PlayCore::setEventCallback(EventFn fn, void* userData)
 {
     m_eventFn = fn;
@@ -407,11 +425,16 @@ void PlayCore::onDemuxPadAdded(GstElement* demux, GstPad* pad, void* self)
             return;
         }
         // 音频出口: 连了蓝牙耳机就切 bluealsa, 否则系统 default (扬声器)
+        bool btUsed = false;
         if (sink) {
             std::string btDev = detectBtAudioDevice();
             if (!btDev.empty()) {
+                btUsed = true;
                 g_object_set(G_OBJECT(sink), "device", btDev.c_str(), NULL);
-                GP_LOG("audio sink -> bluealsa");
+                // A2DP 链路抖动大, 给足缓冲 (缺省 200ms/10ms 在蓝牙下容易断音)
+                g_object_set(G_OBJECT(sink), "buffer-time", (gint64)400000, NULL);
+                g_object_set(G_OBJECT(sink), "latency-time", (gint64)100000, NULL);
+                GP_LOG("audio sink -> bluealsa (buffer 400ms)");
             } else {
                 GP_LOG("audio sink -> default (speaker)");
             }
@@ -440,6 +463,16 @@ void PlayCore::onDemuxPadAdded(GstElement* demux, GstPad* pad, void* self)
         GstPad* asinkPad = gst_element_get_static_pad(sink, "sink");
         gst_pad_add_probe(asinkPad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
                           &PlayCore::audioSegProbe, core, NULL);
+        // 蓝牙延迟补偿: 正偏移 = 音频时间戳整体后移 = 声音延后播放
+        if (btUsed && asinkPad) {
+            int ms = readBtAudioDelayMs();
+            if (ms != 0) {
+                gst_pad_set_offset(asinkPad, (gint64)ms * GST_MSECOND);
+                GP_LOG("bt audio delay compensation: %d ms", ms);
+            } else {
+                GP_LOG("bt audio delay compensation: off");
+            }
+        }
         gst_object_unref(asinkPad);
         GstPad* qPad = gst_element_get_static_pad(queueA, "sink");
         GstPadLinkReturn ret = gst_pad_link(pad, qPad);

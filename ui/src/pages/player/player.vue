@@ -358,13 +358,16 @@ export default {
       var self = this
       var useJsapi = screenon.screenOnAvailable()
       if (useJsapi) screenon.screenOnStart()
-      var failCount = 0
-      this.keepTimer = setTicker(this, 4000, function () {
+      // 立刻注入一次, 不等第一个周期 (起播头几秒正好容易黑屏)
+      player.keepAwakeTick()
+      // 0.9.10: JSAPI 与 exec 注入**同时**做.
+      // 之前 JSAPI 一旦"看起来成功"就 return, 不再注入 exec —— 但真机上
+      // startAlwaysScreenOn/keepScreenOn 存在却不一定真生效, 播放中仍会息屏.
+      // slip 事件无点击副作用, 双保险最稳; 周期也缩短到 3s (息屏阈值 ~10s).
+      this.keepTimer = setTicker(this, 3000, function () {
         if (!self.playing) return
         if (useJsapi) {
-          if (screenon.screenOnTick()) { failCount = 0; return }
-          if (++failCount < 3) return
-          useJsapi = false   // JSAPI 持续失败: 降级 exec 注入
+          try { screenon.screenOnTick() } catch (e) {}
         }
         player.keepAwakeTick()
       })
