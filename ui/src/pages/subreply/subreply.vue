@@ -7,6 +7,12 @@
       <text class="title">全部回复 {{ total > 0 ? total : '' }}</text>
     </div>
 
+    <!-- 原始评论折叠成一行引用: 完整内容按需求隐藏, 但保留「在回复谁」的上下文,
+         否则只剩顶栏 + 几条子回复, 页面看着像空白 -->
+    <div class="parent-line" @click="replyToParent">
+      <text class="parent-line-text">回复 @{{ parentAuthor || '该评论' }}: {{ parentPreview }}</text>
+    </div>
+
     <!-- 原始评论(父评论)按需求隐藏: 楼中页只列子回复;
          要回复主楼直接点底部输入栏(默认目标就是主评论) -->
 
@@ -486,11 +492,29 @@ function parseParentSegs(msg) {
 .list {
   position: absolute;
   left: 0px;
-  top: 110px;
+  top: 74px;   /* 原来给父评论块留的 44-110 空洞已用引用条 + 列表补上 */
   width: 960px;
-  height: 112px;
+  height: 148px;   /* 74 -> 222 (postbar 上沿) */
   padding-left: 12px;
   padding-right: 12px;
+}
+.parent-line {
+  position: absolute;
+  left: 0px;
+  top: 44px;
+  width: 960px;
+  height: 30px;
+  background-color: #1f1f1f;
+  justify-content: center;
+  padding-left: 16px;
+  padding-right: 16px;
+}
+.parent-line-text {
+  font-size: 17px;
+  color: #8a93a0;
+  lines: 1;
+  text-overflow: ellipsis;
+  overflow: hidden;
 }
 .status {
   font-size: 19px;
