@@ -12,6 +12,9 @@
 // 导入: 命名空间导入 (不会因导出名不符而链接失败); ES 模块未注册时整个模块图
 // 失败, 故本文件只被 player.vue 引用 (失败只影响播放页, 不影响首页其它页面).
 import * as brightnessMod from 'brightness'
+import { log as appLog } from './log.js'
+
+function diag(msg) { try { appLog('screenon', msg) } catch (e) {} }
 
 let resolved = undefined   // undefined=未探测, null=不可用, 对象=可用
 
@@ -54,9 +57,9 @@ function probe() {
       }
     } catch (e) {}
   }
-  console.log('[screenon] 防息屏 JSAPI ' + (resolved
+  diag('防息屏 JSAPI ' + (resolved
     ? '可用 (' + (resolved.startAlwaysScreenOn ? 'startAlwaysScreenOn' : 'keepScreenOn') + ')'
-    : '不可用, 播放页走 exec 注入兜底'))
+    : '不可用 -> 走合成点击保活'))
   return resolved
 }
 

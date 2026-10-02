@@ -5,7 +5,7 @@
     <hole class="hole"></hole>
 
     <!-- 点击空白区域 显示/隐藏控制条; 控制条自身按钮拦截点击 -->
-    <div class="stage" @click="toggleBar">
+    <div class="stage" @click="toggleBar" @touchstart="markUserTouch">
 
       <!-- 顶部悬浮栏: 返回 + 标题 (悬浮于视频上方) -->
       <div v-if="barVisible" class="top-bar">
@@ -61,6 +61,7 @@ import * as player from '../../services/player.js'
 import * as screenon from '../../services/screenon.js'
 import { getVideoDetail, getPlayUrl } from '../../services/bili.js'
 import { afterPaint } from '../../base-page.js'
+import { log } from '../../services/log.js'
 
 var SEG_COUNT = 24       // 进度条点击分段数
 var POLL_MS = 500        // 进度轮询周期
@@ -113,6 +114,7 @@ export default {
       titleText: '',
       statusText: '加载中…',
       barVisible: true,
+      lastUserTouchAt: 0,   // 最近一次用户真实触摸 (保活注入避让用)
       curMs: 0,
       durMs: 0,
       segList: (function () {
@@ -353,23 +355,38 @@ export default {
 
     // 播放中防息屏: 官方 JSAPI 优先 (系统播放器同款三件套, 见 services/screenon.js),
     // 不可用或持续失败时降级 exec 注入 touch move (重置输入空闲计时, 无副作用).
+    // 用户真实触摸 (拖进度条/点按钮) —— 保活注入要避让, 别打断操作
+    markUserTouch: function () {
+      this.lastUserTouchAt = Date.now()
+    },
+
+    // 保活注入: 真机实测 **只有 press/release 能重置息屏计时**
+    // (send_event 的 slip 不行 —— 0.9.10 只注 slip, 播放 35s 后屏幕照样黑).
+    // 但点击 stage 会切换控制条, 所以点完立刻把控制条恢复成原状态,
+    // 视觉上只有 ~80ms 的一闪.
+    keepAwakeTap: function () {
+      var self = this
+      var wasVisible = this.barVisible
+      player.tapScreen()
+      setTimer(this, 80, function () {
+        if (wasVisible) self.showBar(); else self.hideBar()
+      })
+    },
+
     startKeepAwake: function () {
       if (this.keepTimer != null) return
       var self = this
-      var useJsapi = screenon.screenOnAvailable()
-      if (useJsapi) screenon.screenOnStart()
-      // 立刻注入一次, 不等第一个周期 (起播头几秒正好容易黑屏)
-      player.keepAwakeTick()
-      // 0.9.10: JSAPI 与 exec 注入**同时**做.
-      // 之前 JSAPI 一旦"看起来成功"就 return, 不再注入 exec —— 但真机上
-      // startAlwaysScreenOn/keepScreenOn 存在却不一定真生效, 播放中仍会息屏.
-      // slip 事件无点击副作用, 双保险最稳; 周期也缩短到 3s (息屏阈值 ~10s).
-      this.keepTimer = setTicker(this, 3000, function () {
+      var jsapiOn = screenon.screenOnAvailable()
+      if (jsapiOn) screenon.screenOnStart()
+      try { log('播放器', '防息屏: JSAPI=' + (jsapiOn ? 'on' : 'off') + ' + 每 6s 合成点击保活') } catch (e) {}
+      // 系统息屏阈值实测 ~10s, 6s 一次留出余量; JSAPI 仍照调 (能生效更好)
+      this.keepTimer = setTicker(this, 6000, function () {
         if (!self.playing) return
-        if (useJsapi) {
+        if (screenon.screenOnAvailable()) {
           try { screenon.screenOnTick() } catch (e) {}
         }
-        player.keepAwakeTick()
+        if (Date.now() - (self.lastUserTouchAt || 0) < 2500) return
+        self.keepAwakeTap()
       })
     },
     stopKeepAwake: function () {
