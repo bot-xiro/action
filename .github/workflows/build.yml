@@ -124,6 +124,22 @@ jobs:
           npm install -g pnpm@10.12.4
           pnpm install -C ./ui
 
+      - name: Cross-compile libjsapi_imageviewer.so (aarch64)
+        run: |
+          # 图片查看器: 独立模块, 只做看图 (解码/缩放/裁剪/编码), 不与其他功能混
+          cmake -B build/imageviewer \
+            -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+            -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_BUILD_TYPE=Release \
+            native/imageviewer
+          cmake --build build/imageviewer --config Release --parallel $(nproc)
+          cp -f build/imageviewer/libjsapi_imageviewer.so ui/libs/libjsapi_imageviewer.so
+          file ui/libs/libjsapi_imageviewer.so
+          aarch64-linux-gnu-readelf -h ui/libs/libjsapi_imageviewer.so | grep -E 'Class|Machine'
+          aarch64-linux-gnu-readelf -d ui/libs/libjsapi_imageviewer.so | grep NEEDED
+          aarch64-linux-gnu-nm -D ui/libs/libjsapi_imageviewer.so | grep custom_init_jsapis
       - name: Build AMR (production quickjs)
         run: pnpm -C ui package
 

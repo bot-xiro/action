@@ -165,7 +165,7 @@
                   <text v-if="!r.expanded && r.long" class="reply-more" @click="toggleReply(r)">…</text>
                 </div>
                 <div v-if="r.pics && r.pics.length > 0" class="reply-pics">
-                  <image v-for="(pic, pi) in r.pics" :key="'pic' + r.rpid + pi" class="reply-pic" :src="pic.src" :style="{ width: pic.w + 'px', height: pic.h + 'px' }" resize="cover"></image>
+                  <image v-for="(pic, pi) in r.pics" :key="'pic' + r.rpid + pi" class="reply-pic" @click="ivOpen(pic.src)" :src="pic.src" :style="{ width: pic.w + 'px', height: pic.h + 'px' }" resize="cover"></image>
                 </div>
                 <div class="reply-meta">
                   <text :class="['meta-text', r.liked ? 'meta-liked' : '']" @click="toggleReplyLike(r)">赞 {{ r.likeText }}{{ r.liked ? ' ✓' : '' }}</text>
@@ -214,6 +214,20 @@
         </div>
       </div>
     </div>
+
+    <!-- 图片查看器覆盖层: 解码/缩放/裁剪全在独立 so (libjsapi_imageviewer) 里做, 这里只显示 + 手势 -->
+    <div v-if="viewer.on" class="iview">
+      <image class="iview-img" :src="viewer.path" resize="cover"
+             @touchstart="ivStart" @touchmove="ivMove" @touchend="ivEnd"></image>
+      <div class="iview-bar">
+        <div class="iview-btn" @click="ivZoom(0.5)"><text class="iview-btn-text">−</text></div>
+        <text class="iview-zoom">{{ viewer.zoomText }}</text>
+        <div class="iview-btn" @click="ivZoom(2)"><text class="iview-btn-text">＋</text></div>
+        <div class="iview-btn" @click="ivReset"><text class="iview-btn-text">复位</text></div>
+        <div class="iview-btn iview-btn-close" @click="ivClose"><text class="iview-btn-text">关闭</text></div>
+        <text class="iview-hint">{{ viewer.hint }}</text>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -230,6 +244,7 @@ import {
 } from '../../services/bili.js'
 import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
+import { imageviewer } from 'imageviewer'
 
 // 内置常用 emoji 映射: .vue 里的 require png 会被 aiot-cli 编译成 images/<hash>.png
 // (services/*.js 里的 require 不会被编译, QuickJS 无 require 会崩, 见 0.8.7 黑屏教训)
@@ -364,6 +379,8 @@ export default {
       cLoaded: false,
       logged: false,
       cStatus: '',
+      // 图片查看器状态 (解码/缩放/裁剪在独立 so libjsapi_imageviewer 里做)
+      viewer: { on: false, path: '', zoom: 1, cx: 0, cy: 0, w: 0, h: 0, zoomText: '100%', hint: '拖动移动 · ＋/− 缩放 · 复位' },
       posting: false,
       ime: null,
       cGeneration: 0
@@ -974,6 +991,76 @@ export default {
       try { $falcon.navTo('up', { mid: r.mid, name: r.author }) } catch (e) { this.cStatus = '打开主页失败' }
     },
 
+    // ---------------- 图片查看器 (独立模块 imageviewer) ----------------
+    ivOpen(url) {
+      try {
+        const info = imageviewer.open(url)
+        const o = typeof info === 'string' ? JSON.parse(info) : info
+        if (!o || o.ret !== 0) { this.cStatus = '打开图片失败'; return }
+        this.viewer.on = true
+        this.viewer.w = o.width || 0
+        this.viewer.h = o.height || 0
+        this.viewer.cx = this.viewer.w / 2
+        this.viewer.cy = this.viewer.h / 2
+        // 初始按屏幕高度适配 (266 高)
+        this.viewer.zoom = this.viewer.h > 0 ? Math.max(0.2, Math.min(4, 266 / this.viewer.h)) : 1
+        this.ivRender()
+      } catch (e) {
+        this.cStatus = '打开图片失败: ' + (e && e.message ? e.message : e)
+      }
+    },
+    ivRender() {
+      try {
+        const path = imageviewer.view(this.viewer.cx, this.viewer.cy, this.viewer.zoom, 960, 266)
+        if (path) this.viewer.path = String(path)
+        this.viewer.zoomText = Math.round(this.viewer.zoom * 100) + '%'
+      } catch (e) { this.viewer.hint = '渲染失败: ' + (e && e.message ? e.message : e) }
+    },
+    ivZoom(f) {
+      let z = this.viewer.zoom * f
+      if (z < 0.1) z = 0.1
+      if (z > 8) z = 8
+      this.viewer.zoom = z
+      this.ivRender()
+    },
+    ivReset() {
+      this.viewer.zoom = this.viewer.h > 0 ? Math.max(0.2, Math.min(4, 266 / this.viewer.h)) : 1
+      this.viewer.cx = this.viewer.w / 2
+      this.viewer.cy = this.viewer.h / 2
+      this.ivRender()
+    },
+    ivClose() {
+      this.viewer.on = false
+      try { imageviewer.close() } catch (e) {}
+    },
+    ivStart(e) { this._ivx = this.touchPageY(e); this._ivy = this.touchPageX(e); this.viewer.hint = '拖动中…' },
+    ivMove(e) {
+      if (this._ivx === undefined) return
+      const nx = this.touchPageY(e), ny = this.touchPageX(e)
+      const dx = nx - this._ivx, dy = ny - this._ivy
+      if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return
+      this.viewer.cx -= dx / this.viewer.zoom
+      this.viewer.cy -= dy / this.viewer.zoom
+      this._ivx = nx; this._ivy = ny
+      this.ivRender()
+    },
+    ivEnd() { this._ivx = undefined; this._ivy = undefined; this.viewer.hint = '拖动移动 · ＋/− 缩放 · 复位' },
+    // 触摸事件字段: changedTouches[0].pageX/pageY (顶层 pageY 是 undefined)
+    touchPageY(e) {
+      try {
+        const t = (e && e.changedTouches && e.changedTouches[0]) || (e && e.touches && e.touches[0])
+        if (t && typeof t.pageY === 'number') return t.pageY
+      } catch (err) {}
+      return 0
+    },
+    touchPageX(e) {
+      try {
+        const t = (e && e.changedTouches && e.changedTouches[0]) || (e && e.touches && e.touches[0])
+        if (t && typeof t.pageX === 'number') return t.pageX
+      } catch (err) {}
+      return 0
+    },
+
     openSubReply(r) {
       if (!this.detail) return
       $falcon.navTo('subreply', {
@@ -1054,6 +1141,60 @@ export default {
 </script>
 
 <style scoped>
+.iview {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 960px;
+  height: 266px;
+  background-color: #000000;
+  z-index: 200;
+}
+.iview-img {
+  position: absolute;
+  left: 0px;
+  top: 0px;
+  width: 960px;
+  height: 266px;
+}
+.iview-bar {
+  position: absolute;
+  left: 0px;
+  bottom: 0px;
+  width: 960px;
+  height: 44px;
+  flex-direction: row;
+  align-items: center;
+  background-color: rgba(0, 0, 0, 0.72);
+  padding-left: 10px;
+}
+.iview-btn {
+  padding-left: 16px;
+  padding-right: 16px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  background-color: #2f3238;
+  border-radius: 8px;
+  margin-right: 10px;
+  justify-content: center;
+}
+.iview-btn-close {
+  background-color: #fb7299;
+}
+.iview-btn-text {
+  font-size: 19px;
+  color: #ffffff;
+}
+.iview-zoom {
+  font-size: 19px;
+  color: #fb7299;
+  margin-right: 10px;
+}
+.iview-hint {
+  font-size: 15px;
+  color: #8a93a0;
+}
+
 .page {
   position: absolute;
   left: 0px;

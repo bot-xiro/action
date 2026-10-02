@@ -24,7 +24,7 @@
     "settings": "pages/settings/settings.vue"
   },
   "options": {
-    "external": ["bilinet", "gstplayer", "brightness"],
+    "external": ["bilinet", "gstplayer", "brightness", "imageviewer"],
     "style": {
       "lessPaths": ["styles"]
     }
