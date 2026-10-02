@@ -28,7 +28,7 @@
         <div v-for="(item, i) in items" :key="item.bvid || ('f' + i)" class="item" @click="openVideo(item)">
           <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
           <div class="meta">
-            <text class="title">{{ item.title }}</text>
+            <richtext class="title"><template v-for="(seg, si) in segsOf(item.title)"><span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span><image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image></template></richtext>
             <text class="up">{{ item.author }}</text>
             <text class="stat">▶{{ item.playText }}  {{ item.duration }}</text>
           </div>
@@ -43,7 +43,7 @@
 <script>
 // 收藏页: 两级 (收藏夹列表 x/v3/fav/folder/created/list-all → 收藏夹内容 x/v3/fav/resource/list)
 // + 无限滑动 + 下拉刷新. mode: 'folders' | 'list'
-import { getFavFolders, getFavList } from '../../services/bili.js'
+import { getFavFolders, getFavList , parseMessage } from '../../services/bili.js'
 import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
 
@@ -69,6 +69,17 @@ export default {
     }
   },
   methods: {
+    // 标题分段: emoji -> CDN 图片 (设备字体没有 emoji 字形, 直接 text 会整片空白)
+    segsOf(t) {
+      const key = String(t == null ? '' : t)
+      if (!this._segsCache) this._segsCache = {}
+      let segs = this._segsCache[key]
+      if (!segs) {
+        try { segs = parseMessage(key, null, null) } catch (e) { segs = [{ t: 0, v: key }] }
+        this._segsCache[key] = segs
+      }
+      return segs
+    },
     onShow() {
       this.logged = hasCookie()
       if (!this.loaded) this.loadFolders()

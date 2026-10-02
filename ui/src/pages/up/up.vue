@@ -25,7 +25,7 @@
       <div v-for="item in videos" :key="item.bvid" class="item" @click="openVideo(item)">
         <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
         <div class="meta2">
-          <text class="title">{{ item.title }}</text>
+          <richtext class="title"><template v-for="(seg, si) in segsOf(item.title)"><span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span><image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image></template></richtext>
           <text class="stat">▶{{ item.playText }}  {{ item.duration }}</text>
         </div>
       </div>
@@ -36,7 +36,7 @@
 </template>
 
 <script>
-import { getUpInfo, getUpFans, getUpVideos } from '../../services/bili.js'
+import { getUpInfo, getUpFans, getUpVideos , parseMessage } from '../../services/bili.js'
 import { afterPaint } from '../../base-page.js'
 
 // 进入动画 340ms 画完再发首条请求 (同步 http 阻塞 JS 会卡进入动画)
@@ -61,6 +61,17 @@ export default {
     }
   },
   methods: {
+    // 标题分段: emoji -> CDN 图片 (设备字体没有 emoji 字形, 直接 text 会整片空白)
+    segsOf(t) {
+      const key = String(t == null ? '' : t)
+      if (!this._segsCache) this._segsCache = {}
+      let segs = this._segsCache[key]
+      if (!segs) {
+        try { segs = parseMessage(key, null, null) } catch (e) { segs = [{ t: 0, v: key }] }
+        this._segsCache[key] = segs
+      }
+      return segs
+    },
     beginLoad(options) {
       options = options || this.$page.options || {}
       const mid = parseInt(options.mid || '0', 10)

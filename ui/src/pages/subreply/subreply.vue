@@ -7,31 +7,18 @@
       <text class="title">全部回复 {{ total > 0 ? total : '' }}</text>
     </div>
 
-    <!-- 父评论 (固定顶部, 点击 = 回复主评论) -->
-    <div class="parent" @click="replyToParent">
-      <image class="pface" :src="parentFace" resize="cover" v-if="parentFace"></image>
-      <div class="pmain">
-        <div class="phead">
-          <text class="pauthor">{{ parentAuthor }}</text>
-        </div>
-        <richtext class="pmsg">
-          <template v-for="(seg, si) in parentSegs">
-            <span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span>
-            <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
-          </template>
-        </richtext>
-      </div>
-    </div>
+    <!-- 原始评论(父评论)按需求隐藏: 楼中页只列子回复;
+         要回复主楼直接点底部输入栏(默认目标就是主评论) -->
 
     <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
               :loadmoreoffset="100" @loadmore="loadMore" @scroll="onListScroll"
               @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <text v-if="status !== ''" class="status">{{ status }}</text>
       <div v-for="r in replies" :key="r.rpid" class="reply">
-        <image class="face" :src="r.face" resize="cover"></image>
+        <image class="face" :src="r.face" resize="cover" @click="openUser(r)"></image>
         <div class="reply-main">
           <div class="reply-head">
-            <text class="reply-author">{{ r.author }}</text>
+            <text class="reply-author" @click="openUser(r)">{{ r.author }}</text>
             <text class="reply-time">{{ r.timeText }}</text>
           </div>
           <!-- :key 重建生效: Falcon 的 lines 样式创建后不随 class 更新 -->
@@ -43,7 +30,7 @@
             </template>
           </richtext>
           <div class="reply-meta">
-            <text class="meta-text">赞 {{ r.likeText }}</text>
+            <text :class="['meta-text', r.liked ? 'meta-liked' : '']" @click="toggleReplyLike(r)">赞 {{ r.likeText }}{{ r.liked ? ' ✓' : '' }}</text>
             <text class="meta-reply" @click="setTarget(r)">回复</text>
           </div>
         </div>
@@ -69,12 +56,20 @@
 // 由评论页「回复 N」navTo 传入: aid(oid), root(顶层 rpid), msg/author/face(父评论展示).
 // 点某条回复的「回复」= 设置目标 (发评时 parent=该条 rpid); 点父评论 = 回复主楼 (parent=root).
 import { createIME } from '../../services/ime.js'
-import { getSubReplies, addReply, parseMessage } from '../../services/bili.js'
+import { getSubReplies, addReply, parseMessage, likeReply } from '../../services/bili.js'
 import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
 
 // 内置常用 emoji 映射: .vue 里的 require png 会被 aiot-cli 编译成 images/<hash>.png
 // (services/*.js 里的 require 不会被编译, QuickJS 无 require 会崩, 见 0.8.7 黑屏教训)
+// 点赞数 +1/-1 (返回的是 "1.2万" 这类文本, 只动整数部分)
+function bumpCount(text, add) {
+  const t = String(text == null ? '' : text)
+  const m = /^(\d+)(.*)$/.exec(t)
+  if (!m) return t
+  return Math.max(0, parseInt(m[1], 10) + (add ? 1 : -1)) + m[2]
+}
+
 const BUILTIN_EMOJI = {
   '1f197': require('../../assets/emoji/1f197.png'),
   '1f338': require('../../assets/emoji/1f338.png'),
@@ -304,6 +299,29 @@ export default {
     },
 
     // 点某条子回复的「回复」→ 设为目标
+    // 评论点赞 (乐观更新, 失败回滚)
+    async toggleReplyLike(r) {
+      if (!this.requireLogin()) return
+      const want = !r.liked
+      r.liked = want
+      const before = r.likeText
+      r.likeText = bumpCount(before, want)
+      try {
+        await likeReply(this.aid, r.rpid, want)
+        this.status = want ? '已点赞' : '已取消赞'
+      } catch (err) {
+        r.liked = !want
+        r.likeText = before
+        this.status = (err && err.message) ? err.message : '点赞失败'
+      }
+    },
+
+    // 点头像/昵称 -> TA 的主页
+    openUser(r) {
+      if (!r || !r.mid) return
+      try { $falcon.navTo('up', { mid: r.mid, name: r.author }) } catch (e) { this.status = '打开主页失败' }
+    },
+
     setTarget(r) {
       this.target = { rpid: r.rpid, author: r.author }
     },
@@ -515,6 +533,9 @@ function parseParentSegs(msg) {
   color: #6a7684;
   padding-top: 6px;
   padding-bottom: 6px;
+}
+.meta-liked {
+  color: #fb7299;
 }
 .meta-reply {
   font-size: 16px;

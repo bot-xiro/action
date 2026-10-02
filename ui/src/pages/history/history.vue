@@ -21,7 +21,7 @@
         <div v-for="(item, i) in items" :key="item.bvid || ('h' + i)" class="item" @click="openVideo(item)">
           <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
           <div class="meta">
-            <text class="title">{{ item.title }}</text>
+            <richtext class="title"><template v-for="(seg, si) in segsOf(item.title)"><span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span><image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image></template></richtext>
             <text class="up">{{ item.author }}</text>
             <text class="stat">{{ item.progressText }}  {{ item.pubText }}</text>
           </div>
@@ -35,7 +35,7 @@
 
 <script>
 // 历史记录页: x/web-interface/history/search (wbi) + 无限滑动 + 下拉刷新
-import { getHistoryList } from '../../services/bili.js'
+import { getHistoryList , parseMessage } from '../../services/bili.js'
 import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
 
@@ -58,6 +58,17 @@ export default {
     }
   },
   methods: {
+    // 标题分段: emoji -> CDN 图片 (设备字体没有 emoji 字形, 直接 text 会整片空白)
+    segsOf(t) {
+      const key = String(t == null ? '' : t)
+      if (!this._segsCache) this._segsCache = {}
+      let segs = this._segsCache[key]
+      if (!segs) {
+        try { segs = parseMessage(key, null, null) } catch (e) { segs = [{ t: 0, v: key }] }
+        this._segsCache[key] = segs
+      }
+      return segs
+    },
     onShow() {
       this.logged = hasCookie()
       if (!this.loaded) this.load(true)

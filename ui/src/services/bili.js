@@ -1301,6 +1301,8 @@ export async function getReplies(aid, pn, builtinEmoji, sort) {
     replies.push({
       rpid: r.rpid || 0,
       author: (member.uname || '用户') + (r.mid === upperMid ? ' (UP)' : ''),
+      mid: r.mid || 0,                       // 点击头像/昵称进入 TA 的主页
+      liked: Number(r.action) === 1,          // 当前账号是否已赞 (action 是权威状态)
       face: thumb(face, 60, 60),
       // segs: 图文混排段 (B 站 emote + unicode emoji -> 图片); message 保留纯文本兜底
       message: stripTags(content.message),
@@ -1345,6 +1347,8 @@ export async function getSubReplies(aid, root, pn, builtinEmoji) {
     replies.push({
       rpid: r.rpid || 0,
       author: member.uname || '用户',
+      mid: r.mid || 0,
+      liked: Number(r.action) === 1,
       replyTo: rt,
       face: thumb(face, 60, 60),
       message: stripTags(content.message),
@@ -1355,6 +1359,26 @@ export async function getSubReplies(aid, root, pn, builtinEmoji) {
     })
   }
   return { total: page.count || 0, replies: replies }
+}
+
+/**
+ * 评论点赞/取消 (x/v2/reply/action, 需登录 + csrf)
+ * 实测: 点赞后评论列表里的 action 字段会变成 1 (权威状态); like 计数有延迟.
+ * @param {number} aid 视频 aid (oid)
+ * @param {number} rpid 评论 rpid
+ * @param {boolean} on true=点赞 false=取消
+ */
+export async function likeReply(aid, rpid, on) {
+  const csrf = needCsrf()
+  const data = 'oid=' + encodeURIComponent(aid) + '&type=1&rpid=' + encodeURIComponent(rpid)
+    + '&action=' + (on === false ? 0 : 1) + '&csrf=' + encodeURIComponent(csrf)
+  const body = postJson('https://api.bilibili.com/x/v2/reply/action', data, 15)
+  if (body.code !== 0) {
+    if (body.code === -101) throw new Error('登录已过期, 请重新登录')
+    if (body.code === -403) throw new Error('点赞过于频繁, 请稍后再试')
+    throw new Error(body.message || ('评论点赞失败 code=' + body.code))
+  }
+  return true
 }
 
 /**

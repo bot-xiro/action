@@ -12,7 +12,7 @@
         <div class="back" @click="goBack">
           <text class="back-text">‹ 返回</text>
         </div>
-        <text class="title">{{ titleText }}</text>
+        <richtext class="title"><template v-for="(seg, si) in titleSegs"><span v-if="seg.t === 0" :key="'ts' + si">{{ seg.v }}</span><image v-else :key="'te' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image></template></richtext>
       </div>
 
       <!-- 中央状态提示 -->
@@ -59,7 +59,7 @@
 //     onUnload           单一 stop 路径: generation++ -> 停 timer/订阅 -> close native
 import * as player from '../../services/player.js'
 import * as screenon from '../../services/screenon.js'
-import { getVideoDetail, getPlayUrl } from '../../services/bili.js'
+import { getVideoDetail, getPlayUrl, parseMessage } from '../../services/bili.js'
 import { afterPaint } from '../../base-page.js'
 import { log } from '../../services/log.js'
 
@@ -129,6 +129,11 @@ export default {
     }
   },
   computed: {
+    // 标题分段: emoji -> 图片 (设备字体没有 emoji 字形, 直接 text 会整片空白)
+    titleSegs() {
+      const t = String(this.title || '')
+      try { return parseMessage(t, null, null) } catch (e) { return [{ t: 0, v: t }] }
+    },
     fillPct: function () {
       if (!this.durMs) return 0
       var pct = (this.curMs / this.durMs) * 100

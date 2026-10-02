@@ -79,7 +79,14 @@
         <div v-if="detail" class="section">
           <text class="sec-title">简介</text>
           <!-- 简介: 超 3 行收起 (...), 点击展开 (:key 重建生效, 同上) -->
-          <text :key="'d' + (descExpanded ? 1 : 0)"
+          <!-- 简介: emoji 走 richtext 渲成图片 (设备字体无 emoji 字形); 超 3 行收起, 点击展开 -->
+          <richtext :key="'d' + (descExpanded ? 1 : 0)"
+                    :class="['desc', descExpanded ? 'desc-open' : '']" @click="toggleDesc">
+            <template v-for="(seg, si) in descSegs">
+              <span v-if="seg.t === 0" :key="'ds' + si">{{ seg.v }}</span>
+              <image v-else :key="'de' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
+            </template>
+          </richtext>
                 :class="['desc', descExpanded ? 'desc-open' : '']" @click="toggleDesc">{{ detail.desc !== '' ? detail.desc : '暂无简介' }}</text>
         </div>
 
@@ -136,10 +143,10 @@
           </div>
           <div v-else>
             <div v-for="r in replies" :key="r.rpid" class="reply">
-              <image class="face" :src="r.face" resize="cover"></image>
+              <image class="face" :src="r.face" resize="cover" @click="openUser(r)"></image>
               <div class="reply-main">
                 <div class="reply-head">
-                  <text class="reply-author">{{ r.author }}</text>
+                  <text class="reply-author" @click="openUser(r)">{{ r.author }}</text>
                   <text class="reply-time">{{ r.timeText }}</text>
                 </div>
                 <!-- 图文混排: B 站表情 + emoji 转图片 (设备字体无 emoji 字形); 超 3 行收起, 点击展开.
@@ -156,7 +163,7 @@
                   <text v-if="!r.expanded && r.long" class="reply-more" @click="toggleReply(r)">…</text>
                 </div>
                 <div class="reply-meta">
-                  <text class="meta-text">赞 {{ r.likeText }}</text>
+                  <text :class="['meta-text', r.liked ? 'meta-liked' : '']" @click="toggleReplyLike(r)">赞 {{ r.likeText }}{{ r.liked ? ' ✓' : '' }}</text>
                   <text class="meta-reply" @click="openSubReply(r)">回复 {{ r.replyCount }}</text>
                 </div>
               </div>
@@ -214,13 +221,22 @@ import { createIME } from '../../services/ime.js'
 import {
   getVideoDetail, getRelatedVideos, getReplies, addReply,
   likeVideo, addCoin, dealFav, addToViewLater, delToViewLater, isInToView, getFavFolders,
-  getInteractState, isFavoured, cancelFav, parseMessage
+  getInteractState, isFavoured, cancelFav, parseMessage, likeReply
 } from '../../services/bili.js'
 import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
 
 // 内置常用 emoji 映射: .vue 里的 require png 会被 aiot-cli 编译成 images/<hash>.png
 // (services/*.js 里的 require 不会被编译, QuickJS 无 require 会崩, 见 0.8.7 黑屏教训)
+// 点赞数 +1/-1 (评论列表返回的是 "1.2万" 这类文本, 只能就地加减整数部分)
+function bumpCount(text, add) {
+  const t = String(text == null ? '' : text)
+  const m = /^(\d+)(.*)$/.exec(t)
+  if (!m) return t
+  const n = Math.max(0, parseInt(m[1], 10) + (add ? 1 : -1))
+  return n + m[2]
+}
+
 const BUILTIN_EMOJI = {
   '1f197': require('../../assets/emoji/1f197.png'),
   '1f338': require('../../assets/emoji/1f338.png'),
@@ -361,6 +377,11 @@ export default {
       return { width: Math.round(dw * s) + 'px', height: Math.round(dh * s) + 'px' }
     },
     // 标题分段 (emoji -> 图片; 设备字体没有 emoji 字形, 直接 text 渲染会空白)
+    // 简介分段 (emoji -> 图片); 空简介给占位文案
+    descSegs() {
+      const t = (this.detail && this.detail.desc) ? this.detail.desc : '暂无简介'
+      try { return parseMessage(t, null, BUILTIN_EMOJI) } catch (e) { return [{ t: 0, v: t }] }
+    },
     titleSegs() {
       const t = this.detail ? this.detail.title : this.fallbackTitle
       try {
@@ -925,6 +946,29 @@ export default {
       this.loadComments(true)
     },
 
+    // 评论点赞: 乐观更新 (接口成功, 但列表里的计数有延迟), 失败回滚
+    async toggleReplyLike(r) {
+      if (!this.requireLogin()) return
+      const want = !r.liked
+      r.liked = want
+      const before = r.likeText
+      r.likeText = bumpCount(before, want)
+      try {
+        await likeReply(this.detail.aid, r.rpid, want)
+        this.cStatus = want ? '已点赞' : '已取消赞'
+      } catch (err) {
+        r.liked = !want
+        r.likeText = before
+        this.cStatus = (err && err.message) ? err.message : '点赞失败'
+      }
+    },
+
+    // 点头像/昵称 -> TA 的主页 (up 页支持 mid 参数)
+    openUser(r) {
+      if (!r || !r.mid) return
+      try { $falcon.navTo('up', { mid: r.mid, name: r.author }) } catch (e) { this.cStatus = '打开主页失败' }
+    },
+
     openSubReply(r) {
       if (!this.detail) return
       $falcon.navTo('subreply', {
@@ -1385,6 +1429,9 @@ export default {
   color: #6a7684;
   padding-top: 6px;
   padding-bottom: 6px;
+}
+.meta-liked {
+  color: #fb7299;
 }
 .meta-reply {
   font-size: 16px;
