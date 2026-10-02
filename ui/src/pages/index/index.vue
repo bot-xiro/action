@@ -20,7 +20,7 @@
       <text v-else-if="recLoading" class="status status-center">{{ '加载中' + dots }}</text>
       <text v-else-if="recStatus !== ''" class="status status-center">{{ recStatus }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
-                :loadmoreoffset="100" :over-scroll="0" @loadmore="loadMoreRecommend"
+                :loadmoreoffset="100" :over-scroll="70" @loadmore="loadMoreRecommend"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
         <div v-for="item in recResults" :key="item.bvid" class="item" @click="openVideo(item)">
           <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
@@ -42,7 +42,7 @@
       <text v-else-if="hotLoading" class="status status-center">{{ '加载中' + dots }}</text>
       <text v-else-if="hotStatus !== ''" class="status status-center">{{ hotStatus }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
-                :loadmoreoffset="100" :over-scroll="0" @loadmore="loadMoreHot"
+                :loadmoreoffset="100" :over-scroll="70" @loadmore="loadMoreHot"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
         <div v-for="item in hotResults" :key="item.bvid" class="item" @click="openVideo(item)">
           <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
@@ -72,7 +72,7 @@
       <text v-else-if="loading" class="status status-center">{{ '加载中' + dots }}</text>
       <text v-else-if="status !== ''" class="status status-center">{{ status }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
-                :loadmoreoffset="100" :over-scroll="0" @loadmore="loadMoreSearch"
+                :loadmoreoffset="100" :over-scroll="70" @loadmore="loadMoreSearch"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
         <!-- 搜索历史: 未出结果时显示, 点词直接搜 -->
         <div v-if="!searched" class="his-wrap">
@@ -113,7 +113,7 @@
       </div>
       <scroller v-if="dynStatus === '' || dynItems.length > 0" class="list"
                 scroll-direction="vertical" :show-scrollbar="true"
-                :loadmoreoffset="100" :over-scroll="0" @loadmore="loadMoreDynamic"
+                :loadmoreoffset="100" :over-scroll="70" @loadmore="loadMoreDynamic"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
         <div v-for="(item, i) in dynItems" :key="item.bvid || ('draw' + i)" class="item"
              @click="item.type === 'video' ? openVideo(item) : null">
@@ -213,7 +213,7 @@ export default {
       activeTab: 'recommend',
       pullHint: '',
       dots: '',             // 加载动画点 (JS 驱动: 词典笔不支持 CSS 动画)
-      PULL_TRIGGER: 35,      // 下拉多少像素算触发刷新          // 下拉刷新提示 (下拉刷新… / 松手刷新 / 刷新中… / 已刷新)
+      PULL_TRIGGER: 20,      // 下拉多少像素算触发刷新          // 下拉刷新提示 (下拉刷新… / 松手刷新 / 刷新中… / 已刷新)
       // 搜索
       keyword: '',
       placeholder: '点击输入搜索内容',
@@ -328,7 +328,12 @@ export default {
     onListScroll(e) {
       try {
         const co = e && e.contentOffset
-        this._scrollY = co && typeof co.y === 'number' ? co.y : (this._scrollY || 0)
+        const y = co && typeof co.y === 'number' ? co.y : (this._scrollY || 0)
+        this._scrollY = y
+        // 顶部继续下拖 = over-scroll 区 -> contentOffset.y 变负, 用它判定下拉
+        // (touchmove 会被框架节流合并, 只靠触摸距离常常「划出屏幕也不刷新」)
+        if (y < -this.PULL_TRIGGER) { this._pullArmed = true; this.pullHint = '松手刷新' }
+        else if (y < -6) { this.pullHint = '下拉刷新…' }
       } catch (err) {}
     },
     touchY(e) {
@@ -360,7 +365,11 @@ export default {
     onListTouchEnd(e) {
       // 掌机/合成触摸都可能只投递 1~2 个 touchmove (框架会节流合并),
       // 所以松手时再按终点位移补判一次 —— 否则手指拖够了但事件不够, 永远触发不了.
-      let armed = this._pullArmed && this._pullOk && (this._scrollY || 0) <= 20
+      // 兜底: over-scroll 偏移已经超过阈值也算 (触摸事件可能一个都没投递过来)
+      if (!this._pullArmed && (this._scrollY || 0) <= -this.PULL_TRIGGER) this._pullArmed = true
+      // 兜底: over-scroll 偏移已超阈值也算 (触摸事件可能一个都没投递)
+      if (!this._pullArmed && (this._scrollY || 0) <= -this.PULL_TRIGGER) this._pullArmed = true
+      let armed = this._pullArmed && (this._scrollY || 0) <= 20
       if (!armed && this._pullOk && (this._scrollY || 0) <= 20) {
         const yEnd = this.touchY(e)
         if (yEnd > 0 && this._touchY0 > 0 && (yEnd - this._touchY0) > this.PULL_TRIGGER) armed = true
