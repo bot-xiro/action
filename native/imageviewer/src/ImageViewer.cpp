@@ -14,6 +14,7 @@
 //   imageviewer.close()                           // 释放内存
 
 #include "jqutil_v2/jqutil.h"
+#include "jsmodules/JSCModuleExtension.h"
 #include "jquick_config.h"
 
 #include <cstdio>
