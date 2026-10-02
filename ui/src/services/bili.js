@@ -615,12 +615,15 @@ export async function getRelatedVideos(bvid) {
  * 全站热门视频 (无需登录)
  * @returns {Promise<Array<feedItem>>}
  */
-export async function getPopular(page) {
+export async function getPopular(page, fresh) {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   const ckey = 'popular:' + (page || 1)
-  const cached = cacheGet(ckey, 60000)
-  if (cached) return cached
+  if (!fresh) {
+    const cached = cacheGet(ckey, 60000)
+    if (cached) return cached
+  }
   const url = 'https://api.bilibili.com/x/web-interface/popular?pn=' + (page || 1) + '&ps=20'
+    + (fresh ? ('&_=' + Date.now()) : '')
   const body = await getJsonAsync(url, 15)
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
@@ -638,13 +641,17 @@ export async function getPopular(page) {
  * 分页游标 fresh_idx 递增即可无限翻页, 返回空数组即到底.
  * @returns {Promise<Array<feedItem>>}
  */
-export async function getRecommend(page) {
+export async function getRecommend(page, fresh) {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   const ckey = 'rcmd:' + (page || 1)
-  const cached = cacheGet(ckey, 60000)
-  if (cached) return cached
+  // fresh=true: 绕过 60s 结果缓存 (下拉刷新必须拿新内容, 否则「刷新成功但没变」)
+  if (!fresh) {
+    const cached = cacheGet(ckey, 60000)
+    if (cached) return cached
+  }
   const url = 'https://api.bilibili.com/x/web-interface/index/top/feed/rcmd?ps=12'
     + '&fresh_idx=' + (page || 1) + '&fresh_idx_1h=' + (page || 1) + '&fresh_type=4&version=1'
+    + (fresh ? ('&_=' + Date.now()) : '')
   const body = await getJsonAsync(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')

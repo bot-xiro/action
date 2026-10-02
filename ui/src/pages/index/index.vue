@@ -6,6 +6,10 @@
            @click="switchTab(t.key)">
         <text :class="['tab-text', activeTab === t.key ? 'tab-text-active' : '']">{{ t.label }}</text>
       </div>
+      <!-- 刷新按钮: 下拉手势在真机上偶发被框架吞掉, 这里给一个必定可用的入口 -->
+      <div class="tab-refresh" @click="refreshTab">
+        <text class="tab-refresh-text">⟳</text>
+      </div>
     </div>
 
 
@@ -16,7 +20,7 @@
       <text v-else-if="recLoading" class="status status-center">{{ '加载中' + dots }}</text>
       <text v-else-if="recStatus !== ''" class="status status-center">{{ recStatus }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
-                :loadmoreoffset="100" @loadmore="loadMoreRecommend"
+                :loadmoreoffset="100" :over-scroll="0" @loadmore="loadMoreRecommend"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
         <div v-for="item in recResults" :key="item.bvid" class="item" @click="openVideo(item)">
           <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
@@ -38,7 +42,7 @@
       <text v-else-if="hotLoading" class="status status-center">{{ '加载中' + dots }}</text>
       <text v-else-if="hotStatus !== ''" class="status status-center">{{ hotStatus }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
-                :loadmoreoffset="100" @loadmore="loadMoreHot"
+                :loadmoreoffset="100" :over-scroll="0" @loadmore="loadMoreHot"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
         <div v-for="item in hotResults" :key="item.bvid" class="item" @click="openVideo(item)">
           <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
@@ -68,7 +72,7 @@
       <text v-else-if="loading" class="status status-center">{{ '加载中' + dots }}</text>
       <text v-else-if="status !== ''" class="status status-center">{{ status }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
-                :loadmoreoffset="100" @loadmore="loadMoreSearch"
+                :loadmoreoffset="100" :over-scroll="0" @loadmore="loadMoreSearch"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
         <!-- 搜索历史: 未出结果时显示, 点词直接搜 -->
         <div v-if="!searched" class="his-wrap">
@@ -109,7 +113,7 @@
       </div>
       <scroller v-if="dynStatus === '' || dynItems.length > 0" class="list"
                 scroll-direction="vertical" :show-scrollbar="true"
-                :loadmoreoffset="100" @loadmore="loadMoreDynamic"
+                :loadmoreoffset="100" :over-scroll="0" @loadmore="loadMoreDynamic"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
         <div v-for="(item, i) in dynItems" :key="item.bvid || ('draw' + i)" class="item"
              @click="item.type === 'video' ? openVideo(item) : null">
@@ -374,12 +378,12 @@ export default {
           case 'recommend':
             if (this.recLoading) return
             this.recPage = 1; this.recHasMore = true; this.recLoaded = false
-            await this.loadRecommend()
+            await this.loadRecommend(false, true)
             break
           case 'hot':
             if (this.hotLoading) return
             this.hotPage = 1; this.hotHasMore = true; this.hotLoaded = false
-            await this.loadHot()
+            await this.loadHot(false, true)
             break
           case 'search':
             if (this.loading) return
@@ -407,7 +411,7 @@ export default {
     },
 
     // ================= 推荐 (真·主页推荐流) =================
-    async loadRecommend(append) {
+    async loadRecommend(append, fresh) {
       const gen = ++this.recGeneration
       if (this.recLoading && append) return
       this.recLoading = true
@@ -415,7 +419,7 @@ export default {
       // 先让首帧画出加载态再发请求: bilinet.httpGet 同步阻塞 JS 线程
       afterPaint(async () => {
         try {
-          const videos = await getRecommend(this.recPage)
+          const videos = await getRecommend(this.recPage, !!fresh)
           if (gen !== this.recGeneration) return
           if (append) {
             const seen = {}
@@ -451,13 +455,13 @@ export default {
     },
 
     // ================= 热门 =================
-    async loadHot(append) {
+    async loadHot(append, fresh) {
       const gen = ++this.hotGeneration
       this.hotLoading = true
       this.hotStatus = append ? '加载更多…' : '加载中…'
       afterPaint(async () => {
         try {
-          const videos = await getPopular(this.hotPage)
+          const videos = await getPopular(this.hotPage, !!fresh)
           if (gen !== this.hotGeneration) return
           if (append) {
             const seen = {}
@@ -715,6 +719,17 @@ export default {
   display: flex;
   flex-direction: row;
   background-color: #1f1f1f;
+}
+
+.tab-refresh {
+  width: 58px;
+  height: 34px;
+  justify-content: center;
+  align-items: center;
+}
+.tab-refresh-text {
+  font-size: 22px;
+  color: #fb7299;
 }
 .tab {
   width: 192px;
