@@ -17,7 +17,7 @@
         <div v-for="item in recResults" :key="item.bvid" class="item" @click="openVideo(item)">
           <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
           <div class="meta">
-            <text class="title">{{ item.title }}</text>
+            <richtext class="title"><template v-for="(seg, si) in segsOf(item.title)"><span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span><image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image></template></richtext>
             <text class="up">{{ item.author }}</text>
             <text class="stat">▶{{ item.playText }}  {{ item.duration }}</text>
           </div>
@@ -36,7 +36,7 @@
         <div v-for="item in hotResults" :key="item.bvid" class="item" @click="openVideo(item)">
           <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
           <div class="meta">
-            <text class="title">{{ item.title }}</text>
+            <richtext class="title"><template v-for="(seg, si) in segsOf(item.title)"><span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span><image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image></template></richtext>
             <text class="up">{{ item.author }}</text>
             <text class="stat">▶{{ item.playText }}  {{ item.duration }}</text>
           </div>
@@ -77,7 +77,7 @@
           <div v-for="item in results" :key="item.bvid" class="item" @click="openVideo(item)">
             <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
             <div class="meta">
-              <text class="title">{{ item.title }}</text>
+              <richtext class="title"><template v-for="(seg, si) in segsOf(item.title)"><span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span><image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image></template></richtext>
               <text class="up">{{ item.author }}</text>
               <text class="stat">▶{{ item.playText }}  {{ item.duration }}</text>
             </div>
@@ -102,7 +102,7 @@
              @click="item.type === 'video' ? openVideo(item) : null">
           <image class="cover" :src="item.pic" resize="cover" :lazy-load="true"></image>
           <div class="meta">
-            <text class="title">{{ item.title }}</text>
+            <richtext class="title"><template v-for="(seg, si) in segsOf(item.title)"><span v-if="seg.t === 0" :key="'s' + si">{{ seg.v }}</span><image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image></template></richtext>
             <text class="up">{{ item.author }} · {{ item.pubText }}</text>
             <text class="stat">{{ item.type === 'draw' ? ('图文 · ' + item.duration) : ('▶' + item.playText + '  ' + item.duration) }}</text>
           </div>
@@ -169,7 +169,7 @@
 
 <script>
 import { createIME } from '../../services/ime.js'
-import { searchVideos, getPopular, getRecommend, getDynamicFeed, getMyInfo } from '../../services/bili.js'
+import { searchVideos, getPopular, getRecommend, getDynamicFeed, getMyInfo , parseMessage } from '../../services/bili.js'
 import { afterPaint } from '../../base-page.js'
 import { clearLogin, hasCookie, saveProfile } from '../../services/auth.js'
 import { log, logStatus } from '../../services/log.js'
@@ -254,6 +254,19 @@ export default {
     this.loadRecommend()
   },
   methods: {
+    // 标题分段: emoji 转 CDN 图片 (设备字体没有 emoji 字形, 直接 text 渲染会整片空白).
+    // 列表用 CDN 版本即可 (内置 PNG 的 require 只能写在 .vue 里, 不值得每个列表页复制一遍).
+    segsOf(t) {
+      const key = String(t == null ? '' : t)
+      if (!this._segsCache) this._segsCache = {}
+      let segs = this._segsCache[key]
+      if (!segs) {
+        try { segs = parseMessage(key, null, null) } catch (e) { segs = [{ t: 0, v: key }] }
+        this._segsCache[key] = segs
+      }
+      return segs
+    },
+
     switchTab(key) {
       this.activeTab = key
       if (key === 'recommend' && !this.recLoaded && !this.recLoading) {
