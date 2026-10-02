@@ -56,7 +56,7 @@
         <text class="info">版本 v{{ version }}</text>
         <text class="info">appid {{ appid }}</text>
         <text class="info">登录 {{ uid ? ('uid ' + uid) : '(未登录)' }}</text>
-        <text class="info">日志 {{ logPath }}</text>
+        <text class="info">{{ logDesc }}</text>
         <text class="info">配置 {{ cfgPath }}</text>
       </div>
 
@@ -69,7 +69,7 @@
 // 设置页: 蓝牙音画补偿 / 播放防息屏 / 清缓存 / 诊断信息
 // 配置持久化: services/config.js -> /userdisk/xiro/bilibilipan.cfg.json
 import { bilinet } from 'bilinet'
-import { pm } from 'pm'
+import pm from 'pm'
 import { loadConfig, setCfg, resetConfig, CONFIG_PATH } from '../../services/config.js'
 import { log, logStatus } from '../../services/log.js'
 import { getMyInfo } from '../../services/bili.js'
@@ -91,7 +91,7 @@ export default {
       appid: '8001812345678901',
       uid: '',
       status: '',
-      logPath: '/userdisk/xiro/bilibili.log',
+      logDesc: '日志未初始化',
       cfgPath: CONFIG_PATH,
       _statusTimer: null
     }
@@ -109,7 +109,7 @@ export default {
         const info = pm.getPackageInfo(this.appid)
         if (info && info.version) this.version = info.version
       } catch (e) {}
-      try { this.logPath = logStatus() } catch (e) {}
+      try { this.logDesc = logStatus() } catch (e) {}
       try { this.uid = getMid() || '' } catch (e) {}
       if (!this.uid) {
         const self = this
@@ -117,7 +117,8 @@ export default {
       }
     },
     goBack() {
-      try { $falcon.navigateBack() } catch (e) { try { $falcon.navTo('index') } catch (e2) {} }
+      // 项目惯例: 返回上一页用 $page.finish() (见 toview/history 等)
+      try { this.$page.finish() } catch (e) { try { $falcon.navTo('index') } catch (e2) {} }
     },
     tip(msg) {
       const self = this
