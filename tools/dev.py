@@ -140,6 +140,10 @@ if __name__ == '__main__':
         sh('send_event touch release %s %s' % (a[0], a[1]))
     elif cmd == 'swipe':
         swipe(a[0], a[1], a[2], a[3], int(a[4]) if len(a) > 4 else 250)
+    elif cmd == 'screen':
+        # screen state | screen on  —— 系统屏幕控制 (ADB 控制手册 §10.4):
+        # 深睡时 send_event 合成触摸唤不醒, hal-screen on 可以
+        print(sh('hal-screen ' + (a[0] if a else 'state')))
     elif cmd == 'key':
         if a and a[0] == 'back':
             sh('send_event menu press')

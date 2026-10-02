@@ -47,6 +47,34 @@ export function keepAwakeTick() {
   }
 }
 
+/**
+ * 点亮/保持屏幕 (系统 hal-screen, 手册《有道词典笔 ADB 控制手册》§10.4 实证).
+ * 为什么不用 send_event 合成触摸: 合成触摸只在"刚黑"的浅睡下有效,
+ * 深睡(黑几分钟)后完全唤不醒(实测), 而 hal-screen on 任何状态都能点亮.
+ * 注意: 它内部会注入一次触摸激活面板, 所以调用方要还原控制条显隐状态.
+ */
+export function screenOn() {
+  if (!bilinet || typeof bilinet.exec !== 'function') return false
+  try {
+    bilinet.exec('hal-screen on')
+    return true
+  } catch (e) {
+    console.log(LOG + 'hal-screen on failed: ' + (e && e.message ? e.message : e))
+    return false
+  }
+}
+
+/** 查屏幕状态串: "SCREEN_ON" / "SCREEN_OFF" (失败返回空串) */
+export function screenState() {
+  if (!bilinet || typeof bilinet.exec !== 'function') return ''
+  try {
+    const s = bilinet.exec('hal-screen state')
+    const t = String(s == null ? '' : s)
+    const i = t.indexOf('SCREEN_')
+    return i >= 0 ? t.substring(i, i + 10) : ''
+  } catch (e) { return '' }
+}
+
 /** 是否具备防息屏能力 (exec 方法存在) */
 export function keepAwakeSupported() {
   return !!(bilinet && typeof bilinet.exec === 'function')

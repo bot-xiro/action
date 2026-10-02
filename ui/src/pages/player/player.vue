@@ -360,15 +360,13 @@ export default {
       this.lastUserTouchAt = Date.now()
     },
 
-    // 保活注入: 真机实测 **只有 press/release 能重置息屏计时**
-    // (send_event 的 slip 不行 —— 0.9.10 只注 slip, 播放 35s 后屏幕照样黑).
-    // 但点击 stage 会切换控制条, 所以点完立刻把控制条恢复成原状态,
-    // 视觉上只有 ~80ms 的一闪.
+    // 保活: 调系统 hal-screen on (《ADB 控制手册》§10.4 实证, 深睡也能点亮).
+    // 它内部会注入一次触摸激活面板 -> 会切换控制条, 所以点完立刻还原控制条状态.
     keepAwakeTap: function () {
       var self = this
       var wasVisible = this.barVisible
-      player.tapScreen()
-      setTimer(this, 80, function () {
+      player.screenOn()
+      setTimer(this, 120, function () {
         if (wasVisible) self.showBar(); else self.hideBar()
       })
     },
@@ -378,8 +376,10 @@ export default {
       var self = this
       var jsapiOn = screenon.screenOnAvailable()
       if (jsapiOn) screenon.screenOnStart()
-      try { log('播放器', '防息屏: JSAPI=' + (jsapiOn ? 'on' : 'off') + ' + 每 6s 合成点击保活') } catch (e) {}
+      try { log('播放器', '防息屏: JSAPI=' + (jsapiOn ? 'on' : 'off') + ' + 每 6s hal-screen on 保活') } catch (e) {}
       // 系统息屏阈值实测 ~10s, 6s 一次留出余量; JSAPI 仍照调 (能生效更好)
+      // hal-screen on 首次立即调一次 (起播瞬间也容易黑)
+      player.screenOn()
       this.keepTimer = setTicker(this, 6000, function () {
         if (!self.playing) return
         if (screenon.screenOnAvailable()) {
