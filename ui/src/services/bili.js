@@ -1397,14 +1397,20 @@ export async function getReplies(aid, pn, builtinEmoji, sort) {
     replies.push(mapReply(r, upperMid, builtinEmoji))
   }
   // UP 主置顶评论: 单独在 data.upper.top, 不在 replies 里 -> 插到最前面并打置顶标记
+  // UP 主置顶: 必须真的排在第一条 (0.9.32) —— 如果接口把它也塞进了 replies,
+  // 就把它从原位置摘出来再放最前, 而不是只在「不在列表里」时才插入.
   const topReply = body.data.upper && body.data.upper.top ? body.data.upper.top : null
   if (topReply && (pn || 1) === 1) {
     const topId = topReply.rpid || 0
-    let found = false
+    let idx = -1
     for (let i = 0; i < replies.length; i++) {
-      if (replies[i].rpid === topId) { replies[i].pinned = true; found = true; break }
+      if (replies[i].rpid === topId) { idx = i; break }
     }
-    if (!found) replies.unshift(mapReply(topReply, upperMid, builtinEmoji, { pinned: true }))
+    let topItem = null
+    if (idx >= 0) { topItem = replies[idx]; replies.splice(idx, 1) }
+    else topItem = mapReply(topReply, upperMid, builtinEmoji)
+    topItem.pinned = true
+    replies.unshift(topItem)
   }
   return { total: page.count || 0, replies: replies }
 }
