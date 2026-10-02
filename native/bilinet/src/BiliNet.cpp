@@ -132,6 +132,11 @@ namespace sql {
 // v2: 增加自定义 headers (登录 Cookie 注入) 与 httpPost (评论发送).
 // v6: 增加异步版 httpGetAsync/httpPostAsync (Promise, 工作线程执行, 不阻塞 JS 主线程).
 // 安全: Cookie 头含 SESSDATA, 日志一律脱敏 (只打印键名不打印值).
+// v6.1: popen/pclose 在多线程并发调用下有隐患 (内部子进程表 / 回收竞争), 因此异步请求虽然
+// 跑在工作线程, curl 的执行仍然串行化 —— JS 主线程不受影响, 只是并发请求排队.
+// 注意: 必须定义在 class BiliNet 之前 (成员函数 runAsync 里要用).
+static std::mutex g_curlMutex;
+
 class BiliNet : public JQUTIL_NS::JQBaseObject {
 public:
     void httpGet(JQUTIL_NS::JQFunctionInfo& info)
@@ -698,10 +703,6 @@ public:
 };
 
 const char* BiliNet::UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-
-// v6.1: popen/pclose 在多线程并发调用下有隐患 (内部子进程表/回收竞争),
-// 异步请求虽跑在工作线程, curl 执行仍串行化 —— JS 主线程不受影响, 只是并发请求排队.
-static std::mutex g_curlMutex;
 const char* BiliNet::REFERER = "https://www.bilibili.com";
 
 static JSValue createBiliNet(JQModuleEnv* env)
