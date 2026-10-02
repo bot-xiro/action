@@ -11,7 +11,9 @@
 
     <!-- 推荐 (真·主页推荐流 rcmd, 无限滑动) -->
     <div v-if="activeTab === 'recommend'" class="tabbody">
-      <text v-if="recStatus !== ''" class="status">{{ recStatus }}</text>
+      <text v-if="pullHint !== ''" class="status status-pull">{{ pullHint }}</text>
+
+      <text v-else-if="recStatus !== ''" class="status">{{ recStatus }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
                 :loadmoreoffset="100" @loadmore="loadMoreRecommend"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
@@ -30,7 +32,9 @@
 
     <!-- 热门 (x/web-interface/popular, 无限滑动) -->
     <div v-else-if="activeTab === 'hot'" class="tabbody">
-      <text v-if="hotStatus !== ''" class="status">{{ hotStatus }}</text>
+      <text v-if="pullHint !== ''" class="status status-pull">{{ pullHint }}</text>
+
+      <text v-else-if="hotStatus !== ''" class="status">{{ hotStatus }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
                 :loadmoreoffset="100" @loadmore="loadMoreHot"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
@@ -57,7 +61,9 @@
           <text class="search-btn-text">搜索</text>
         </div>
       </div>
-      <text v-if="status !== ''" class="status">{{ status }}</text>
+      <text v-if="pullHint !== ''" class="status status-pull">{{ pullHint }}</text>
+
+      <text v-else-if="status !== ''" class="status">{{ status }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
                 :loadmoreoffset="100" @loadmore="loadMoreSearch"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
@@ -91,7 +97,9 @@
 
     <!-- 动态 (视频 + 图文) -->
     <div v-else-if="activeTab === 'dynamic'" class="tabbody">
-      <text v-if="dynStatus !== ''" class="status">{{ dynStatus }}</text>
+      <text v-if="pullHint !== ''" class="status status-pull">{{ pullHint }}</text>
+
+      <text v-else-if="dynStatus !== ''" class="status">{{ dynStatus }}</text>
       <div v-if="dynStatus !== '' && dynStatus.indexOf('未登录') >= 0" class="login-cta" @click="openLogin">
         <text class="login-cta-text">去登录</text>
       </div>
@@ -158,15 +166,14 @@
           <div v-if="myInfo.isLogin" class="login-cta" @click="logout">
             <text class="login-cta-text">退出登录</text>
           </div>
-          <text v-if="myStatus !== ''" class="ph-desc2">{{ myStatus }}</text>
+          <text v-if="pullHint !== ''" class="status status-pull">{{ pullHint }}</text>
+          <text v-else-if="myStatus !== ''" class="ph-desc2">{{ myStatus }}</text>
           <text class="ph-desc2">bilibilipan v{{ appVersion }}</text>
           <text class="ph-desc2">appid {{ appid }} · 词典笔 mini-app</text>
           <text class="ph-desc2">{{ storeHint }}</text>
         </div>
       </scroller>
     </div>
-    <!-- 下拉刷新提示: 必须放模板最后 + z-index, 放中间会被 scroller 盖住 (实测扫不到粉色像素) -->
-    <text v-if="pullHint !== ''" class="pull-toast">{{ pullHint }}</text>
   </div>
 </template>
 
@@ -764,6 +771,10 @@ export default {
   background-color: rgba(251, 114, 153, 0.92);
   color: #ffffff;
   font-size: 15px;
+}
+.status-pull {
+  color: #fb7299;
+  font-size: 17px;
 }
 .status {
   font-size: 22px;
