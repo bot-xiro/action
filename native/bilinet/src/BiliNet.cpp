@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <thread>
+#include <mutex>
 #include <cstring>
 #include <string>
 #include <syslog.h>
@@ -325,10 +326,15 @@ private:
         try {
             JQUTIL_NS::JQAsyncInfo ainfo = info;   // 值拷贝: 供工作线程投递
             std::thread([ainfo, cmdCopy, tagCopy]() mutable {
-                FILE* fp = popen(cmdCopy.c_str(), "r");
-                if (!fp) { ainfo.postError(tagCopy + ": curl 启动失败"); return; }
-                std::string body = drain(fp);
-                int rc = pclose(fp);
+                std::string body;
+                int rc = 0;
+                {
+                    std::lock_guard<std::mutex> lock(g_curlMutex);
+                    FILE* fp = popen(cmdCopy.c_str(), "r");
+                    if (!fp) { ainfo.postError(tagCopy + ": curl 启动失败"); return; }
+                    body = drain(fp);
+                    rc = pclose(fp);
+                }
                 BN_LOG("%s: rc=%d len=%zu", tagCopy.c_str(), rc, body.size());
                 if (body.empty()) {
                     ainfo.postError(tagCopy + ": 空响应 (rc=" + std::to_string(rc) + ")");
@@ -692,6 +698,10 @@ public:
 };
 
 const char* BiliNet::UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+// v6.1: popen/pclose 在多线程并发调用下有隐患 (内部子进程表/回收竞争),
+// 异步请求虽跑在工作线程, curl 执行仍串行化 —— JS 主线程不受影响, 只是并发请求排队.
+static std::mutex g_curlMutex;
 const char* BiliNet::REFERER = "https://www.bilibili.com";
 
 static JSValue createBiliNet(JQModuleEnv* env)
