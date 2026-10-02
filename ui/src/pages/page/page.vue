@@ -147,6 +147,8 @@
               <div class="reply-main">
                 <div class="reply-head">
                   <text class="reply-author" @click="openUser(r)">{{ r.author }}</text>
+                  <text v-if="r.pinned" class="tag tag-pin">置顶</text>
+                  <text v-if="r.isUp" class="tag tag-up">UP主</text>
                   <text class="reply-time">{{ r.timeText }}</text>
                 </div>
                 <!-- 图文混排: B 站表情 + emoji 转图片 (设备字体无 emoji 字形); 超 3 行收起, 点击展开.
@@ -161,6 +163,9 @@
                   </richtext>
                   <!-- 折叠态右下角省略号 (richtext 被 lines 截断时不会自己带 ...) -->
                   <text v-if="!r.expanded && r.long" class="reply-more" @click="toggleReply(r)">…</text>
+                </div>
+                <div v-if="r.pics && r.pics.length > 0" class="reply-pics">
+                  <image v-for="(pic, pi) in r.pics" :key="'pic' + r.rpid + pi" class="reply-pic" :src="pic.src" :style="{ width: pic.w + 'px', height: pic.h + 'px' }" resize="cover"></image>
                 </div>
                 <div class="reply-meta">
                   <text :class="['meta-text', r.liked ? 'meta-liked' : '']" @click="toggleReplyLike(r)">赞 {{ r.likeText }}{{ r.liked ? ' ✓' : '' }}</text>
@@ -1378,6 +1383,33 @@ export default {
 .reply-main {
   width: 570px;
   flex-direction: column;
+}
+.tag {
+  font-size: 15px;
+  padding-left: 8px;
+  padding-right: 8px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  border-radius: 6px;
+  margin-left: 8px;
+  justify-content: center;
+}
+.tag-pin {
+  background-color: #fb7299;
+  color: #ffffff;
+}
+.tag-up {
+  background-color: #2f80ed;
+  color: #ffffff;
+}
+.reply-pics {
+  flex-direction: row;
+  margin-top: 6px;
+  margin-bottom: 4px;
+}
+.reply-pic {
+  margin-right: 8px;
+  border-radius: 8px;
 }
 .reply-head {
   flex-direction: row;

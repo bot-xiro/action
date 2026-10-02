@@ -1327,6 +1327,56 @@ function isLongMessage(text) { return visualWidth(text) > 35 * 3 }
  * @param {string} sort 'hot'=热度(sort=2) / 'time'=最新(sort=0)
  * @returns {Promise<{total:number, replies:Array}>}
  */
+// 评论图片: content.pictures[] -> { src, w, h } (按原图比例缩到 <=150px 高)
+function mapReplyPics(content) {
+  const pics = (content && content.pictures) || []
+  const out = []
+  for (let i = 0; i < pics.length && i < 6; i++) {
+    const pic = pics[i]
+    if (!pic) continue
+    let src = pic.img_src || ''
+    if (src.indexOf('//') === 0) src = 'https:' + src
+    else if (src.indexOf('http://') === 0) src = 'https://' + src.slice(7)
+    if (!src) continue
+    const iw = Number(pic.img_width) || 0
+    const ih = Number(pic.img_height) || 0
+    let w = 120, h = 120
+    if (iw > 0 && ih > 0) {
+      const scale = Math.min(150 / ih, 200 / iw, 1)
+      w = Math.max(40, Math.round(iw * scale))
+      h = Math.max(40, Math.round(ih * scale))
+    }
+    out.push({ src: thumb(src, w, h), w: w, h: h })
+  }
+  return out
+}
+
+// 单条评论 -> 视图模型 (主评论/子回复共用)
+function mapReply(r, upperMid, builtinEmoji, opts) {
+  const member = r.member || {}
+  const content = r.content || {}
+  let face = member.avatar || ''
+  if (face.indexOf('//') === 0) face = 'https:' + face
+  const o = opts || {}
+  return {
+    rpid: r.rpid || 0,
+    author: member.uname || '用户',
+    isUp: upperMid > 0 && r.mid === upperMid,     // UP 主本人 -> 显示 UP主 标签
+    pinned: !!o.pinned,                            // 置顶评论
+    mid: r.mid || 0,
+    liked: Number(r.action) === 1,
+    replyTo: o.replyTo || '',
+    face: thumb(face, 60, 60),
+    message: stripTags(content.message),
+    pics: mapReplyPics(content),                   // 评论图片 (最多 6 张)
+    segs: parseMessage(content.message, content.emote, builtinEmoji),
+    long: isLongMessage(stripTags(content.message)),
+    likeText: formatPlay(r.like),
+    timeText: formatRelative(r.ctime),
+    replyCount: r.rcount || 0
+  }
+}
+
 export async function getReplies(aid, pn, builtinEmoji, sort) {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   const sortParam = sort === 'time' ? 0 : 2
@@ -1339,29 +1389,22 @@ export async function getReplies(aid, pn, builtinEmoji, sort) {
   }
   const page = body.data.page || {}
   const list = body.data.replies || []
+  const upperMid = (body.data.upper && body.data.upper.mid) || 0
   const replies = []
   for (let i = 0; i < list.length; i++) {
     const r = list[i]
     if (!r) continue
-    const member = r.member || {}
-    const content = r.content || {}
-    let face = member.avatar || ''
-    if (face.indexOf('//') === 0) face = 'https:' + face
-    const upperMid = body.data.upper ? body.data.upper.mid : 0
-    replies.push({
-      rpid: r.rpid || 0,
-      author: (member.uname || '用户') + (r.mid === upperMid ? ' (UP)' : ''),
-      mid: r.mid || 0,                       // 点击头像/昵称进入 TA 的主页
-      liked: Number(r.action) === 1,          // 当前账号是否已赞 (action 是权威状态)
-      face: thumb(face, 60, 60),
-      // segs: 图文混排段 (B 站 emote + unicode emoji -> 图片); message 保留纯文本兜底
-      message: stripTags(content.message),
-      segs: parseMessage(content.message, content.emote, builtinEmoji),
-      long: isLongMessage(stripTags(content.message)),   // 折叠时要不要显示省略号
-      likeText: formatPlay(r.like),
-      timeText: formatRelative(r.ctime),
-      replyCount: r.rcount || 0
-    })
+    replies.push(mapReply(r, upperMid, builtinEmoji))
+  }
+  // UP 主置顶评论: 单独在 data.upper.top, 不在 replies 里 -> 插到最前面并打置顶标记
+  const topReply = body.data.upper && body.data.upper.top ? body.data.upper.top : null
+  if (topReply && (pn || 1) === 1) {
+    const topId = topReply.rpid || 0
+    let found = false
+    for (let i = 0; i < replies.length; i++) {
+      if (replies[i].rpid === topId) { replies[i].pinned = true; found = true; break }
+    }
+    if (!found) replies.unshift(mapReply(topReply, upperMid, builtinEmoji, { pinned: true }))
   }
   return { total: page.count || 0, replies: replies }
 }
@@ -1384,29 +1427,14 @@ export async function getSubReplies(aid, root, pn, builtinEmoji) {
   }
   const page = body.data.page || {}
   const list = body.data.replies || []
+  const upperMid = (body.data.upper && body.data.upper.mid) || 0
   const replies = []
   for (let i = 0; i < list.length; i++) {
     const r = list[i]
     if (!r) continue
-    const member = r.member || {}
-    const content = r.content || {}
-    let face = member.avatar || ''
-    if (face.indexOf('//') === 0) face = 'https:' + face
-    // reply_to: 楼中楼里被回复的人 (扁平结构, 回复某人时标注)
+    // reply_to: 楼中楼里被回复的人 (扁平结构)
     const rt = r.reply_to ? (r.reply_to.uname || '') : ''
-    replies.push({
-      rpid: r.rpid || 0,
-      author: member.uname || '用户',
-      mid: r.mid || 0,
-      liked: Number(r.action) === 1,
-      replyTo: rt,
-      face: thumb(face, 60, 60),
-      message: stripTags(content.message),
-      segs: parseMessage(content.message, content.emote, builtinEmoji),
-      long: isLongMessage(stripTags(content.message)),
-      likeText: formatPlay(r.like),
-      timeText: formatRelative(r.ctime)
-    })
+    replies.push(mapReply(r, upperMid, builtinEmoji, { replyTo: rt }))
   }
   return { total: page.count || 0, replies: replies }
 }

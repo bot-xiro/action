@@ -25,6 +25,7 @@
         <div class="reply-main">
           <div class="reply-head">
             <text class="reply-author" @click="openUser(r)">{{ r.author }}</text>
+            <text v-if="r.isUp" class="tag tag-up">UP主</text>
             <text class="reply-time">{{ r.timeText }}</text>
           </div>
           <!-- :key 重建生效: Falcon 的 lines 样式创建后不随 class 更新 -->
@@ -35,6 +36,9 @@
               <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
             </template>
           </richtext>
+          <div v-if="r.pics && r.pics.length > 0" class="reply-pics">
+            <image v-for="(pic, pi) in r.pics" :key="'pic' + r.rpid + pi" class="reply-pic" :src="pic.src" :style="{ width: pic.w + 'px', height: pic.h + 'px' }" resize="cover"></image>
+          </div>
           <div class="reply-meta">
             <text :class="['meta-text', r.liked ? 'meta-liked' : '']" @click="toggleReplyLike(r)">赞 {{ r.likeText }}{{ r.liked ? ' ✓' : '' }}</text>
             <text class="meta-reply" @click="setTarget(r)">回复</text>
@@ -515,6 +519,27 @@ function parseParentSegs(msg) {
   lines: 1;
   text-overflow: ellipsis;
   overflow: hidden;
+}
+.tag-up {
+  font-size: 15px;
+  padding-left: 8px;
+  padding-right: 8px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  border-radius: 6px;
+  margin-left: 8px;
+  background-color: #2f80ed;
+  color: #ffffff;
+  justify-content: center;
+}
+.reply-pics {
+  flex-direction: row;
+  margin-top: 6px;
+  margin-bottom: 4px;
+}
+.reply-pic {
+  margin-right: 8px;
+  border-radius: 8px;
 }
 .status {
   font-size: 19px;
