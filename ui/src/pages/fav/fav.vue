@@ -10,7 +10,7 @@
     <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
               :loadmoreoffset="100" @loadmore="loadMore" @scroll="onListScroll"
               @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
-      <text v-if="status !== ''" class="state">{{ status }}</text>
+      <text v-if="status !== ''" class="state">{{ loading ? ('加载中' + dots) : status }}</text>
       <div v-if="!logged && loaded" class="gate">
         <text class="gate-text">收藏夹需要登录后查看</text>
         <div class="gate-btn" @click="goLogin">
@@ -62,6 +62,7 @@ export default {
       logged: false,
       loaded: false,
       loading: false,
+      dots: '',   // 加载动画点 (词典笔不支持 CSS 动画, 用 JS 计时器)
       pn: 1,
       hasMore: false,
       generation: 0,
@@ -69,6 +70,16 @@ export default {
     }
   },
   methods: {
+    startDots() {
+      if (this._dotTimer) return
+      const self = this
+      this._dotTimer = setInterval(function () { self.dots = self.dots.length >= 3 ? '' : self.dots + '.' }, 400)
+    },
+    stopDots() {
+      if (this._dotTimer) { clearInterval(this._dotTimer); this._dotTimer = null }
+      this.dots = ''
+    },
+
     // 标题分段: emoji -> CDN 图片 (设备字体没有 emoji 字形, 直接 text 会整片空白)
     segsOf(t) {
       const key = String(t == null ? '' : t)
@@ -101,7 +112,7 @@ export default {
       }
       if (this.loading) return
       const gen = ++this.generation
-      this.loading = true
+      this.loading = true; this.startDots()
       this.mode = 'folders'
       this.status = '加载中…'
       afterPaint(async () => {
@@ -118,7 +129,7 @@ export default {
           this.status = msg.indexOf('未登录') >= 0 ? '未登录' : msg
           this.loaded = true
         } finally {
-          if (gen === this.generation) this.loading = false
+          if (gen === this.generation) this.loading = false; this.stopDots()
         }
       }, LOAD_DELAY_MS)
     },
@@ -135,7 +146,7 @@ export default {
     loadList(reset) {
       if (this.loading) return
       const gen = ++this.generation
-      this.loading = true
+      this.loading = true; this.startDots()
       if (reset) {
         this.pn = 1
         this.items = []
@@ -154,7 +165,7 @@ export default {
           if (gen !== this.generation) return
           this.status = err && err.message ? err.message : String(err)
         } finally {
-          if (gen === this.generation) this.loading = false
+          if (gen === this.generation) this.loading = false; this.stopDots()
         }
       }, reset ? LOAD_DELAY_MS : 30)
     },
@@ -280,6 +291,8 @@ export default {
   color: #999999;
   margin-left: 24px;
   margin-top: 6px;
+  width: 100%;
+  text-align: center;
 }
 .list {
   width: 960px;
@@ -338,7 +351,7 @@ export default {
   margin-left: 16px;
   margin-top: 8px;
   margin-right: 16px;
-  lines: 2;
+  lines: 1; height: 32px;   /* 单行: 原 lines:2 配固定 112px 的 .meta, 播放量会被挤出卡片 */
   text-overflow: ellipsis;
   overflow: hidden;
 }

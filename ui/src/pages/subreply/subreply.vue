@@ -482,6 +482,8 @@ function parseParentSegs(msg) {
   color: #e6a23c;
   margin-top: 8px;
   margin-bottom: 8px;
+  width: 100%;
+  text-align: center;
 }
 .reply {
   flex-direction: row;

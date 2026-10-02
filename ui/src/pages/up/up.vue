@@ -61,6 +61,16 @@ export default {
     }
   },
   methods: {
+    startDots() {
+      if (this._dotTimer) return
+      const self = this
+      this._dotTimer = setInterval(function () { self.dots = self.dots.length >= 3 ? '' : self.dots + '.' }, 400)
+    },
+    stopDots() {
+      if (this._dotTimer) { clearInterval(this._dotTimer); this._dotTimer = null }
+      this.dots = ''
+    },
+
     // 标题分段: emoji -> CDN 图片 (设备字体没有 emoji 字形, 直接 text 会整片空白)
     segsOf(t) {
       const key = String(t == null ? '' : t)
@@ -276,6 +286,8 @@ export default {
   color: #999999;
   margin-left: 24px;
   margin-top: 8px;
+  width: 100%;
+  text-align: center;
 }
 .info-row {
   width: 960px;
@@ -347,7 +359,7 @@ export default {
   margin-left: 16px;
   margin-top: 8px;
   margin-right: 12px;
-  lines: 2;
+  lines: 1; height: 32px;   /* 单行: 原 lines:2 配固定 112px 的 .meta, 播放量会被挤出卡片 */
   text-overflow: ellipsis;
   overflow: hidden;
 }

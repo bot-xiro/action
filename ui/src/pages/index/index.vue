@@ -11,9 +11,10 @@
 
     <!-- 推荐 (真·主页推荐流 rcmd, 无限滑动) -->
     <div v-if="activeTab === 'recommend'" class="tabbody">
-      <text v-if="pullHint !== ''" class="status status-pull">{{ pullHint }}</text>
+      <text v-if="pullHint !== ''" class="status status-pull status-center">{{ pullHint }}</text>
 
-      <text v-else-if="recStatus !== ''" class="status">{{ recStatus }}</text>
+      <text v-else-if="recLoading" class="status status-center">{{ '加载中' + dots }}</text>
+      <text v-else-if="recStatus !== ''" class="status status-center">{{ recStatus }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
                 :loadmoreoffset="100" @loadmore="loadMoreRecommend"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
@@ -32,9 +33,10 @@
 
     <!-- 热门 (x/web-interface/popular, 无限滑动) -->
     <div v-else-if="activeTab === 'hot'" class="tabbody">
-      <text v-if="pullHint !== ''" class="status status-pull">{{ pullHint }}</text>
+      <text v-if="pullHint !== ''" class="status status-pull status-center">{{ pullHint }}</text>
 
-      <text v-else-if="hotStatus !== ''" class="status">{{ hotStatus }}</text>
+      <text v-else-if="hotLoading" class="status status-center">{{ '加载中' + dots }}</text>
+      <text v-else-if="hotStatus !== ''" class="status status-center">{{ hotStatus }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
                 :loadmoreoffset="100" @loadmore="loadMoreHot"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
@@ -61,9 +63,10 @@
           <text class="search-btn-text">搜索</text>
         </div>
       </div>
-      <text v-if="pullHint !== ''" class="status status-pull">{{ pullHint }}</text>
+      <text v-if="pullHint !== ''" class="status status-pull status-center">{{ pullHint }}</text>
 
-      <text v-else-if="status !== ''" class="status">{{ status }}</text>
+      <text v-else-if="loading" class="status status-center">{{ '加载中' + dots }}</text>
+      <text v-else-if="status !== ''" class="status status-center">{{ status }}</text>
       <scroller class="list" scroll-direction="vertical" :show-scrollbar="true"
                 :loadmoreoffset="100" @loadmore="loadMoreSearch"
                 @scroll="onListScroll" @touchstart="onListTouchStart" @touchmove="onListTouchMove" @touchend="onListTouchEnd">
@@ -97,9 +100,10 @@
 
     <!-- 动态 (视频 + 图文) -->
     <div v-else-if="activeTab === 'dynamic'" class="tabbody">
-      <text v-if="pullHint !== ''" class="status status-pull">{{ pullHint }}</text>
+      <text v-if="pullHint !== ''" class="status status-pull status-center">{{ pullHint }}</text>
 
-      <text v-else-if="dynStatus !== ''" class="status">{{ dynStatus }}</text>
+      <text v-else-if="dynLoading" class="status status-center">{{ '加载中' + dots }}</text>
+      <text v-else-if="dynStatus !== ''" class="status status-center">{{ dynStatus }}</text>
       <div v-if="dynStatus !== '' && dynStatus.indexOf('未登录') >= 0" class="login-cta" @click="openLogin">
         <text class="login-cta-text">去登录</text>
       </div>
@@ -166,8 +170,13 @@
           <div v-if="myInfo.isLogin" class="login-cta" @click="logout">
             <text class="login-cta-text">退出登录</text>
           </div>
-          <text v-if="pullHint !== ''" class="status status-pull">{{ pullHint }}</text>
-          <text v-else-if="myStatus !== ''" class="ph-desc2">{{ myStatus }}</text>
+          <!-- 设置入口 -->
+          <div class="login-cta" @click="openSettings">
+            <text class="login-cta-text">设置 (蓝牙补偿 · 防息屏 · 清缓存)</text>
+          </div>
+          <text v-if="pullHint !== ''" class="status status-pull status-center">{{ pullHint }}</text>
+          <text v-else-if="myLoading" class="status status-center">{{ '加载中' + dots }}</text>
+          <text v-else-if="myStatus !== ''" class="status status-center">{{ myStatus }}</text>
           <text class="ph-desc2">bilibilipan v{{ appVersion }}</text>
           <text class="ph-desc2">appid {{ appid }} · 词典笔 mini-app</text>
           <text class="ph-desc2">{{ storeHint }}</text>
@@ -199,6 +208,7 @@ export default {
       ],
       activeTab: 'recommend',
       pullHint: '',
+      dots: '',             // 加载动画点 (JS 驱动: 词典笔不支持 CSS 动画)
       PULL_TRIGGER: 35,      // 下拉多少像素算触发刷新          // 下拉刷新提示 (下拉刷新… / 松手刷新 / 刷新中… / 已刷新)
       // 搜索
       keyword: '',
@@ -333,12 +343,12 @@ export default {
       this._touchY0 = this.touchY(e)
       this._pullArmed = false
       // 顶部容差放宽到 6px (真机 contentOffset 常有 0~3 抖动, 之前 <=2 会偶发拉不动)
-      this._pullOk = (this._scrollY || 0) <= 6
+      this._pullOk = (this._scrollY || 0) <= 20
       this.pullHint = ''
     },
     onListTouchMove(e) {
       if (!this._pullOk) return
-      if ((this._scrollY || 0) > 6) { this._pullOk = false; this.pullHint = ''; return }
+      if ((this._scrollY || 0) > 20) { this._pullOk = false; this.pullHint = ''; return }
       const dy = this.touchY(e) - this._touchY0
       if (dy > this.PULL_TRIGGER) { this._pullArmed = true; this.pullHint = '松手刷新' }
       else if (dy > 12) { this.pullHint = '下拉刷新…' }
@@ -346,8 +356,8 @@ export default {
     onListTouchEnd(e) {
       // 掌机/合成触摸都可能只投递 1~2 个 touchmove (框架会节流合并),
       // 所以松手时再按终点位移补判一次 —— 否则手指拖够了但事件不够, 永远触发不了.
-      let armed = this._pullArmed && this._pullOk && (this._scrollY || 0) <= 6
-      if (!armed && this._pullOk && (this._scrollY || 0) <= 6) {
+      let armed = this._pullArmed && this._pullOk && (this._scrollY || 0) <= 20
+      if (!armed && this._pullOk && (this._scrollY || 0) <= 20) {
         const yEnd = this.touchY(e)
         if (yEnd > 0 && this._touchY0 > 0 && (yEnd - this._touchY0) > this.PULL_TRIGGER) armed = true
       }
@@ -385,6 +395,7 @@ export default {
             await this.loadMine()
             break
         }
+        this._scrollY = 0
         this.pullHint = '已刷新'
         const self = this
         setTimeout(function () { if (self.pullHint === '已刷新') self.pullHint = '' }, 1200)
@@ -419,6 +430,7 @@ export default {
             this.recResults = videos
             this.recHasMore = videos.length > 0
           }
+          if (!append) this._scrollY = 0
           this.recLoaded = true
           this.recStatus = videos.length === 0 && !append ? '暂无推荐内容' : ''
         } catch (err) {
@@ -457,6 +469,7 @@ export default {
             this.hotResults = videos
           }
           this.hotHasMore = videos.length >= 20
+          this._scrollY = 0   // 刷新/重载后列表回到顶部, 下拉刷新才能再次触发
           this.hotLoaded = true
           this.hotStatus = videos.length === 0 && !append ? '暂无热门内容' : ''
         } catch (err) {
@@ -493,6 +506,7 @@ export default {
           }
           this.dynOffset = r.offset
           this.dynHasMore = r.hasMore
+          this._scrollY = 0   // 刷新/重载后列表回到顶部, 下拉刷新才能再次触发
           this.dynLoaded = true
           this.dynStatus = r.items.length === 0 && !offset ? '暂无动态, 去关注一些 UP 主吧' : ''
         } catch (err) {
@@ -544,10 +558,16 @@ export default {
         } finally {
           if (gen === this.myGeneration) {
             this.myLoading = false
+            this._scrollY = 0   // 刷新/重载后列表回到顶部, 下拉刷新才能再次触发
             this.myLoaded = true
           }
         }
       })
+    },
+
+    // 打开设置页
+    openSettings() {
+      try { $falcon.navTo('settings') } catch (e) { this.myStatus = '打开设置失败' }
     },
 
     logout() {
@@ -591,6 +611,7 @@ export default {
         try {
           const videos = await searchVideos(keyword.trim(), 1)
           if (gen !== this.generation) return
+          this._scrollY = 0
           this.results = videos
           this.searched = true
           this.searchHasMore = videos.length >= 20
@@ -779,9 +800,15 @@ export default {
 .status {
   font-size: 22px;
   color: #999999;
-  margin-left: 24px;
   margin-top: 4px;
   height: 30px;
+  width: 100%;
+  text-align: center;
+}
+.status-center {
+  width: 100%;
+  text-align: center;
+  margin-left: 0;
 }
 /* 搜索历史 */
 .his-wrap {
@@ -859,8 +886,9 @@ export default {
   margin-left: 16px;
   margin-top: 8px;
   margin-right: 16px;
-  /* Falcon 不支持 max-lines, 必须用 lines: N 配合 text-overflow */
-  lines: 2;
+  /* 单行 + 省略号: 原来 lines:2 时 .meta 固定 112px 装不下, 播放量会被挤出卡片 */
+  lines: 1;
+  height: 32px;
   text-overflow: ellipsis;
   overflow: hidden;
 }

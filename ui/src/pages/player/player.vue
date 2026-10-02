@@ -378,6 +378,16 @@ export default {
 
     startKeepAwake: function () {
       if (this.keepTimer != null) return
+      // 设置页可关闭防息屏 (services/config.js)
+
+      if (typeof player.keepAwakeEnabled === 'function' && !player.keepAwakeEnabled()) {
+
+        try { log('播放器', '防息屏: 设置里已关闭, 跳过保活') } catch (e) {}
+
+        return
+
+      }
+
       var self = this
       var jsapiOn = screenon.screenOnAvailable()
       if (jsapiOn) screenon.screenOnStart()

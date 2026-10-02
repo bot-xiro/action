@@ -20,7 +20,8 @@
     "subreply": "pages/subreply/subreply.vue",
     "history": "pages/history/history.vue",
     "fav": "pages/fav/fav.vue",
-    "toview": "pages/toview/toview.vue"
+    "toview": "pages/toview/toview.vue",
+    "settings": "pages/settings/settings.vue"
   },
   "options": {
     "external": ["bilinet", "gstplayer", "brightness"],

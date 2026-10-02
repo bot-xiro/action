@@ -18,6 +18,7 @@
 
 import { gstPlayer } from 'gstplayer'
 import { bilinet } from 'bilinet'
+import { getCfg } from './config.js'
 
 const LOG = '[player] '
 
@@ -53,6 +54,11 @@ export function keepAwakeTick() {
  * 深睡(黑几分钟)后完全唤不醒(实测), 而 hal-screen on 任何状态都能点亮.
  * 注意: 它内部会注入一次触摸激活面板, 所以调用方要还原控制条显隐状态.
  */
+// 是否启用播放防息屏 (设置页可关)
+export function keepAwakeEnabled() {
+  try { return getCfg('keepAwake') !== false } catch (e) { return true }
+}
+
 export function screenOn() {
   if (!bilinet || typeof bilinet.exec !== 'function') return false
   try {
