@@ -131,7 +131,7 @@ export default {
   computed: {
     // 标题分段: emoji -> 图片 (设备字体没有 emoji 字形, 直接 text 会整片空白)
     titleSegs() {
-      const t = String(this.title || '')
+      const t = String(this.titleText || '')
       try { return parseMessage(t, null, null) } catch (e) { return [{ t: 0, v: t }] }
     },
     fillPct: function () {
