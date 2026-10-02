@@ -8,8 +8,6 @@
       </div>
     </div>
 
-      <!-- 下拉刷新提示 (无反馈用户不知道刷新了) -->
-      <text v-if="pullHint !== ''" class="pull-toast">{{ pullHint }}</text>
 
     <!-- 推荐 (真·主页推荐流 rcmd, 无限滑动) -->
     <div v-if="activeTab === 'recommend'" class="tabbody">
@@ -167,6 +165,8 @@
         </div>
       </scroller>
     </div>
+    <!-- 下拉刷新提示: 必须放模板最后 + z-index, 放中间会被 scroller 盖住 (实测扫不到粉色像素) -->
+    <text v-if="pullHint !== ''" class="pull-toast">{{ pullHint }}</text>
   </div>
 </template>
 
@@ -752,6 +752,7 @@ export default {
   color: #ffffff;
 }
 .pull-toast {
+  z-index: 99;
   position: absolute;
   top: 42px;
   left: 380px;
