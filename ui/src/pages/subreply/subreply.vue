@@ -59,6 +59,7 @@ import { createIME } from '../../services/ime.js'
 import { getSubReplies, addReply, parseMessage, likeReply } from '../../services/bili.js'
 import { hasCookie } from '../../services/auth.js'
 import { afterPaint } from '../../base-page.js'
+import { log } from '../../services/log.js'
 
 // 内置常用 emoji 映射: .vue 里的 require png 会被 aiot-cli 编译成 images/<hash>.png
 // (services/*.js 里的 require 不会被编译, QuickJS 无 require 会崩, 见 0.8.7 黑屏教训)
@@ -197,6 +198,7 @@ export default {
     },
 
     applyOptions(options) {
+      try { log('楼中楼', 'applyOptions aid=' + (options && options.aid) + ' root=' + (options && options.root) + ' count=' + (options && options.count)) } catch (e) {}
       const aid = parseInt(options.aid || '0', 10) || 0
       const root = parseInt(options.root || '0', 10) || 0
       if (root === this.root && (this.replies.length > 0 || this.loading)) return
@@ -222,7 +224,8 @@ export default {
       const gen = ++this.generation
       this.loading = true
       if (reset) this.status = '加载中…'
-      afterPaint(async () => {
+      const runLoad = async () => {
+        log('楼中楼', '开始加载 aid=' + this.aid + ' root=' + this.root + ' pn=' + this.pn)
         try {
           const r = await getSubReplies(this.aid, this.root, this.pn, BUILTIN_EMOJI)
           if (gen !== this.generation) return
@@ -241,14 +244,19 @@ export default {
           this.total = r.total
           this.hasMore = this.replies.length < r.total && r.replies.length > 0
           this.status = ''
+          log('楼中楼', '加载完成 ' + this.replies.length + ' 条 (total=' + this.total + ')')
         } catch (err) {
           if (gen !== this.generation) return
           console.log('[subreply] load error: ' + (err && err.message ? err.message : err))
           this.status = err && err.message ? err.message : String(err)
+          log('楼中楼', '加载失败: ' + this.status)
         } finally {
           if (gen === this.generation) this.loading = false
         }
-      })
+      }
+      if (typeof afterPaint === 'function') {
+        try { afterPaint(runLoad) } catch (e) { log('楼中楼', 'afterPaint 失败, 直接加载: ' + (e && e.message ? e.message : e)); runLoad() }
+      } else { runLoad() }
     },
 
     loadMore() {
@@ -320,6 +328,13 @@ export default {
     openUser(r) {
       if (!r || !r.mid) return
       try { $falcon.navTo('up', { mid: r.mid, name: r.author }) } catch (e) { this.status = '打开主页失败' }
+    },
+
+    // 需要登录的操作统一入口 (有些页面用 requireLogin, 本页此前没有)
+    requireLogin() {
+      if (this.logged) return true
+      this.status = '请先登录'
+      return false
     },
 
     setTarget(r) {
