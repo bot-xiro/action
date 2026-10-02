@@ -17,6 +17,9 @@
 #include "jsmodules/JSCModuleExtension.h"
 #include "jquick_config.h"
 
+using namespace JQUTIL_NS;
+
+
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
