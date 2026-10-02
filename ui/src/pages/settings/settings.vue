@@ -51,8 +51,22 @@
         </div>
       </div>
 
+      <div v-if="logged" class="card">
+        <text class="card-title">账号</text>
+        <text class="card-desc">退出后需重新扫码 / 导入 Cookie 登录, 收藏·评论等需要登录的功能会不可用。</text>
+        <div class="row">
+          <div :class="['btn', confirmLogout ? 'btn-danger' : '']" @click="onLogoutTap">
+            <text class="btn-text">{{ confirmLogout ? '再点一次确认退出' : '退出登录' }}</text>
+          </div>
+          <div v-if="confirmLogout" class="btn" @click="cancelLogout">
+            <text class="btn-text">取消</text>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
-        <text class="card-title">诊断信息</text>
+        <text class="card-title">关于</text>
+        <text class="info">bilibilipan · 网易有道词典笔 mini-app</text>
         <text class="info">版本 v{{ version }}</text>
         <text class="info">appid {{ appid }}</text>
         <text class="info">登录 {{ uid ? ('uid ' + uid) : '(未登录)' }}</text>
@@ -73,7 +87,7 @@ import pm from 'pm'
 import { loadConfig, setCfg, resetConfig, CONFIG_PATH } from '../../services/config.js'
 import { log, logStatus } from '../../services/log.js'
 import { getMyInfo } from '../../services/bili.js'
-import { getMid } from '../../services/auth.js'
+import { getMid, clearLogin, hasCookie } from '../../services/auth.js'
 
 export default {
   name: 'settings',
@@ -90,6 +104,8 @@ export default {
       version: '',
       appid: '8001812345678901',
       uid: '',
+      logged: false,
+      confirmLogout: false,   // 二次确认: 第一次点只提示, 再点才真退出
       status: '',
       logDesc: '日志未初始化',
       cfgPath: CONFIG_PATH,
@@ -111,6 +127,7 @@ export default {
       } catch (e) {}
       try { this.logDesc = logStatus() } catch (e) {}
       try { this.uid = getMid() || '' } catch (e) {}
+      try { this.logged = hasCookie() } catch (e) {}
       if (!this.uid) {
         const self = this
         getMyInfo().then(function (info) { if (info && info.mid) self.uid = String(info.mid) }).catch(function () {})
@@ -145,6 +162,32 @@ export default {
         this.tip('图片缓存已清理')
       } catch (e) { this.tip('清理失败: ' + (e && e.message ? e.message : e)) }
     },
+    // 退出登录: 二次确认 (第一次点变红并提示, 再点才执行)
+    onLogoutTap() {
+      if (!this.confirmLogout) {
+        this.confirmLogout = true
+        this.tip('再点一次「确认退出」才会退出登录')
+        const self = this
+        if (this._confirmTimer) clearTimeout(this._confirmTimer)
+        this._confirmTimer = setTimeout(function () { self.confirmLogout = false }, 5000)
+        return
+      }
+      this.doLogout()
+    },
+    cancelLogout() {
+      this.confirmLogout = false
+      if (this._confirmTimer) clearTimeout(this._confirmTimer)
+      this.tip('已取消')
+    },
+    doLogout() {
+      try { clearLogin() } catch (e) {}
+      this.confirmLogout = false
+      this.logged = false
+      this.uid = ''
+      log('设置', '已退出登录')
+      this.tip('已退出登录, 需重新登录才能用收藏/评论')
+    },
+
     doReset() {
       this.cfg = resetConfig()
       this.tip('已恢复默认设置')
@@ -239,6 +282,9 @@ export default {
   background-color: #2f3238;
   border-radius: 8px;
   justify-content: center;
+}
+.btn-danger {
+  background-color: #d9534f;
 }
 .btn-wide {
   padding-left: 24px;

@@ -167,6 +167,7 @@ export default {
       parentAuthor: '',
       parentFace: '',
       parentSegs: [],
+      parentPreview: '',   // 原始评论摘要 (一行引用条显示)
       total: 0,
       replies: [],
       pn: 1,
@@ -219,6 +220,8 @@ export default {
       this.total = parseInt(options.count || '0', 10) || 0
       // 父评论内容: 用内置 emoji 解析成图文混排段
       this.parentSegs = parseParentSegs(options.msg || '')
+      // 摘要: 去掉换行/多余空格并截断, 引用条要一行显示
+      this.parentPreview = String(options.msg || '').replace(/\s+/g, ' ').slice(0, 40)
       this.replies = []
       this.pn = 1
       this.hasMore = false

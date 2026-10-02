@@ -171,9 +171,6 @@
           <div v-if="!myInfo.isLogin && myLoaded" class="login-cta" @click="openLogin">
             <text class="login-cta-text">扫码登录 / Cookie 导入</text>
           </div>
-          <div v-if="myInfo.isLogin" class="login-cta" @click="logout">
-            <text class="login-cta-text">退出登录</text>
-          </div>
           <!-- 设置入口 -->
           <div class="login-cta" @click="openSettings">
             <text class="login-cta-text">设置 (蓝牙补偿 · 防息屏 · 清缓存)</text>
@@ -181,9 +178,6 @@
           <text v-if="pullHint !== ''" class="status status-pull status-center">{{ pullHint }}</text>
           <text v-else-if="myLoading" class="status status-center">{{ '加载中' + dots }}</text>
           <text v-else-if="myStatus !== ''" class="status status-center">{{ myStatus }}</text>
-          <text class="ph-desc2">bilibilipan v{{ appVersion }}</text>
-          <text class="ph-desc2">appid {{ appid }} · 词典笔 mini-app</text>
-          <text class="ph-desc2">{{ storeHint }}</text>
         </div>
       </scroller>
     </div>

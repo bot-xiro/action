@@ -1136,6 +1136,8 @@ export default {
   border-bottom-color: #fb7299;
 }
 .tab-text {
+  lines: 1;            /* 评论数变大时不要换行 (评论 1682) */
+  overflow: hidden;
   font-size: 19px;
   color: #8a94a6;
 }
@@ -1457,6 +1459,7 @@ export default {
   margin-top: 3px;
 }
 .meta-text {
+  lines: 1;
   font-size: 15px;
   color: #6a7684;
   padding-top: 6px;
@@ -1466,6 +1469,7 @@ export default {
   color: #fb7299;
 }
 .meta-reply {
+  lines: 1;
   font-size: 16px;
   color: #fb7299;
   margin-left: 16px;
