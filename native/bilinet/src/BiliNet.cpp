@@ -1,6 +1,7 @@
 #include "jqutil_v2/jqutil.h"
 
 #include <cstdio>
+#include <thread>
 #include <cstring>
 #include <string>
 #include <syslog.h>
@@ -128,6 +129,7 @@ namespace sql {
 // B 站风控接口（搜索等 wbi 接口）返回 v_voucher 空结果; 设备自带 /bin/curl
 // 带浏览器 UA + Referer 后一切正常, 因此这里直接 popen 调 curl.
 // v2: 增加自定义 headers (登录 Cookie 注入) 与 httpPost (评论发送).
+// v6: 增加异步版 httpGetAsync/httpPostAsync (Promise, 工作线程执行, 不阻塞 JS 主线程).
 // 安全: Cookie 头含 SESSDATA, 日志一律脱敏 (只打印键名不打印值).
 class BiliNet : public JQUTIL_NS::JQBaseObject {
 public:
@@ -235,7 +237,111 @@ public:
         info.GetReturnValue().Set(body);
     }
 
+    // ---- v6: 异步 HTTP (Promise) -------------------------------------------
+    // 背景: 同步 httpGet/httpPost 阻塞 QuickJS 主线程 (curl 最长 timeout 秒), 页面渲染与触摸全卡住.
+    // 异步版把 curl 丢到工作线程, 完成后 post 回 JS 线程 resolve:
+    //   const body = await bilinet.httpGetAsync(url, timeoutSec, headers?)
+    //   const body = await bilinet.httpPostAsync(url, data, timeoutSec, headers?)
+    // body 与同步版一致 = curl 原始响应体字符串 (JS 侧自己 JSON.parse).
+    void httpGetAsync(JQUTIL_NS::JQAsyncInfo& info)
+    {
+        if (info.Length() < 1 || !info[0].is_string()) {
+            info.postError("httpGetAsync: url required");
+            return;
+        }
+        std::string url = info[0].string_value();
+        if (url.size() > 2048 || url.find_first_of("\r\n") != std::string::npos) {
+            info.postError("httpGetAsync: invalid url");
+            return;
+        }
+        int timeout = 10;
+        if (info.Length() >= 2 && info[1].is_number()) {
+            int t = info[1].int_value();
+            if (t > 0 && t < 120) timeout = t;
+        }
+        std::string headers = headersFromBson(info, 2);
+        std::string cmd = "curl -s --compressed --max-time " + std::to_string(timeout)
+            + " -A " + shellQuote(UA)
+            + " -e " + shellQuote(REFERER)
+            + headers
+            + " " + shellQuote(url);
+        runAsync(info, cmd, "httpGetAsync");
+    }
+
+    void httpPostAsync(JQUTIL_NS::JQAsyncInfo& info)
+    {
+        if (info.Length() < 2 || !info[0].is_string() || !info[1].is_string()) {
+            info.postError("httpPostAsync: url/data required");
+            return;
+        }
+        std::string url = info[0].string_value();
+        std::string data = info[1].string_value();
+        if (url.size() > 2048 || data.size() > 4096 ||
+            url.find_first_of("\r\n") != std::string::npos ||
+            data.find_first_of("\r\n") != std::string::npos) {
+            info.postError("httpPostAsync: invalid url/data");
+            return;
+        }
+        int timeout = 10;
+        if (info.Length() >= 3 && info[2].is_number()) {
+            int t = info[2].int_value();
+            if (t > 0 && t < 120) timeout = t;
+        }
+        std::string headers = headersFromBson(info, 3);
+        std::string cmd = "curl -s --compressed --max-time " + std::to_string(timeout)
+            + " -X POST"
+            + " -A " + shellQuote(UA)
+            + " -e " + shellQuote(REFERER)
+            + " -H " + shellQuote("Content-Type: application/x-www-form-urlencoded")
+            + headers
+            + " --data-binary " + shellQuote(data)
+            + " " + shellQuote(url);
+        runAsync(info, cmd, "httpPostAsync");
+    }
+
+
 private:
+    // 异步方法的 headers 解析 (异步侧只有 Bson, 拿不到 JSContext)
+    static std::string headersFromBson(JQUTIL_NS::JQAsyncInfo& info, uint32_t idx)
+    {
+        std::string out;
+        if (info.Length() <= idx || !info[idx].is_array()) return out;
+        const Bson::array& arr = info[idx].array_items();
+        for (size_t i = 0; i < arr.size(); i++) {
+            if (!arr[i].is_string()) continue;
+            std::string h = arr[i].string_value();
+            if (h.find_first_of("\r\n") != std::string::npos) continue;
+            out += " -H " + shellQuote(h);
+        }
+        return out;
+    }
+
+    // 工作线程跑 curl, 完成后把结果 post 回 JS 线程 (post/postError 跨线程安全)
+    static void runAsync(JQUTIL_NS::JQAsyncInfo& info, const std::string& cmd, const char* tag)
+    {
+        BN_LOG("%s: %s", tag, redactCurl(cmd).c_str());
+        std::string cmdCopy = cmd;
+        std::string tagCopy = tag;
+        try {
+            JQUTIL_NS::JQAsyncInfo ainfo = info;   // 值拷贝: 供工作线程投递
+            std::thread([ainfo, cmdCopy, tagCopy]() mutable {
+                FILE* fp = popen(cmdCopy.c_str(), "r");
+                if (!fp) { ainfo.postError(tagCopy + ": curl 启动失败"); return; }
+                std::string body = drain(fp);
+                int rc = pclose(fp);
+                BN_LOG("%s: rc=%d len=%zu", tagCopy.c_str(), rc, body.size());
+                if (body.empty()) {
+                    ainfo.postError(tagCopy + ": 空响应 (rc=" + std::to_string(rc) + ")");
+                    return;
+                }
+                ainfo.post(Bson(body));
+            }).detach();
+        } catch (...) {
+            info.postError(std::string(tag) + ": 线程创建失败");
+        }
+    }
+
+
     static const char* UA;
     static const char* REFERER;
 
@@ -610,6 +716,8 @@ static JSValue createBiliNet(JQModuleEnv* env)
     tpl->SetProtoMethod("dbQuery", &BiliNet::dbQuery);
     tpl->SetProtoMethod("dbClose", &BiliNet::dbClose);
     tpl->SetProtoMethod("exec", &BiliNet::exec);
+    tpl->SetProtoMethodPromise("httpGetAsync", &BiliNet::httpGetAsync);
+    tpl->SetProtoMethodPromise("httpPostAsync", &BiliNet::httpPostAsync);
     return tpl->CallConstructor();
 }
 

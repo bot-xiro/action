@@ -8,6 +8,9 @@
       </div>
     </div>
 
+      <!-- 下拉刷新提示 (无反馈用户不知道刷新了) -->
+      <text v-if="pullHint !== ''" class="pull-toast">{{ pullHint }}</text>
+
     <!-- 推荐 (真·主页推荐流 rcmd, 无限滑动) -->
     <div v-if="activeTab === 'recommend'" class="tabbody">
       <text v-if="recStatus !== ''" class="status">{{ recStatus }}</text>
@@ -188,6 +191,8 @@ export default {
         { key: 'mine', label: '我的' }
       ],
       activeTab: 'recommend',
+      pullHint: '',
+      PULL_TRIGGER: 35,      // 下拉多少像素算触发刷新          // 下拉刷新提示 (下拉刷新… / 松手刷新 / 刷新中… / 已刷新)
       // 搜索
       keyword: '',
       placeholder: '点击输入搜索内容',
@@ -320,43 +325,60 @@ export default {
     onListTouchStart(e) {
       this._touchY0 = this.touchY(e)
       this._pullArmed = false
-      this._pullOk = (this._scrollY || 0) <= 2   // 只在列表顶部允许下拉
+      // 顶部容差放宽到 6px (真机 contentOffset 常有 0~3 抖动, 之前 <=2 会偶发拉不动)
+      this._pullOk = (this._scrollY || 0) <= 6
+      this.pullHint = ''
     },
     onListTouchMove(e) {
       if (!this._pullOk) return
-      if ((this._scrollY || 0) > 2) { this._pullOk = false; return }  // 列表在滚动 → 不是下拉
-      if (this.touchY(e) - this._touchY0 > 50) this._pullArmed = true
+      if ((this._scrollY || 0) > 6) { this._pullOk = false; this.pullHint = ''; return }
+      const dy = this.touchY(e) - this._touchY0
+      if (dy > this.PULL_TRIGGER) { this._pullArmed = true; this.pullHint = '松手刷新' }
+      else if (dy > 12) { this.pullHint = '下拉刷新…' }
     },
     onListTouchEnd() {
-      if (this._pullArmed && this._pullOk && (this._scrollY || 0) <= 2) this.refreshTab()
+      const armed = this._pullArmed && this._pullOk && (this._scrollY || 0) <= 6
       this._pullArmed = false
+      if (armed) this.refreshTab()
+      else this.pullHint = ''
     },
-    refreshTab() {
+    // 刷新当前 tab (下拉触发). bili.js 已走异步 HTTP, 刷新期间页面照常可滑动/可操作.
+    async refreshTab() {
       log('页面', '下拉刷新 ' + this.activeTab)
-      switch (this.activeTab) {
-        case 'recommend':
-          if (this.recLoading) return
-          this.recPage = 1; this.recHasMore = true; this.recLoaded = false
-          this.loadRecommend()
-          break
-        case 'hot':
-          if (this.hotLoading) return
-          this.hotPage = 1; this.hotHasMore = true; this.hotLoaded = false
-          this.loadHot()
-          break
-        case 'search':
-          if (this.loading) return
-          if (this.keyword) this.doSearch(this.keyword)
-          break
-        case 'dynamic':
-          if (this.dynLoading) return
-          this.dynOffset = ''
-          this.loadDynamic('')
-          break
-        case 'mine':
-          if (this.myLoading) return
-          this.loadMine()
-          break
+      this.pullHint = '刷新中…'
+      try {
+        switch (this.activeTab) {
+          case 'recommend':
+            if (this.recLoading) return
+            this.recPage = 1; this.recHasMore = true; this.recLoaded = false
+            await this.loadRecommend()
+            break
+          case 'hot':
+            if (this.hotLoading) return
+            this.hotPage = 1; this.hotHasMore = true; this.hotLoaded = false
+            await this.loadHot()
+            break
+          case 'search':
+            if (this.loading) return
+            if (this.keyword) await this.doSearch(this.keyword)
+            break
+          case 'dynamic':
+            if (this.dynLoading) return
+            this.dynOffset = ''
+            await this.loadDynamic('')
+            break
+          case 'mine':
+            if (this.myLoading) return
+            await this.loadMine()
+            break
+        }
+        this.pullHint = '已刷新'
+        const self = this
+        setTimeout(function () { if (self.pullHint === '已刷新') self.pullHint = '' }, 1200)
+      } catch (e) {
+        this.pullHint = '刷新失败'
+        const self2 = this
+        setTimeout(function () { self2.pullHint = '' }, 1500)
       }
     },
 
@@ -722,6 +744,19 @@ export default {
 .search-btn-text {
   font-size: 24px;
   color: #ffffff;
+}
+.pull-toast {
+  position: absolute;
+  top: 42px;
+  left: 380px;
+  padding-left: 14px;
+  padding-right: 14px;
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-radius: 14px;
+  background-color: rgba(251, 114, 153, 0.92);
+  color: #ffffff;
+  font-size: 15px;
 }
 .status {
   font-size: 22px;

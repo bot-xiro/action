@@ -773,7 +773,7 @@ export default {
       try {
         // 状态可能过期, 先复核一次; 本来就没收藏就只刷状态
         let nowFav = true
-        try { nowFav = isFavoured(aid) } catch (e) { nowFav = true }
+        try { nowFav = await isFavoured(aid) } catch (e) { nowFav = true }
         if (!nowFav) {
           this.detail.reqFav = false
           this.favFoldersAid = 0
@@ -790,7 +790,7 @@ export default {
         const failed = await cancelFav(aid, targets)
         // 复核: 只有权威接口说不在了才算成功
         let still = true
-        try { still = isFavoured(aid) } catch (e) { still = failed.length > 0 }
+        try { still = await isFavoured(aid) } catch (e) { still = failed.length > 0 }
         this.detail.reqFav = still
         this.favFoldersAid = 0
         if (!still) {

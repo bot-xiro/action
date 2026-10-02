@@ -48,6 +48,49 @@ function postJson(url, data, timeoutSec) {
   } catch (e) {
     throw new Error('接口返回非 JSON: ' + String(s).substring(0, 120))
   }
+
+// ================= 异步 HTTP (v6: 不阻塞主线程) =================
+// 同步版 httpGet/httpPost 会阻塞 QuickJS 主线程 (curl 最长 timeout 秒) —— 页面渲染/触摸全卡住,
+// 所以页面加载一律走异步版: 原生在工作线程跑 curl, Promise 在 JS 线程 resolve.
+// 好处: 页面可以先渲染 + 显示「加载中…」, 数据到了再填, 请求之间互不干扰.
+// 旧 .so 没有异步方法时自动退化为同步实现 (保证向后兼容).
+function hasHttpAsync() {
+  return !!(bilinet && typeof bilinet.httpGetAsync === 'function')
+}
+
+async function getJsonAsync(url, timeoutSec) {
+  if (!hasHttpAsync()) return getJson(url, timeoutSec)
+  const headers = auth.hasCookie() ? [auth.cookieHeader()] : undefined
+  const s = headers
+    ? await bilinet.httpGetAsync(url, timeoutSec || 15, headers)
+    : await bilinet.httpGetAsync(url, timeoutSec || 15)
+  console.log('[bili] GETa ' + url.replace(/(&|\?)w_rid=[^&]+/, '').replace(/(&|\?)wts=[^&]+/, '') + ' -> ' + (s ? s.length : 0) + 'B')
+  if (!s) { console.log('[bili] GETa 空响应'); throw new Error('请求失败 (空响应)') }
+  try {
+    return JSON.parse(s)
+  } catch (e) {
+    console.log('[bili] 非JSON body: ' + String(s).substring(0, 300))
+    if (String(s).indexOf('<!DOCTYPE') === 0 || String(s).indexOf('<html') === 0) {
+      throw new Error('接口被风控拦截 (风控验证页)')
+    }
+    throw new Error('接口返回非 JSON: ' + String(s).substring(0, 120))
+  }
+}
+
+async function postJsonAsync(url, data, timeoutSec) {
+  if (!hasHttpAsync() || typeof bilinet.httpPostAsync !== 'function') return postJson(url, data, timeoutSec)
+  const headers = ['Content-Type: application/x-www-form-urlencoded']
+  if (auth.hasCookie()) headers.push(auth.cookieHeader())
+  const s = await bilinet.httpPostAsync(url, data, timeoutSec || 15, headers)
+  console.log('[bili] POSTa ' + url.substring(0, 80) + ' -> ' + (s ? s.length : 0) + 'B')
+  if (!s) throw new Error('请求失败 (空响应)')
+  try {
+    return JSON.parse(s)
+  } catch (e) {
+    throw new Error('接口返回非 JSON: ' + String(s).substring(0, 120))
+  }
+}
+
 }
 
 // 结果缓存 (减少重复请求 = 直接降低风控触发率)
@@ -143,7 +186,7 @@ function md5Utf8(str) {
 async function getWbiKeys() {
   // nav 匿名可访问, 返回 wbi_img 图片地址, key 缓存 12h (随官方前端节奏)
   if (wbiKeys && Date.now() - wbiKeysAt < 12 * 3600 * 1000) return wbiKeys
-  const body = getJson('https://api.bilibili.com/x/web-interface/nav', 10)
+  const body = await getJsonAsync('https://api.bilibili.com/x/web-interface/nav', 10)
   // 匿名 nav 返回 code=-101(账号未登录), 但 data.wbi_img 仍然有效
   if (!body || !body.data || !body.data.wbi_img) {
     throw new Error('wbi key 获取失败 (code=' + (body && body.code) + ')')
@@ -221,7 +264,7 @@ export async function getPlayUrl(bvid, cid) {
   if (cached) return cached
   const url = 'https://api.bilibili.com/x/player/playurl?bvid=' + encodeURIComponent(bvid)
     + '&cid=' + encodeURIComponent(cid) + '&qn=32&fnval=0&fnver=0&fourk=0'
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('播放地址接口错误 code=' + body.code))
@@ -448,7 +491,7 @@ export async function searchVideos(keyword, page) {
       dm_img_inter: '{"ds":[],"wh":[0,0,0],"of":[0,0,0]}'
     }))
 
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('接口错误 code=' + body.code))
@@ -493,7 +536,7 @@ export async function getVideoDetail(bvid, noCache) {
   const url = 'https://api.bilibili.com/x/web-interface/wbi/view?'
     + (await wbiQuery({ bvid: bvid }))
 
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     if (body.code === -404) throw new Error('视频不存在或已删除')
@@ -561,7 +604,7 @@ export async function getRelatedVideos(bvid) {
   const cached = cacheGet(ckey, 300000)
   if (cached) return cached
   const url = 'https://api.bilibili.com/x/web-interface/archive/related?bvid=' + encodeURIComponent(bvid)
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0) return [] // 推荐失败容忍, 不阻塞详情
   const out = (body.data || []).map(mapFeedItem)
   cacheSet(ckey, out)
@@ -578,7 +621,7 @@ export async function getPopular(page) {
   const cached = cacheGet(ckey, 60000)
   if (cached) return cached
   const url = 'https://api.bilibili.com/x/web-interface/popular?pn=' + (page || 1) + '&ps=20'
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('接口错误 code=' + body.code))
@@ -602,7 +645,7 @@ export async function getRecommend(page) {
   if (cached) return cached
   const url = 'https://api.bilibili.com/x/web-interface/index/top/feed/rcmd?ps=12'
     + '&fresh_idx=' + (page || 1) + '&fresh_idx_1h=' + (page || 1) + '&fresh_type=4&version=1'
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
     throw new Error(body.message || ('接口错误 code=' + body.code))
@@ -640,7 +683,7 @@ export async function getUpInfo(mid) {
   // 先走 acc/info (字段全)
   try {
     const url = 'https://api.bilibili.com/x/space/wbi/acc/info?' + (await wbiQuery({ mid: mid }))
-    const body = getJson(url, 15)
+    const body = await getJsonAsync(url, 15)
     if (body.code !== 0 || !body.data) {
       if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
       if (body.code === -352) throw new Error('接口风控, 无法获取UP主信息')
@@ -663,7 +706,7 @@ export async function getUpInfo(mid) {
   }
   // 降级: x/web-interface/card (免登录基本资料接口, 风控比空间接口宽松)
   // 注意: 字段嵌套在 data.card 下, level 在 level_info.current_level
-  const cardBody = getJson('https://api.bilibili.com/x/web-interface/card?mid=' + encodeURIComponent(mid), 15)
+  const cardBody = await getJsonAsync('https://api.bilibili.com/x/web-interface/card?mid=' + encodeURIComponent(mid), 15)
   if (cardBody.code !== 0 || !cardBody.data) {
     throw new Error(cardBody.message || ('接口错误 code=' + cardBody.code))
   }
@@ -688,7 +731,7 @@ export async function getUpInfo(mid) {
  */
 export async function getUpFans(mid) {
   const url = 'https://api.bilibili.com/x/relation/stat?vmid=' + encodeURIComponent(mid)
-  const body = getJson(url, 10)
+  const body = await getJsonAsync(url, 10)
   if (body.code !== 0 || !body.data) return ''
   return formatPlay(body.data.follower)
 }
@@ -705,7 +748,7 @@ export async function getUpVideos(mid, page) {
   try {
     const url = 'https://api.bilibili.com/x/space/wbi/arc/search?'
       + (await wbiQuery({ mid: mid, pn: page || 1, ps: 20, order: 'pubdate' }))
-    const body = getJson(url, 15)
+    const body = await getJsonAsync(url, 15)
     if (body.code !== 0) {
       if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
       if (body.code === -352) throw new Error('接口风控, 视频列表暂不可用')
@@ -735,7 +778,7 @@ export async function getUpVideos(mid, page) {
   // 降级: x/series/recArchivesByKeywords (不需要 wbi 签名, 官方文档注"暂未发现风控校验")
   const url2 = 'https://api.bilibili.com/x/series/recArchivesByKeywords?mid='
     + encodeURIComponent(mid) + '&keywords=&ps=20&pn=' + (page || 1) + '&orderby=pubdate'
-  const body2 = getJson(url2, 15)
+  const body2 = await getJsonAsync(url2, 15)
   if (body2.code !== 0) {
     throw new Error(body2.message || ('接口错误 code=' + body2.code))
   }
@@ -776,7 +819,7 @@ export async function likeVideo(aid, on) {
   const csrf = needCsrf()
   const data = 'aid=' + encodeURIComponent(aid) + '&like=' + (on === false ? 2 : 1)
     + '&csrf=' + encodeURIComponent(csrf)
-  const body = postJson('https://api.bilibili.com/x/web-interface/archive/like', data, 15)
+  const body = await postJsonAsync('https://api.bilibili.com/x/web-interface/archive/like', data, 15)
   if (body.code !== 0) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
@@ -793,7 +836,7 @@ export async function addCoin(aid, multiply, withLike) {
   const csrf = needCsrf()
   const data = 'aid=' + encodeURIComponent(aid) + '&multiply=' + (multiply === 2 ? 2 : 1)
     + '&select_like=' + (withLike ? 1 : 0) + '&csrf=' + encodeURIComponent(csrf)
-  const body = postJson('https://api.bilibili.com/x/web-interface/coin/add', data, 15)
+  const body = await postJsonAsync('https://api.bilibili.com/x/web-interface/coin/add', data, 15)
   if (body.code !== 0) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
     if (body.code === 34002) throw new Error('硬币不足')
@@ -823,7 +866,7 @@ export async function getFavFolders(rid) {
   const url = 'https://api.bilibili.com/x/v3/fav/folder/created/list-all?up_mid='
     + encodeURIComponent(mid) + '&type=2'
     + (rid ? '&rid=' + encodeURIComponent(rid) : '')
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
     throw new Error(body.message || ('收藏夹接口错误 code=' + body.code))
@@ -849,9 +892,9 @@ export async function getFavFolders(rid) {
  * 注意: x/v2/fav/video/del 实测返回 code=0 但**并不会真的取消收藏**(真机+实账号验证),
  * 取消必须走 deal + del_media_ids 且要带上"包含该稿件"的收藏夹 id.
  */
-export function isFavoured(aid) {
+export async function isFavoured(aid) {
   if (!auth.hasCookie()) throw new Error('登录后才能查询收藏状态')
-  const b = getJson('https://api.bilibili.com/x/v2/fav/video/favoured?aid='
+  const b = await getJsonAsync('https://api.bilibili.com/x/v2/fav/video/favoured?aid='
     + encodeURIComponent(aid), 10)
   if (!b || b.code !== 0 || !b.data) throw new Error('收藏状态接口错误 code=' + (b && b.code))
   return b.data.favoured === true
@@ -882,7 +925,7 @@ export async function dealFav(aid, folderId, on) {
   const data = 'rid=' + encodeURIComponent(aid) + '&type=2&csrf=' + encodeURIComponent(csrf)
     + '&' + (on === false ? 'del_media_ids=' + encodeURIComponent(folderId)
                           : 'add_media_ids=' + encodeURIComponent(folderId))
-  const body = postJson('https://api.bilibili.com/x/v3/fav/resource/deal', data, 15)
+  const body = await postJsonAsync('https://api.bilibili.com/x/v3/fav/resource/deal', data, 15)
   if (body.code !== 0) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
@@ -897,7 +940,7 @@ export async function dealFav(aid, folderId, on) {
 export async function addToViewLater(aid) {
   const csrf = needCsrf()
   const data = 'aid=' + encodeURIComponent(aid) + '&csrf=' + encodeURIComponent(csrf)
-  const body = postJson('https://api.bilibili.com/x/v2/history/toview/add', data, 15)
+  const body = await postJsonAsync('https://api.bilibili.com/x/v2/history/toview/add', data, 15)
   if (body.code !== 0) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
     if (body.code === 57001) throw new Error('稍后再看列表已满')
@@ -913,7 +956,7 @@ export async function addToViewLater(aid) {
 export async function delToViewLater(aid) {
   const csrf = needCsrf()
   const data = 'aid=' + encodeURIComponent(aid) + '&csrf=' + encodeURIComponent(csrf)
-  const body = postJson('https://api.bilibili.com/x/v2/history/toview/del', data, 15)
+  const body = await postJsonAsync('https://api.bilibili.com/x/v2/history/toview/del', data, 15)
   if (body.code !== 0) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
@@ -930,7 +973,7 @@ export async function isInToView(aid) {
   if (!auth.hasCookie()) return false
   try {
     const url = 'https://api.bilibili.com/x/v2/history/toview/web?pn=1&ps=20'
-    const body = getJson(url, 10)
+    const body = await getJsonAsync(url, 10)
     if (body.code !== 0 || !body.data) return false
     const list = body.data.list || []
     for (let i = 0; i < list.length; i++) {
@@ -952,7 +995,7 @@ export async function getHistoryList(pn) {
   if (!auth.hasCookie()) throw new Error('未登录')
   const url = 'https://api.bilibili.com/x/web-interface/history/search?'
     + (await wbiQuery({ pn: pn || 1, ps: 20, business: 'all' }))
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
@@ -990,7 +1033,7 @@ export async function getFavList(mediaId, pn) {
   if (!auth.hasCookie()) throw new Error('未登录')
   const url = 'https://api.bilibili.com/x/v3/fav/resource/list?media_id='
     + encodeURIComponent(mediaId) + '&pn=' + (pn || 1) + '&ps=20&keyword=&order=mtime&type=0&tid=0'
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
@@ -1024,7 +1067,7 @@ export async function getFavList(mediaId, pn) {
 export async function getToViewList(pn) {
   if (!auth.hasCookie()) throw new Error('未登录')
   const url = 'https://api.bilibili.com/x/v2/history/toview/web?pn=' + (pn || 1) + '&ps=20'
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
@@ -1060,14 +1103,14 @@ export async function getInteractState(aid) {
   const out = { like: false, coin: false, coinCount: 0, fav: false }
   if (!auth.hasCookie() || !aid) return out
   try {
-    const b = getJson('https://api.bilibili.com/x/web-interface/archive/has/like?aid='
+    const b = await getJsonAsync('https://api.bilibili.com/x/web-interface/archive/has/like?aid='
       + encodeURIComponent(aid), 10)
     out.like = Number(b && b.data) === 1
   } catch (e) {
     console.log('[bili] has/like 查询失败: ' + (e && e.message ? e.message : e))
   }
   try {
-    const b2 = getJson('https://api.bilibili.com/x/web-interface/archive/coins?aid='
+    const b2 = await getJsonAsync('https://api.bilibili.com/x/web-interface/archive/coins?aid='
       + encodeURIComponent(aid), 10)
     out.coinCount = (b2 && b2.data && Number(b2.data.multiply)) || 0
     out.coin = out.coinCount > 0
@@ -1077,7 +1120,7 @@ export async function getInteractState(aid) {
   // 收藏状态: 先用轻量专用接口 (一次请求就给 true/false),
   // 失败再退化成扫收藏夹的 fav_state (list-all 传 rid)
   try {
-    const b3 = getJson('https://api.bilibili.com/x/v2/fav/video/favoured?aid='
+    const b3 = await getJsonAsync('https://api.bilibili.com/x/v2/fav/video/favoured?aid='
       + encodeURIComponent(aid), 10)
     if (b3 && b3.code === 0 && b3.data && typeof b3.data.favoured === 'boolean') {
       out.fav = b3.data.favoured
@@ -1106,7 +1149,7 @@ export async function getInteractState(aid) {
  */
 export async function qrcodeGenerate() {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
-  const body = getJson('https://passport.bilibili.com/x/passport-login/web/qrcode/generate', 10)
+  const body = await getJsonAsync('https://passport.bilibili.com/x/passport-login/web/qrcode/generate', 10)
   if (body.code !== 0 || !body.data || !body.data.qrcode_key) {
     throw new Error(body.message || ('二维码接口错误 code=' + body.code))
   }
@@ -1119,7 +1162,7 @@ export async function qrcodeGenerate() {
  * 成功时 cookie 参数直接在响应体 redirect url 中 (无需解析 Set-Cookie 头).
  */
 export async function qrcodePoll(qrcodeKey) {
-  const body = getJson('https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key='
+  const body = await getJsonAsync('https://passport.bilibili.com/x/passport-login/web/qrcode/poll?qrcode_key='
     + encodeURIComponent(qrcodeKey), 10)
   if (body.code !== 0 || !body.data) {
     throw new Error(body.message || ('轮询接口错误 code=' + body.code))
@@ -1160,7 +1203,7 @@ function parseLoginUrlParams(url) {
  */
 export async function getMyInfo() {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
-  const body = getJson('https://api.bilibili.com/x/web-interface/nav', 10)
+  const body = await getJsonAsync('https://api.bilibili.com/x/web-interface/nav', 10)
   if (!body || !body.data) throw new Error('nav 接口错误')
   const d = body.data
   let face = d.face || ''
@@ -1194,7 +1237,7 @@ export async function getDynamicFeed(offset) {
   if (!auth.hasCookie()) throw new Error('未登录')
   const url = 'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?timezone_offset=-480&type=video'
     + (offset ? '&offset=' + encodeURIComponent(offset) : '')
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code === -101) throw new Error('未登录或登录已过期')
   if (body.code !== 0 || !body.data) {
     throw new Error(body.message || ('动态接口错误 code=' + body.code))
@@ -1282,7 +1325,7 @@ export async function getReplies(aid, pn, builtinEmoji, sort) {
   const sortParam = sort === 'time' ? 0 : 2
   const url = 'https://api.bilibili.com/x/v2/reply?type=1&oid=' + encodeURIComponent(aid)
     + '&pn=' + (pn || 1) + '&ps=20&sort=' + sortParam + '&jsonp=json'
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === 12009) throw new Error('评论区已关闭')
     throw new Error(body.message || ('评论接口错误 code=' + body.code))
@@ -1327,7 +1370,7 @@ export async function getSubReplies(aid, root, pn, builtinEmoji) {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   const url = 'https://api.bilibili.com/x/v2/reply/reply?type=1&oid=' + encodeURIComponent(aid)
     + '&root=' + encodeURIComponent(root) + '&pn=' + (pn || 1) + '&ps=20&jsonp=json'
-  const body = getJson(url, 15)
+  const body = await getJsonAsync(url, 15)
   if (body.code !== 0 || !body.data) {
     if (body.code === 12009) throw new Error('评论区已关闭')
     throw new Error(body.message || ('回复接口错误 code=' + body.code))
@@ -1372,7 +1415,7 @@ export async function likeReply(aid, rpid, on) {
   const csrf = needCsrf()
   const data = 'oid=' + encodeURIComponent(aid) + '&type=1&rpid=' + encodeURIComponent(rpid)
     + '&action=' + (on === false ? 0 : 1) + '&csrf=' + encodeURIComponent(csrf)
-  const body = postJson('https://api.bilibili.com/x/v2/reply/action', data, 15)
+  const body = await postJsonAsync('https://api.bilibili.com/x/v2/reply/action', data, 15)
   if (body.code !== 0) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
     if (body.code === -403) throw new Error('点赞过于频繁, 请稍后再试')
@@ -1399,7 +1442,7 @@ export async function addReply(aid, message, root, parent) {
     data += '&root=' + encodeURIComponent(root)
     data += '&parent=' + encodeURIComponent(parent || root)
   }
-  const body = postJson('https://api.bilibili.com/x/v2/reply/add', data, 15)
+  const body = await postJsonAsync('https://api.bilibili.com/x/v2/reply/add', data, 15)
   if (body.code !== 0) {
     if (body.code === -101) throw new Error('登录已过期, 请重新登录')
     if (body.code === -412) throw new Error('请求被风控拦截, 请稍后再试')
