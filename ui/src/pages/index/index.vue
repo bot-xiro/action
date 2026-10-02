@@ -322,17 +322,36 @@ export default {
       } catch (err) {}
       return 0
     },
+    // 把事件对象关键字段拼成字符串 (下拉刷新诊断用)
+    descTouch(e) {
+      try {
+        if (!e) return 'null'
+        const t = (e.changedTouches && e.changedTouches[0]) || (e.touches && e.touches[0]) || null
+        const own = Object.keys(e).slice(0, 8).join('/')
+        const tk = t ? Object.keys(t).slice(0, 8).join('/') : '-'
+        const tyv = t ? [t.pageY, t.clientY, t.y, t.pageX, t.x].join(',') : '-'
+        return 'e[' + own + '] t[' + tk + '] ty=' + tyv + ' y=' + e.y + ' pageY=' + e.pageY
+      } catch (err) { return 'err:' + (err && err.message ? err.message : err) }
+    },
     onListTouchStart(e) {
       this._touchY0 = this.touchY(e)
       this._pullArmed = false
       // 顶部容差放宽到 6px (真机 contentOffset 常有 0~3 抖动, 之前 <=2 会偶发拉不动)
       this._pullOk = (this._scrollY || 0) <= 6
       this.pullHint = ''
+      // 诊断 (临时): 摸清 Falcon 触摸事件里到底有哪个坐标字段
+      if (this._diagN === undefined) this._diagN = 0
+      if (this._diagN < 6) {
+        this._diagN++
+        log('诊断', 'touchstart y=' + this._touchY0 + ' scrollY=' + (this._scrollY || 0) + ' shape=' + this.descTouch(e))
+      }
     },
     onListTouchMove(e) {
       if (!this._pullOk) return
       if ((this._scrollY || 0) > 6) { this._pullOk = false; this.pullHint = ''; return }
       const dy = this.touchY(e) - this._touchY0
+      if (this._diagM === undefined) this._diagM = 0
+      if (this._diagM < 8) { this._diagM++; log('诊断', 'touchmove dy=' + dy + ' y=' + this.touchY(e) + ' y0=' + this._touchY0) }
       if (dy > this.PULL_TRIGGER) { this._pullArmed = true; this.pullHint = '松手刷新' }
       else if (dy > 12) { this.pullHint = '下拉刷新…' }
     },
