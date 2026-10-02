@@ -49,6 +49,7 @@ function postJson(url, data, timeoutSec) {
     throw new Error('接口返回非 JSON: ' + String(s).substring(0, 120))
   }
 
+}
 // ================= 异步 HTTP (v6: 不阻塞主线程) =================
 // 同步版 httpGet/httpPost 会阻塞 QuickJS 主线程 (curl 最长 timeout 秒) —— 页面渲染/触摸全卡住,
 // 所以页面加载一律走异步版: 原生在工作线程跑 curl, Promise 在 JS 线程 resolve.
@@ -91,7 +92,6 @@ async function postJsonAsync(url, data, timeoutSec) {
   }
 }
 
-}
 
 // 结果缓存 (减少重复请求 = 直接降低风控触发率)
 const resultCache = {} // key -> { at, data }
