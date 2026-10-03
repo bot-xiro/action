@@ -1,5 +1,5 @@
 <template>
-  <div class="page" :class="entering ? 'page-enter' : ''" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
+  <div class="page" :class="entering ? 'page-enter' : ''">
     <!-- 左栏: 封面 (不放播放器也不放播放条, 点封面进播放器页; 播放按钮在右栏详情 tab) -->
     <div class="left">
       <!-- 封面: 按原始比例等比显示, 不裁切 (盒子本身就是同比例) -->
@@ -17,7 +17,7 @@
     <!-- 右栏: 详情 / 评论 同页 tab 切换; 左右滑动切换 (touch 事件冒泡自内部 scroller) -->
     <div class="right"
 >
-      <div class="tabbar">
+      <div class="tabbar" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
         <div :class="['tab', tab === 'detail' ? 'tab-on' : '']" @click="switchTab('detail')">
           <text :class="['tab-text', tab === 'detail' ? 'tab-text-on' : '']">详情</text>
         </div>
@@ -639,6 +639,18 @@ export default {
       if (!p.valid || this._tx0 === null || this._tx0 === undefined || !this._t0 || Date.now() - this._t0 > 1200) {
         this._tx0 = null; this._t0 = 0; this._pullArmed = false
         return
+      }
+      const adx = Math.abs(p.x - this._tx0), ady = Math.abs(p.y - this._ty0)
+      // 点击 tab 栏: 位移很小 —— 直接在这里切, 不等 click 事件 (评论渲染期间 click 常被丢掉,
+      // 这正是用户反馈「评论页点不进去」的直接原因). 触控坐标: x = 959 - 显示X
+      if (adx < 14 && ady < 20) {
+        const dispX = 959 - p.x
+        const dispY = p.y + 45
+        if (dispY < 46 && dispX > 300) {   // tab 栏范围内
+          this._tx0 = null; this._t0 = 0; this._pullArmed = false
+          this.switchTab(dispX < 380 ? 'detail' : 'comment')
+          return
+        }
       }
       const dx = p.x - this._tx0
       const dy = p.y - this._ty0
