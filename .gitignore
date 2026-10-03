@@ -8,3 +8,4 @@ tools/bilibili-cookie.json
 *.pyc
 .local/
 .ghtok
+.falcon_/
