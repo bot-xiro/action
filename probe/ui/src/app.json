@@ -1,5 +1,6 @@
 {
   "pages": {
+    "cap": "pages/cap/cap.vue",
     "index": "pages/index/index.vue"
   },
   "options": {

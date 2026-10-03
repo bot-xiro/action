@@ -71,17 +71,17 @@
 
 
     <!-- 图片查看器 (独立 so) -->
-    <div v-if="viewer.on" class="iview">
-      <image class="iview-img" :src="viewer.path" resize="cover"
-             @touchstart="ivStart" @touchmove="ivMove" @touchend="ivEnd"></image>
+    <div v-if="viewer.on" class="iview"
+         @touchstart="ivStart" @touchmove="ivMove" @touchend="ivEnd">
+      <image class="iview-img" :src="viewer.path" resize="cover"></image>
       <div class="iview-bar">
-        <div class="iview-btn" @click="ivZoom(0.6667)"><text class="iview-btn-t">−</text></div>
+        <div class="iview-btn" @click="ivZoom(0.8)"><text class="iview-btn-t">−</text></div>
         <text class="iview-zoom">{{ viewer.zoomText }}</text>
-        <div class="iview-btn" @click="ivZoom(1.5)"><text class="iview-btn-t">＋</text></div>
+        <div class="iview-btn" @click="ivZoom(1.25)"><text class="iview-btn-t">＋</text></div>
         <text class="iview-size">{{ viewer.w + '×' + viewer.h }}</text>
-        <div class="iview-btn" @click="ivOne"><text class="iview-btn-t">1:1</text></div>
-        <div class="iview-btn" @click="ivReset"><text class="iview-btn-t">复位</text></div>
+        <div class="iview-btn" @click="ivFit"><text class="iview-btn-t">适配</text></div>
         <div class="iview-btn iview-close" @click="ivClose"><text class="iview-btn-t">关闭</text></div>
+        <text v-if="viewer.err" class="iview-err">{{ viewer.err }}</text>
       </div>
     </div>
   </div>
@@ -90,7 +90,7 @@
 <script>
 import { getReplies, likeReply, addReply } from '../../services/bili.js'
 import { log } from '../../services/log.js'
-import { bigUrl, fitZoom, clampZoom, clampCenter, VIEW_W, VIEW_H } from '../../services/imageview.js'
+import { bigUrl, fitZoom, clampScale, clampCenter, VIEW_W, VIEW_H } from '../../services/imageview.js'
 import { imageviewer } from 'imageviewer'
 
 const BUILTIN_EMOJI = {

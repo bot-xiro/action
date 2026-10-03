@@ -10,6 +10,19 @@ export const VIEW_W = 960
 export const VIEW_H = 266
 export const MAX_ZOOM = 8
 
+// ---- 对外语义: scale(倍率) 100% = 整图适配屏幕(= 用户口中的"全屏") ----
+// 内部 zoom = fitZoom * scale 才交给 native.
+export const MIN_SCALE = 0.25
+export const MAX_SCALE = 16
+
+export function clampScale(s) {
+  let v = s
+  if (!(v > 0)) v = 1
+  if (v < MIN_SCALE) v = MIN_SCALE
+  if (v > MAX_SCALE) v = MAX_SCALE
+  return v
+}
+
 // 缩略 URL -> 原图(大图) URL
 export function bigUrl(u) {
   let s = String(u == null ? '' : u)

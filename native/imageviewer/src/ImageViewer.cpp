@@ -162,7 +162,8 @@ static void ivSampleBilinear(const unsigned char* dec, int dw, int dh, double dx
 
 static std::string g_bytes;
 static int g_w = 0, g_h = 0;
-static int g_outSeq = 0;
+static int g_outSeq = 0;                 // 单调递增: 每次出图都是**新文件名**
+static std::vector<std::string> g_recent; // 最近写出的几张, 超出立刻删 (省空间)
 static std::string g_outDir = "/userdisk/xiro";
 static std::mutex g_mtx;
 
@@ -280,12 +281,15 @@ public:
         rc = p_tjCompress2(ch, out.data(), outW, outW * 3, outH, TJPF_RGB, &jpg, &jpgSize, TJSAMP_420, 90, 0);
         p_tjDestroy(ch);
         if (rc != 0 || !jpg) { info.GetReturnValue().ThrowTypeError("imageviewer: 编码失败"); return; }
-        g_outSeq = (g_outSeq % 4) + 1;
+        // 文件名必须每次都不同: 运行时会按**路径**缓存 <image>, 旧实现 1..4 轮换,
+        // 第 5 次起就命中缓存 -> 缩放/拖动后画面根本不更新
+        // (用户反馈「80% 和 0% 都是同一张全屏图」「拖不动」就是这个).
+        g_outSeq++;
         std::string outPath = g_outDir + "/iview_" + std::to_string(g_outSeq) + ".jpg";
-        for (int k = 1; k <= 4; k++) {
-            if (k == g_outSeq) continue;
-            std::string old = g_outDir + "/iview_" + std::to_string(k) + ".jpg";
-            remove(old.c_str());
+        g_recent.push_back(outPath);
+        while (g_recent.size() > 3) {
+            remove(g_recent.front().c_str());
+            g_recent.erase(g_recent.begin());
         }
         FILE* fp = fopen(outPath.c_str(), "wb");
         if (!fp) { p_tjFree(jpg); info.GetReturnValue().ThrowTypeError("imageviewer: 写文件失败"); return; }
