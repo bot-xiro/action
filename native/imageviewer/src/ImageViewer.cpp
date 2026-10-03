@@ -122,7 +122,8 @@ static bool ivFetch(const std::string& url, std::string& out)
 // ---------------- 状态 ----------------
 static std::string g_bytes;      // 原图字节 (JPEG/PNG)
 static int g_w = 0, g_h = 0;     // 原图尺寸
-static std::string g_outPath = "/userdisk/xiro/iview.jpg";
+static int g_outSeq = 0;   // 轮换文件名, 避免 <image> 缓存与查询串
+static std::string g_outDir = "/userdisk/xiro";
 static std::mutex g_mtx;
 
 // 选一个不超过 zoom 的 turbojpeg 缩放档 (1/1,1/2,1/4,1/8)
@@ -229,13 +230,21 @@ public:
         rc = p_tjCompress2(ch, out.data(), outW, outW * 3, outH, TJPF_RGB, &jpg, &jpgSize, TJSAMP_420, 88, 0);
         p_tjDestroy(ch);
         if (rc != 0 || !jpg) { info.GetReturnValue().ThrowTypeError("imageviewer: 编码失败"); return; }
+        g_outSeq = (g_outSeq % 4) + 1;   // 1..4 轮换
+        std::string outPath = g_outDir + "/iview_" + std::to_string(g_outSeq) + ".jpg";
+        // 清掉另外 3 个, 省空间 (出错也无所谓)
+        for (int k = 1; k <= 4; k++) {
+            if (k == g_outSeq) continue;
+            std::string old = g_outDir + "/iview_" + std::to_string(k) + ".jpg";
+            remove(old.c_str());
+        }
         FILE* fp = fopen(g_outPath.c_str(), "wb");
         if (!fp) { p_tjFree(jpg); info.GetReturnValue().ThrowTypeError("imageviewer: 写文件失败"); return; }
         fwrite(jpg, 1, jpgSize, fp);
         fclose(fp);
         p_tjFree(jpg);
 
-        std::string res = "file://" + g_outPath + "?t=" + std::to_string((long)time(NULL));
+        std::string res = "file://" + outPath;
         info.GetReturnValue().Set(res);
     }
 
