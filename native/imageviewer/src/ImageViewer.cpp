@@ -106,7 +106,7 @@ static bool ivFetch(const std::string& url, std::string& out)
         return !out.empty();
     }
     // http(s): 用系统 curl, 带浏览器 UA/Referer (B 站图床需要)
-    cmd = "curl -s --compressed --max-time 20 -A "
+    cmd = "curl -s --compressed --connect-timeout 4 --retry 1 --retry-delay 1 --max-time 20 -A "
         + ivShellQuote("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
         + " -e " + ivShellQuote("https://www.bilibili.com/")
         + " " + ivShellQuote(url);

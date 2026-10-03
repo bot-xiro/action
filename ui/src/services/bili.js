@@ -1377,7 +1377,7 @@ function mapReply(r, upperMid, builtinEmoji, opts) {
   }
 }
 
-export async function getReplies(aid, pn, builtinEmoji, sort) {
+export async function getReplies(aid, pn, builtinEmoji, sort, fresh) {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   const sortParam = sort === 'time' ? 0 : 2
   const url = 'https://api.bilibili.com/x/v2/reply?type=1&oid=' + encodeURIComponent(aid)
@@ -1389,6 +1389,12 @@ export async function getReplies(aid, pn, builtinEmoji, sort) {
   }
   const page = body.data.page || {}
   const list = body.data.replies || []
+  // 首页缓存 3 分钟: 进详情预取 + 再进同一视频都走缓存, 秒开 (手动刷新传 fresh 绕过)
+  const ckey = 'replies_' + aid + '_' + sortParam
+  if ((pn || 1) === 1 && !fresh) {
+    const c = cacheGet(ckey, 180000)
+    if (c) return c
+  }
   const upperMid = (body.data.upper && body.data.upper.mid) || 0
   const replies = []
   for (let i = 0; i < list.length; i++) {
@@ -1412,7 +1418,9 @@ export async function getReplies(aid, pn, builtinEmoji, sort) {
     topItem.pinned = true
     replies.unshift(topItem)
   }
-  return { total: page.count || 0, replies: replies }
+  const __res = { total: page.count || 0, replies: replies }
+  if ((pn || 1) === 1) cacheSet(ckey, __res)
+  return __res
 }
 
 /**

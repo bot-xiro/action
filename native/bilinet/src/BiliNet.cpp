@@ -162,7 +162,7 @@ public:
         if (timeout <= 0) timeout = 10;
 
         std::string headers = collectHeaders(ctx, info, 2);
-        std::string cmd = "curl -s --compressed --max-time " + std::to_string(timeout)
+        std::string cmd = "curl -s --compressed --connect-timeout 4 --retry 1 --retry-delay 1 --max-time " + std::to_string(timeout)
             + " -A " + shellQuote(UA)
             + " -e " + shellQuote(REFERER)
             + headers
@@ -218,7 +218,7 @@ public:
         if (timeout <= 0) timeout = 10;
 
         std::string headers = collectHeaders(ctx, info, 3);
-        std::string cmd = "curl -s --compressed --max-time " + std::to_string(timeout)
+        std::string cmd = "curl -s --compressed --connect-timeout 4 --retry 1 --retry-delay 1 --max-time " + std::to_string(timeout)
             + " -X POST"
             + " -A " + shellQuote(UA)
             + " -e " + shellQuote(REFERER)
@@ -266,7 +266,7 @@ public:
             if (t > 0 && t < 120) timeout = t;
         }
         std::string headers = headersFromBson(info, 2);
-        std::string cmd = "curl -s --compressed --max-time " + std::to_string(timeout)
+        std::string cmd = "curl -s --compressed --connect-timeout 4 --retry 1 --retry-delay 1 --max-time " + std::to_string(timeout)
             + " -A " + shellQuote(UA)
             + " -e " + shellQuote(REFERER)
             + headers
@@ -294,7 +294,7 @@ public:
             if (t > 0 && t < 120) timeout = t;
         }
         std::string headers = headersFromBson(info, 3);
-        std::string cmd = "curl -s --compressed --max-time " + std::to_string(timeout)
+        std::string cmd = "curl -s --compressed --connect-timeout 4 --retry 1 --retry-delay 1 --max-time " + std::to_string(timeout)
             + " -X POST"
             + " -A " + shellQuote(UA)
             + " -e " + shellQuote(REFERER)

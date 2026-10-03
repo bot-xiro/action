@@ -485,7 +485,7 @@ export default {
       this.beginLoad()
       // 从登录页返回: 评论 tab 之前被门禁挡住, 补一次加载
       if (this.logged && !wasLogged && this.tab === 'comment' && this.detail && this.detail.aid && !this.cLoaded) {
-        this.loadComments(true)
+        this.loadComments(true, true)
       }
       if (this.entering) {
         const self2 = this
@@ -514,6 +514,11 @@ export default {
           const d = await getVideoDetail(this.bvid)
           if (gen !== this.generation) return
           this.detail = d
+          // 预取评论: 一进详情页就在后台拉, 用户切到「评论」时通常已经好了
+          if (this.detail && this.detail.aid && !this.cLoaded && !this.cLoading) {
+            const self = this
+            setTimeout(function () { self.loadComments(true) }, 400)
+          }
           if (d.pages.length > 1 && this.currentPage >= 1 && this.currentPage <= d.pages.length) {
             const p = d.pages[this.currentPage - 1]
             if (p && p.part) this.detail.title = d.title + '（' + p.part + '）'
@@ -651,7 +656,7 @@ export default {
       } else {
         if (this.cLoading || !this.logged) return
         this.pn = 1
-        this.loadComments(true)
+        this.loadComments(true, true)
       }
     },
     // 强拉详情刷新计数与 req_user 状态 (不动展开/合集等界面态)
@@ -909,14 +914,14 @@ export default {
     },
 
     // ---------- 评论区 (内联) ----------
-    loadComments(reset) {
+    loadComments(reset, fresh) {
       if (!this.detail || !this.detail.aid || this.cLoading) return
       const gen = ++this.cGeneration
       this.cLoading = true
       if (reset) this.cStatus = '加载中…'
       afterPaint(async () => {
         try {
-          const r = await getReplies(this.detail.aid, this.pn, BUILTIN_EMOJI, this.sortMode)
+          const r = await getReplies(this.detail.aid, this.pn, BUILTIN_EMOJI, this.sortMode, fresh)
           if (gen !== this.cGeneration) return
           if (reset) this.replies = []
           this.appendPage(r)
@@ -967,7 +972,7 @@ export default {
       this.hasMore = false
       this.cGeneration++
       this.cStatus = '加载中…'
-      this.loadComments(true)
+      this.loadComments(true, true)
     },
 
     // 评论点赞: 乐观更新 (接口成功, 但列表里的计数有延迟), 失败回滚
@@ -1111,7 +1116,7 @@ export default {
         this.pn = 1
         this.replies = []
         this.cStatus = '✓ 已发送'
-        this.loadComments(true)
+        this.loadComments(true, true)
       } catch (err) {
         this.cStatus = '发送失败: ' + (err && err.message ? err.message : err)
       } finally {
