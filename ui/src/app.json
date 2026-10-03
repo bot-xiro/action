@@ -22,6 +22,7 @@
     "fav": "pages/fav/fav.vue",
     "toview": "pages/toview/toview.vue",
     "settings": "pages/settings/settings.vue",
+    "capx": "pages/capx/capx.vue",
     "feed": "pages/feed/feed.vue"
   },
   "options": {
