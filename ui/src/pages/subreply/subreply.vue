@@ -44,6 +44,7 @@
           <div class="reply-meta">
             <text :class="['meta-text', r.liked ? 'meta-liked' : '']" @click="toggleReplyLike(r)">赞 {{ r.likeText }}{{ r.liked ? ' ✓' : '' }}</text>
             <text class="meta-reply" @click="setTarget(r)">回复</text>
+            <text v-if="r.pics && r.pics.length > 0" class="meta-pic" @click="ivOpen(r.pics[0].src)">图 {{ r.pics.length }}</text>
           </div>
         </div>
       </div>
@@ -610,6 +611,18 @@ function parseParentSegs(msg) {
 }
 .meta-liked {
   color: #fb7299;
+}
+.meta-pic {
+  lines: 1;
+  font-size: 17px;
+  color: #fb7299;
+  margin-left: 22px;
+  padding-left: 12px;
+  padding-right: 12px;
+  padding-top: 2px;
+  padding-bottom: 2px;
+  border-radius: 6px;
+  background-color: #2b2f36;
 }
 .meta-reply {
   font-size: 16px;
