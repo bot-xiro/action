@@ -1,29 +1,22 @@
-// 图片查看器共用的「取图 + 取景数学」(真正的查看器在独立 native 模块 imageviewer)
+// 图片查看器的取图 + 取景数学
 //
-// 为什么要单独一层:
-//   1) turbojpeg 只解 JPEG —— B 站图床统一走 \`@2040w.jpg\`, 既拿到大图又保证是 JPEG
-//      (原图可能是 png/webp, 直接丢给 turbojpeg 会 header 解析失败);
-//   2) 列表里的图都是缩略(\`@160w_160h_1c\`), 查看器必须去掉缩略后缀拿原图, 否则放大就是糊的;
-//   3) fit / zoom / 平移夹取 三个数学放一处, 评论页与动态页共用, 避免两处各写一份又各错一份.
+// 实现选择(0.9.56 真机实测后改的):
+//   本机固件 **支持 <image> 上的 CSS transform**(scale/translate 都生效, transform-origin 只吃数值),
+//   也支持 <image src="https 网络图"> 直接加载(mini-glide 自带下载/解码/缓存).
+//   => 查看器不再走 "native 每帧解码+tjCompress2 编码+落盘" 那条路:
+//      那条路每次缩放/拖动都要重写文件, 慢, 而且运行时会**按路径缓存 <image>**,
+//      同名文件不刷新 -> 用户看到"80% 和 0% 都是同一张全屏图""拖不动".
+//   现在: <image resize="contain"> 一次渲染 + transform 做缩放平移 = 即时/无损/无缓存问题.
+//
+// 语义: scale 100% = 整图适配屏幕(用户口中的"全屏"), 与 transform: scale(1) 对应.
 
 export const VIEW_W = 960
 export const VIEW_H = 266
-export const MAX_ZOOM = 8
+export const MIN_SCALE = 0.4
+export const MAX_SCALE = 12
 
-// ---- 对外语义: scale(倍率) 100% = 整图适配屏幕(= 用户口中的"全屏") ----
-// 内部 zoom = fitZoom * scale 才交给 native.
-export const MIN_SCALE = 0.25
-export const MAX_SCALE = 16
-
-export function clampScale(s) {
-  let v = s
-  if (!(v > 0)) v = 1
-  if (v < MIN_SCALE) v = MIN_SCALE
-  if (v > MAX_SCALE) v = MAX_SCALE
-  return v
-}
-
-// 缩略 URL -> 原图(大图) URL
+// 缩略 URL -> 原图(大图) URL: 剥掉 @缩略 后缀与查询串, B 站图床补 @2040w.jpg
+// (列表里的图都是 @160w_160h_1c 这类缩略, 拿它放大必然糊; 2040 宽足够 8 倍放大)
 export function bigUrl(u) {
   let s = String(u == null ? '' : u)
   if (s === '') return s
@@ -37,33 +30,33 @@ export function bigUrl(u) {
   return s
 }
 
-// 整图适配的 zoom (输出像素 / 原图像素)
-export function fitZoom(w, h, outW, outH) {
-  const W = outW || VIEW_W
-  const H = outH || VIEW_H
-  if (!w || !h) return 1
-  const z = Math.min(W / w, H / h)
-  return z > 0 ? z : 1
-}
-
-// zoom 夹取: 下限 = 整图适配的一半(再小没意义), 上限 = MAX_ZOOM
-export function clampZoom(z, w, h) {
-  const fit = fitZoom(w, h)
-  let lo = fit * 0.5
-  if (lo < 0.02) lo = 0.02
-  let v = z
-  if (!(v > 0)) v = fit
-  if (v < lo) v = lo
-  if (v > MAX_ZOOM) v = MAX_ZOOM
+export function clampScale(s) {
+  let v = s
+  if (!(v > 0)) v = 1
+  if (v < MIN_SCALE) v = MIN_SCALE
+  if (v > MAX_SCALE) v = MAX_SCALE
   return v
 }
 
-// 视口中心夹取: 图比视口大才允许平移, 否则强制居中(不会拖出黑边)
-export function clampCenter(c, view, total) {
-  if (!total) return 0
-  if (view >= total) return total / 2
-  let v = c
-  if (v < view / 2) v = view / 2
-  if (v > total - view / 2) v = total - view / 2
-  return v
+// 平移夹取: 放大后最多把图拖到"中心偏出半屏", 避免把图拖没了
+export function clampPan(t, scale) {
+  const lim = (t.limit || VIEW_W) * scale * 0.75
+  const limY = (t.limitY || VIEW_H) * scale * 0.75
+  let x = t.x
+  let y = t.y
+  if (x > lim) x = lim
+  if (x < -lim) x = -lim
+  if (y > limY) y = limY
+  if (y < -limY) y = -limY
+  return { x: x, y: y }
+}
+
+// 把 scale/tx/ty 变成 image 的 style (transform-origin 必须用像素值, 本机不接受 left top)
+export function imgStyle(scale, tx, ty) {
+  return {
+    width: VIEW_W + 'px',
+    height: VIEW_H + 'px',
+    transform: 'translate(' + tx + 'px,' + ty + 'px) scale(' + scale + ')',
+    transformOrigin: (VIEW_W / 2) + 'px ' + (VIEW_H / 2) + 'px'
+  }
 }

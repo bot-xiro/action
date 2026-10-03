@@ -73,15 +73,14 @@
     <!-- 图片查看器 (独立 so) -->
     <div v-if="viewer.on" class="iview"
          @touchstart="ivStart" @touchmove="ivMove" @touchend="ivEnd">
-      <image class="iview-img" :src="viewer.path" resize="cover"></image>
+      <image class="iview-img" :src="viewer.url" resize="contain" :style="viewerStyle"></image>
       <div class="iview-bar">
         <div class="iview-btn" @click="ivZoom(0.8)"><text class="iview-btn-t">−</text></div>
-        <text class="iview-zoom">{{ viewer.zoomText }}</text>
+        <text class="iview-zoom">{{ viewer.text }}</text>
         <div class="iview-btn" @click="ivZoom(1.25)"><text class="iview-btn-t">＋</text></div>
-        <text class="iview-size">{{ viewer.w + '×' + viewer.h }}</text>
-        <div class="iview-btn" @click="ivFit"><text class="iview-btn-t">适配</text></div>
+        <div class="iview-btn" @click="ivFit"><text class="iview-btn-t">适配 100%</text></div>
         <div class="iview-btn iview-close" @click="ivClose"><text class="iview-btn-t">关闭</text></div>
-        <text v-if="viewer.err" class="iview-err">{{ viewer.err }}</text>
+        <text class="iview-tip">拖动可平移 · ＋ 可放大到超出屏幕</text>
       </div>
     </div>
   </div>
@@ -90,8 +89,7 @@
 <script>
 import { getReplies, likeReply, addReply } from '../../services/bili.js'
 import { log } from '../../services/log.js'
-import { bigUrl, fitZoom, clampScale, clampCenter, VIEW_W, VIEW_H } from '../../services/imageview.js'
-import { imageviewer } from 'imageviewer'
+import { bigUrl, clampScale, clampPan, imgStyle as makeImgStyle } from '../../services/imageview.js'
 
 const BUILTIN_EMOJI = {
 '1f197': require('../../assets/emoji/1f197.png'),
@@ -185,11 +183,15 @@ export default {
       draft: '',
       posting: false,
       scrollY: 0,
-      viewer: { on: false, path: '', zoom: 1, cx: 0, cy: 0, w: 0, h: 0, zoomText: '100%' }
+      viewer: { on: false, url: '', scale: 1, tx: 0, ty: 0, text: '100%' }
     }
   },
   // 生命周期: 本运行时 BasePage 只把 onShow/onHide/onUnload 转发给页面根组件($root),
   // onLoad(options) 只落在 Page 实例上 —— 组件里写 onLoad/created 都不会执行(0.9.52/0.9.53 卡「加载中」的真因).
+  computed: {
+    // 缩放/平移全部交给 CSS transform (本机固件实测 <image> 支持 scale/translate)
+    viewerStyle() { return makeImgStyle(this.viewer.scale, this.viewer.tx, this.viewer.ty) }
+  },
   methods: {
     onShow() {
       if (this.$page && !this._newOptionsBound) {
@@ -258,48 +260,33 @@ export default {
     // 点评论里的图 -> 独立图片查看器 (原来 <image> 上没有点击处理, 命中区为 0, 所以「点不开照片」)
     openPicAt(r, i) { if (r.pics && r.pics[i]) this.ivOpen(r.pics[i].src) },
     onInput(e) { try { this.draft = e.detail && e.detail.value !== undefined ? e.detail.value : (e.target && e.target.value) || '' } catch (err) {} },
+    // 打开: 只把大图 URL 交给 <image resize="contain">, 缩放/平移全用 transform (不落盘, 不阻塞)
     ivOpen(url) {
-      try {
-        // bigUrl: 去掉缩略后缀改拿原图(大图), 并保证是 turbojpeg 能解的 JPEG
-        const info = imageviewer.open(bigUrl(url))
-        const o = typeof info === 'string' ? JSON.parse(info) : info
-        if (!o || o.ret !== 0) { this.status = '打开图片失败'; return }
-        this.viewer.w = o.width || 0
-        this.viewer.h = o.height || 0
-        this.viewer.zoom = fitZoom(this.viewer.w, this.viewer.h, VIEW_W, VIEW_H)
-        this.viewer.cx = this.viewer.w / 2
-        this.viewer.cy = this.viewer.h / 2
-        this.viewer.on = true
-        this.ivRender()
-      } catch (e) { this.status = '打开图片失败: ' + ((e && e.message) ? e.message : e) }
+      this.viewer.url = bigUrl(url)
+      this.viewer.scale = 1
+      this.viewer.tx = 0
+      this.viewer.ty = 0
+      this.viewer.text = '100%'
+      this.viewer.on = true
+      try { log('图片查看器', '打开 ' + this.viewer.url) } catch (e) {}
     },
-    ivRender() {
-      try {
-        // 视口 = 输出尺寸/zoom (原图坐标); 中心先夹取, 图小于视口时强制居中
-        const vw = VIEW_W / this.viewer.zoom
-        const vh = VIEW_H / this.viewer.zoom
-        this.viewer.cx = clampCenter(this.viewer.cx, vw, this.viewer.w)
-        this.viewer.cy = clampCenter(this.viewer.cy, vh, this.viewer.h)
-        const path = imageviewer.view(this.viewer.cx, this.viewer.cy, this.viewer.zoom, VIEW_W, VIEW_H)
-        if (path) this.viewer.path = String(path)
-        this.viewer.zoomText = Math.round(this.viewer.zoom * 100) + '%'
-      } catch (e) {}
+    ivApply() {
+      const p = clampPan({ x: this.viewer.tx, y: this.viewer.ty }, this.viewer.scale)
+      this.viewer.tx = p.x
+      this.viewer.ty = p.y
+      this.viewer.text = Math.round(this.viewer.scale * 100) + '%'
     },
     ivZoom(f) {
-      this.viewer.zoom = clampZoom(this.viewer.zoom * f, this.viewer.w, this.viewer.h)
-      this.ivRender()
+      this.viewer.scale = clampScale(this.viewer.scale * f)
+      this.ivApply()
     },
-    ivOne() {
-      this.viewer.zoom = clampZoom(1, this.viewer.w, this.viewer.h)
-      this.ivRender()
+    ivFit() {
+      this.viewer.scale = 1
+      this.viewer.tx = 0
+      this.viewer.ty = 0
+      this.viewer.text = '100%'
     },
-    ivReset() {
-      this.viewer.zoom = fitZoom(this.viewer.w, this.viewer.h, VIEW_W, VIEW_H)
-      this.viewer.cx = this.viewer.w / 2
-      this.viewer.cy = this.viewer.h / 2
-      this.ivRender()
-    },
-    ivClose() { this.viewer.on = false; try { imageviewer.close() } catch (e) {} },
+    ivClose() { this.viewer.on = false },
     txy(e) {
       try {
         const t = (e && e.changedTouches && e.changedTouches[0]) || (e && e.touches && e.touches[0])
@@ -312,11 +299,11 @@ export default {
       const p = this.txy(e)
       if (!p.ok || this._ix === null || this._ix === undefined) return
       const dx = p.x - this._ix, dy = p.y - this._iy
-      if (Math.abs(dx) < 2 && Math.abs(dy) < 2) return
-      this.viewer.cx -= dx / this.viewer.zoom
-      this.viewer.cy -= dy / this.viewer.zoom
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return
       this._ix = p.x; this._iy = p.y
-      this.ivRender()
+      this.viewer.tx += dx
+      this.viewer.ty += dy
+      this.ivApply()
     },
     ivEnd() { this._ix = undefined; this._iy = undefined }
   }
@@ -371,5 +358,5 @@ export default {
 .iview-close { background-color: #fb7299; }
 .iview-btn-t { font-size: 19px; color: #ffffff; }
 .iview-zoom { font-size: 19px; color: #fb7299; margin-right: 10px; }
-.iview-size { font-size: 16px; color: #9aa3af; margin-right: 12px; }
+.iview-tip { font-size: 15px; color: #9aa3af; margin-left: 6px; }
 </style>
