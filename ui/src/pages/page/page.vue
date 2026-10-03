@@ -16,7 +16,6 @@
 
     <!-- 右栏: 详情 / 评论 同页 tab 切换; 左右滑动切换 (touch 事件冒泡自内部 scroller) -->
     <div class="right" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
->
       <div class="tabbar">
         <div :class="['tab', tab === 'detail' ? 'tab-on' : '']" @click="switchTab('detail')">
           <text :class="['tab-text', tab === 'detail' ? 'tab-text-on' : '']">详情</text>
