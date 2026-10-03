@@ -60,8 +60,6 @@
       </div>
     </scroller>
 
-    <!-- 底部: 发评论 -->
-    </div>
 
     <!-- 图片查看器 (独立 so) -->
     <div v-if="viewer.on" class="iview">
