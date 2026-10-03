@@ -87,7 +87,6 @@
               <image v-else :key="'de' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
             </template>
           </richtext>
-                :class="['desc', descExpanded ? 'desc-open' : '']" @click="toggleDesc">{{ detail.desc !== '' ? detail.desc : '暂无简介' }}</text>
         </div>
 
         <div v-if="detail && detail.pages.length > 1" class="section">
