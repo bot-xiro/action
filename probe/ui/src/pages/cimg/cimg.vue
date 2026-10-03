@@ -16,7 +16,7 @@ export default {
       jpg: 'https://i0.hdslb.com/bfs/archive/d6f703c433759ca73c5b235ddf9d99d309be36d9.jpg',
       png: 'https://i0.hdslb.com/bfs/new_dyn/91bf639aec7b2ce6d442d433f089a163174501086.png',
       jpgBig: 'https://i0.hdslb.com/bfs/archive/d6f703c433759ca73c5b235ddf9d99d309be36d9.jpg@2040w.jpg',
-      local: require('../../app_icon.png')
+      local: require('../../../app_icon.png')
     }
   }
 }

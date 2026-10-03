@@ -28,7 +28,7 @@ export default {
 .cell { width: 230px; margin-right: 10px; }
 .l { font-size: 15px; color: #8fb8ff; height: 18px; }
 .b { width: 180px; height: 120px; background-color: #22262c; }
-.b2 { width: 180px; height: 120px; background-color: #22262c; transform: scale(0.5); transform-origin: left top; }
-.b3 { width: 180px; height: 120px; background-color: #22262c; transform: scale(2); transform-origin: left top; }
+.b2 { width: 180px; height: 120px; background-color: #22262c; transform: scale(0.5); transform-origin: 0px 0px; }
+.b3 { width: 180px; height: 120px; background-color: #22262c; transform: scale(2); transform-origin: 0px 0px; }
 .clip { width: 200px; height: 130px; }
 </style>
