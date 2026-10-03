@@ -1242,7 +1242,8 @@ export async function getMyInfo() {
 export async function getDynamicFeed(offset) {
   if (!hasHttp()) throw new Error('当前固件不支持 http 请求 (缺少 bilinet 模块)')
   if (!auth.hasCookie()) throw new Error('未登录')
-  const url = 'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?timezone_offset=-480&type=video'
+  // 不带 type 参数 -> 全类型(投稿/图文/文字/专栏/转发), 供「动态」页按类型分类
+  const url = 'https://api.bilibili.com/x/polymer/web-dynamic/v1/feed/all?timezone_offset=-480'
     + (offset ? '&offset=' + encodeURIComponent(offset) : '')
   const body = await getJsonAsync(url, 15)
   if (body.code === -101) throw new Error('未登录或登录已过期')
@@ -1252,53 +1253,8 @@ export async function getDynamicFeed(offset) {
   const list = body.data.items || []
   const items = []
   for (let i = 0; i < list.length; i++) {
-    const it = list[i]
-    if (!it) continue
-    const md = (it.modules && it.modules.module_dynamic) || {}
-    const ma = (it.modules && it.modules.module_author) || {}
-    const major = md.major || {}
-    // 视频动态: major.archive (封面字段叫 cover, 没有 pic —— 搜索/热门接口才是 pic)
-    if (it.type === 'DYNAMIC_TYPE_AV') {
-      const arc = major.archive || {}
-      if (!arc.bvid) continue
-      let pic = arc.cover || arc.pic || ''
-      if (pic.indexOf('//') === 0) pic = 'https:' + pic
-      const st = arc.stat || {}
-      items.push({
-        type: 'video',
-        bvid: arc.bvid,
-        aid: arc.aid || 0,
-        title: stripTags(arc.title),
-        author: ma.name || '',
-        playText: formatPlay(st.play),
-        duration: arc.duration_text || '',
-        pic: thumb(pic, 400, 250),
-        pubText: ma.pub_time || ''
-      })
-      continue
-    }
-    // 图文动态: major.draw.items[] (src 是 i0.hdslb.com 图床), title 用动态文案
-    if (it.type === 'DYNAMIC_TYPE_DRAW') {
-      const draw = major.draw || {}
-      const pics = draw.items || []
-      const first = pics.length > 0 ? (pics[0].src || '') : ''
-      let pic = first
-      if (pic.indexOf('//') === 0) pic = 'https:' + pic
-      const txt = stripTags(md.desc && md.desc.text ? md.desc.text : '')
-      items.push({
-        type: 'draw',
-        bvid: '',
-        aid: 0,
-        title: txt !== '' ? txt : '图文动态',
-        author: ma.name || '',
-        playText: '',
-        duration: (pics.length > 1 ? pics.length + '图' : '图文'),
-        pic: pic !== '' ? thumb(pic, 400, 400) : '',
-        pubText: ma.pub_time || ''
-      })
-      continue
-    }
-    // 其他动态类型 (转发/文字等) 不展示
+    const full = mapDynamicItem(list[i])
+    if (full) items.push(full)
   }
   // 封面诊断: 0.8.6 动态封面不显示过一次, 留下实际下发的 URL 便于设备上 curl 验证
   if (items.length > 0) log('动态', '首条封面 ' + items[0].pic)
@@ -1307,6 +1263,152 @@ export async function getDynamicFeed(offset) {
     offset: body.data.offset || '',
     hasMore: body.data.has_more === 1
   }
+}
+
+// ===================== 动态流全类型映射 (0.9.54) =====================
+// 动态形态比视频复杂: 投稿(archive) / 图文(draw, 九宫格) / 纯文字(word) / 专栏(opus) / 转发(forward) / 直播(live_rcmd)
+// 正文必须按 desc.rich_text_nodes 保序渲染 —— 节点的 emoji.size (1=小 2=大) 决定字号,
+// 直接拼字符串会同时丢掉表情图片和字号大小, 这就是之前「文字大小/位置不对」的根因.
+function dynHttps(u) {
+  const s = String(u == null ? '' : u)
+  if (s.indexOf('//') === 0) return 'https:' + s
+  return s.replace(/^http:\/\//i, 'https://')
+}
+// 富文本节点 -> 渲染段: t0 文本 / t1 表情图片 / t2 高亮文本(话题·@·链接)
+function mapRichNodes(nodes) {
+  const segs = []
+  const arr = nodes || []
+  for (let i = 0; i < arr.length; i++) {
+    const n = arr[i]
+    if (!n) continue
+    const ty = String(n.type || '')
+    const txt = n.text == null ? '' : String(n.text)
+    if (ty === 'RICH_TEXT_NODE_TYPE_EMOJI' && n.emoji) {
+      const em = n.emoji
+      const u = dynHttps(em.icon_url || em.webp_url || em.gif_url || '')
+      if (u) {
+        const sz = em.size === 2 ? 30 : 20
+        segs.push({ t: 1, v: u, w: sz, h: sz })
+      } else if (txt) {
+        segs.push({ t: 0, v: txt })
+      }
+    } else if (ty === '' || ty === 'RICH_TEXT_NODE_TYPE_TEXT') {
+      if (txt) segs.push({ t: 0, v: txt })
+    } else if (txt) {
+      segs.push({ t: 2, v: txt, rid: String(n.rid || ''), url: n.jump_url || '' })
+    }
+  }
+  return segs
+}
+// 九宫格图: 按原图比例缩到 <=max 边长, 保序输出 (页面按 3 列切行)
+function dynPics(list, max) {
+  const out = []
+  const arr = list || []
+  const ms = max || 132
+  for (let i = 0; i < arr.length && i < 9; i++) {
+    const p = arr[i] || {}
+    const src = dynHttps(p.src || p.url || '')
+    if (!src) continue
+    let w = parseInt(p.width, 10) || 0
+    let h = parseInt(p.height, 10) || 0
+    if (!w || !h) { w = ms; h = ms }
+    const k = Math.min(ms / w, ms / h)
+    out.push({ src: src, w: Math.round(w * k), h: Math.round(h * k), full: src })
+  }
+  return out
+}
+function dynArchive(arc) {
+  if (!arc || !arc.bvid) return null
+  return {
+    bvid: arc.bvid,
+    aid: arc.aid || 0,
+    title: stripTags(arc.title),
+    cover: arc.cover ? thumb(dynHttps(arc.cover), 240, 150) : '',
+    playText: formatPlay((arc.stat || {}).play),
+    duration: arc.duration_text || ''
+  }
+}
+function dynKindOf(type) {
+  if (type === 'DYNAMIC_TYPE_AV') return 'av'
+  if (type === 'DYNAMIC_TYPE_DRAW') return 'draw'
+  if (type === 'DYNAMIC_TYPE_WORD') return 'word'
+  if (type === 'DYNAMIC_TYPE_OPUS' || type === 'DYNAMIC_TYPE_ARTICLE') return 'opus'
+  if (type === 'DYNAMIC_TYPE_FORWARD') return 'forward'
+  if (type === 'DYNAMIC_TYPE_LIVE_RCMD' || type === 'DYNAMIC_TYPE_LIVE') return 'live'
+  return 'other'
+}
+function mapDynamicItem(it) {
+  if (!it) return null
+  const modules = it.modules || {}
+  const md = modules.module_dynamic || {}
+  const ma = modules.module_author || {}
+  const st = modules.module_stat || {}
+  const major = md.major || {}
+  const kind = dynKindOf(String(it.type || ''))
+  const desc = md.desc || {}
+  const draw = major.draw || {}
+  const opus = major.opus || major.article || {}
+  let segs = mapRichNodes(desc.rich_text_nodes)
+  if (segs.length === 0 && desc.text) segs = [{ t: 0, v: String(desc.text) }]
+  let pics = []
+  if (draw.items && draw.items.length) pics = dynPics(draw.items)
+  if (pics.length === 0 && opus.pics && opus.pics.length) pics = dynPics(opus.pics)
+  if (pics.length === 0 && desc.pics && desc.pics.length) pics = dynPics(desc.pics)
+  // 转发: 正文是转发语, 原动态在 it.orig
+  let orig = null
+  if (it.orig) {
+    const omd = (it.orig.modules || {}).module_dynamic || {}
+    const oma = (it.orig.modules || {}).module_author || {}
+    const omajor = omd.major || {}
+    const odesc = omd.desc || {}
+    let osegs = mapRichNodes(odesc.rich_text_nodes)
+    if (osegs.length === 0 && odesc.text) osegs = [{ t: 0, v: String(odesc.text) }]
+    const odraw = omajor.draw || {}
+    const oopus = omajor.opus || omajor.article || {}
+    let opics = []
+    if (odraw.items && odraw.items.length) opics = dynPics(odraw.items)
+    if (opics.length === 0 && oopus.pics && oopus.pics.length) opics = dynPics(oopus.pics)
+    orig = {
+      author: oma.name || '',
+      face: oma.face ? thumb(dynHttps(oma.face), 80, 80) : '',
+      segs: osegs,
+      pics: opics,
+      archive: dynArchive(omajor.archive)
+    }
+  }
+  const archive = dynArchive(major.archive)
+  const txt = desc.text ? String(desc.text) : ''
+  const item = {
+    id: String(it.id_str || ''),
+    // kind 用于分类筛选; type/pic/title 保留旧字段, 首页「动态」tab 的旧渲染不用改
+    kind: kind,
+    type: kind === 'av' ? 'video' : (kind === 'draw' ? 'draw' : kind),
+    author: ma.name || '',
+    face: ma.face ? thumb(dynHttps(ma.face), 80, 80) : '',
+    pubText: ma.pub_time || '',
+    segs: segs,
+    pics: pics,
+    rows: [],
+    archive: archive,
+    opus: opus.title ? { title: stripTags(opus.title), summary: stripTags(opus.summary || ''), url: opus.jump_url || '' } : null,
+    orig: orig,
+    stat: {
+      like: (st.like && st.like.count) || 0,
+      reply: (st.comment && st.comment.count) || 0,
+      forward: (st.forward && st.forward.count) || 0
+    },
+    expanded: false,
+    // 旧字段 (首页列表沿用)
+    bvid: archive ? archive.bvid : '',
+    aid: archive ? archive.aid : 0,
+    title: archive ? archive.title : (txt !== '' ? stripTags(txt) : (kind === 'draw' ? (pics.length > 1 ? pics.length + '图' : '图文动态') : stripTags(txt))),
+    playText: archive ? archive.playText : '',
+    duration: archive ? archive.duration : (pics.length > 1 ? pics.length + '图' : ''),
+    pic: archive ? archive.cover : (pics.length > 0 ? thumb(pics[0].full, 400, 400) : '')
+  }
+  // 纯直播推荐卡片等没有正文/图/视频 -> 直接跳过, 列表里不留空白块
+  if (segs.length === 0 && pics.length === 0 && !archive && !orig && !item.opus) return null
+  return item
 }
 
 // 估算文本占用行数 (CJK 全角算 1, 其余 0.55): 评论列宽 ~630px / 18px 字号 ≈ 35 字/行

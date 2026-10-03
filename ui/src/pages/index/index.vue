@@ -111,6 +111,9 @@
       <div v-if="dynStatus !== '' && dynStatus.indexOf('未登录') >= 0" class="login-cta" @click="openLogin">
         <text class="login-cta-text">去登录</text>
       </div>
+      <div class="dynbar">
+        <text class="dynbar-t" @click="openFeed">分类浏览全类型动态（投稿 / 图文 / 文字 / 转发 / 专栏）›</text>
+      </div>
       <scroller v-if="dynStatus === '' || dynItems.length > 0" class="list"
                 scroll-direction="vertical" :show-scrollbar="true"
                 :loadmoreoffset="100" :over-scroll="70" @loadmore="loadMoreDynamic"
@@ -674,6 +677,10 @@ export default {
       this.history = []
     },
 
+    // 动态页: 全类型(投稿/图文/文字/转发/专栏) + 分类筛选 + 九宫格 + 独立图片查看器
+    openFeed() {
+      try { $falcon.navTo('feed', {}) } catch (e) { this.dynStatus = '打开动态页失败' }
+    },
     openVideo(item) {
       console.log('open video', item.bvid, item.title)
       $falcon.navTo('page', { bvid: item.bvid, title: item.title })
@@ -758,6 +765,8 @@ export default {
   display: flex;
   flex-direction: column;
 }
+.dynbar { width: 960px; height: 34px; flex-direction: row; align-items: center; }
+.dynbar-t { font-size: 17px; color: #8fb8ff; margin-left: 20px; }
 /* 列表区吃满剩余高度 (搜索页有结果时下方不再留空白) */
 .list {
   width: 960px;

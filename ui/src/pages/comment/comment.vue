@@ -40,8 +40,11 @@
               <text v-if="!r.expanded && r.long" class="rmore" @click="toggle(r)">…</text>
             </div>
             <div v-if="r.pics && r.pics.length" class="pics">
-              <image v-for="(pic, pi) in r.pics" :key="'p' + pi" class="pic" :src="pic.src"
-                     :style="{ width: pic.w + 'px', height: pic.h + 'px' }" resize="cover"></image>
+              <div v-for="(pic, pi) in r.pics" :key="'pb' + pi" class="pic-box"
+                   :style="{ width: pic.w + 'px', height: pic.h + 'px' }" @click="openPicAt(r, pi)">
+                <image class="pic" :src="pic.src"
+                       :style="{ width: pic.w + 'px', height: pic.h + 'px' }" resize="cover"></image>
+              </div>
             </div>
             <div class="rmeta">
               <text :class="['mtext', r.liked ? 'mliked' : '']" @click="like(r)">赞 {{ r.likeText }}{{ r.liked ? ' ✓' : '' }}</text>
@@ -243,6 +246,8 @@ export default {
     openUser(r) { if (r.mid) { try { $falcon.navTo('up', { mid: String(r.mid), name: r.author }) } catch (e) {} } },
     openSub(r) { try { $falcon.navTo('subreply', { aid: this.aid, root: String(r.rpid), count: String(r.replyCount || 0), msg: r.message || '', author: r.author }) } catch (e) {} },
     openPic(r) { if (r.pics && r.pics.length) this.ivOpen(r.pics[0].src) },
+    // 点评论里的图 -> 独立图片查看器 (原来 <image> 上没有点击处理, 命中区为 0, 所以「点不开照片」)
+    openPicAt(r, i) { if (r.pics && r.pics[i]) this.ivOpen(r.pics[i].src) },
     onInput(e) { try { this.draft = e.detail && e.detail.value !== undefined ? e.detail.value : (e.target && e.target.value) || '' } catch (err) {} },
     ivOpen(url) {
       try {
@@ -325,7 +330,8 @@ export default {
 .rmsg-open { lines: 99; }
 .rmore { position: absolute; right: 0px; bottom: 0px; font-size: 19px; color: #8fb8ff; background-color: #14161a; }
 .pics { flex-direction: row; margin-top: 6px; }
-.pic { margin-right: 8px; border-radius: 8px; }
+.pic-box { margin-right: 8px; border-radius: 8px; background-color: #232830; }
+.pic { border-radius: 8px; }
 .rmeta { flex-direction: row; align-items: center; margin-top: 4px; }
 .mtext { font-size: 16px; color: #9aa3af; padding-top: 6px; padding-bottom: 6px; margin-right: 20px; }
 .mliked { color: #fb7299; }

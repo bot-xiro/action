@@ -21,7 +21,8 @@
     "history": "pages/history/history.vue",
     "fav": "pages/fav/fav.vue",
     "toview": "pages/toview/toview.vue",
-    "settings": "pages/settings/settings.vue"
+    "settings": "pages/settings/settings.vue",
+    "feed": "pages/feed/feed.vue"
   },
   "options": {
     "external": ["bilinet", "gstplayer", "brightness", "imageviewer"],
