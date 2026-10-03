@@ -18,10 +18,10 @@
     <div class="right" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
       <div class="tabbar">
         <div :class="['tab', tab === 'detail' ? 'tab-on' : '']" @click="switchTab('detail')">
-          <text :class="['tab-text', tab === 'detail' ? 'tab-text-on' : '']">详情</text>
+          <text @click="switchTab('detail')" :class="['tab-text', tab === 'detail' ? 'tab-text-on' : '']">详情</text>
         </div>
         <div :class="['tab', tab === 'comment' ? 'tab-on' : '']" @click="switchTab('comment')">
-          <text :class="['tab-text', tab === 'comment' ? 'tab-text-on' : '']">评论{{ total > 0 ? ' ' + total : '' }}</text>
+          <text @click="switchTab('comment')" :class="['tab-text', tab === 'comment' ? 'tab-text-on' : '']">评论{{ total > 0 ? ' ' + total : '' }}</text>
         </div>
         <div class="tab-spacer"></div>
         <div class="mini-btn" @click="goHome">
