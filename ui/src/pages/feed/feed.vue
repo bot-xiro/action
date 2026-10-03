@@ -106,9 +106,11 @@
       <image class="iview-img" :src="viewer.path" resize="cover"
              @touchstart="ivStart" @touchmove="ivMove" @touchend="ivEnd"></image>
       <div class="iview-bar">
-        <div class="iview-btn" @click="ivZoom(0.5)"><text class="iview-btn-t">−</text></div>
+        <div class="iview-btn" @click="ivZoom(0.6667)"><text class="iview-btn-t">−</text></div>
         <text class="iview-zoom">{{ viewer.zoomText }}</text>
-        <div class="iview-btn" @click="ivZoom(2)"><text class="iview-btn-t">＋</text></div>
+        <div class="iview-btn" @click="ivZoom(1.5)"><text class="iview-btn-t">＋</text></div>
+        <text class="iview-size">{{ viewer.w + '×' + viewer.h }}</text>
+        <div class="iview-btn" @click="ivOne"><text class="iview-btn-t">1:1</text></div>
         <div class="iview-btn" @click="ivReset"><text class="iview-btn-t">复位</text></div>
         <div class="iview-btn iview-close" @click="ivClose"><text class="iview-btn-t">关闭</text></div>
       </div>
@@ -119,6 +121,7 @@
 <script>
 import { getDynamicFeed } from '../../services/bili.js'
 import { log } from '../../services/log.js'
+import { bigUrl, fitZoom, clampZoom, clampCenter, VIEW_W, VIEW_H } from '../../services/imageview.js'
 import { imageviewer } from 'imageviewer'
 
 const CATS = [
@@ -220,28 +223,39 @@ export default {
     openPic(p) { if (p && p.full) this.ivOpen(p.full) },
     ivOpen(url) {
       try {
-        const info = imageviewer.open(url)
+        const info = imageviewer.open(bigUrl(url))
         const o = typeof info === 'string' ? JSON.parse(info) : info
         if (!o || o.ret !== 0) { this.status = '打开图片失败'; return }
         this.viewer.w = o.width || 0
         this.viewer.h = o.height || 0
+        this.viewer.zoom = fitZoom(this.viewer.w, this.viewer.h, VIEW_W, VIEW_H)
         this.viewer.cx = this.viewer.w / 2
         this.viewer.cy = this.viewer.h / 2
-        this.viewer.zoom = this.viewer.h > 0 ? Math.max(0.2, Math.min(4, 266 / this.viewer.h)) : 1
         this.viewer.on = true
         this.ivRender()
       } catch (e) { this.status = '打开图片失败: ' + ((e && e.message) ? e.message : e) }
     },
     ivRender() {
       try {
-        const path = imageviewer.view(this.viewer.cx, this.viewer.cy, this.viewer.zoom, 960, 266)
+        const vw = VIEW_W / this.viewer.zoom
+        const vh = VIEW_H / this.viewer.zoom
+        this.viewer.cx = clampCenter(this.viewer.cx, vw, this.viewer.w)
+        this.viewer.cy = clampCenter(this.viewer.cy, vh, this.viewer.h)
+        const path = imageviewer.view(this.viewer.cx, this.viewer.cy, this.viewer.zoom, VIEW_W, VIEW_H)
         if (path) this.viewer.path = String(path)
         this.viewer.zoomText = Math.round(this.viewer.zoom * 100) + '%'
       } catch (e) {}
     },
-    ivZoom(f) { let z = this.viewer.zoom * f; if (z < 0.1) z = 0.1; if (z > 8) z = 8; this.viewer.zoom = z; this.ivRender() },
+    ivZoom(f) {
+      this.viewer.zoom = clampZoom(this.viewer.zoom * f, this.viewer.w, this.viewer.h)
+      this.ivRender()
+    },
+    ivOne() {
+      this.viewer.zoom = clampZoom(1, this.viewer.w, this.viewer.h)
+      this.ivRender()
+    },
     ivReset() {
-      this.viewer.zoom = this.viewer.h > 0 ? Math.max(0.2, Math.min(4, 266 / this.viewer.h)) : 1
+      this.viewer.zoom = fitZoom(this.viewer.w, this.viewer.h, VIEW_W, VIEW_H)
       this.viewer.cx = this.viewer.w / 2
       this.viewer.cy = this.viewer.h / 2
       this.ivRender()
@@ -324,4 +338,5 @@ export default {
 .iview-close { background-color: #fb7299; }
 .iview-btn-t { font-size: 19px; color: #ffffff; }
 .iview-zoom { font-size: 19px; color: #fb7299; margin-right: 10px; }
+.iview-size { font-size: 16px; color: #9aa3af; margin-right: 12px; }
 </style>

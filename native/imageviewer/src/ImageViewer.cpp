@@ -6,12 +6,11 @@
 // 依赖: 设备自带 libturbojpeg.so.0 / 系统 curl —— 都用 dlopen/popen 运行时获取,
 // 交叉编译环境无需 aarch64 的 -dev 包.
 //
-// JS 用法:
-//   import { imageviewer } from 'imageviewer'
-//   const info = imageviewer.open(url)            // {ret:0, width, height}  (url 或 file:///绝对路径)
-//   const path = imageviewer.view(cx, cy, zoom, outW, outH)   // -> 'file:///userdisk/xiro/iview.jpg'
-//   imageviewer.info()                            // {ret:0, width, height, hasImage}
-//   imageviewer.close()                           // 释放内存
+// 0.9.56 修正 (用户反馈「放大逻辑有问题 / 没用原图 / 预览背景和页面同色」):
+//   1) 越界不再 clamp 拉边 —— 图外区域填纯黑背景, 预览背景与页面区分开;
+//   2) 采样改「降采样盒平均 + 放大双线性」, 放大不再是大色块;
+//   3) 解码缩放档按 zoom 动态选, 保证解码分辨率与采样步长同量级;
+//   4) 输出 JPEG 质量 88 -> 90.
 
 #include "jqutil_v2/jqutil.h"
 #include "jsmodules/JSCModuleExtension.h"
@@ -19,10 +18,10 @@
 
 using namespace JQUTIL_NS;
 
-
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
+#include <cmath>
 #include <string>
 #include <ctime>
 #include <vector>
@@ -34,14 +33,14 @@ namespace imageviewer {
 
 #define IV_LOG(fmt, ...) do { syslog(LOG_DEBUG, "[imageviewer] " fmt, ##__VA_ARGS__); } while (0)
 
-// ---------------- turbojpeg 运行时加载 ----------------
-// 只需要这几个符号; 设备上是 libturbojpeg.so.0 (SIMD 加速, 自带 1/1,1/2,1/4.. 缩放)
+static const unsigned char IV_BG_R = 0;
+static const unsigned char IV_BG_G = 0;
+static const unsigned char IV_BG_B = 0;
+
 extern "C" {
 typedef void* tjhandle;
-typedef struct { int num; int denom; } tjscalingfactor_t;
 }
 
-// 注意: 下面这些签名与 turbojpeg.h 一致, 但我们不 include 它 (交叉编译环境没有头文件).
 static tjhandle (*p_tjInitDecompress)(void) = NULL;
 static int (*p_tjDecompressHeader3)(tjhandle, const unsigned char*, unsigned long, int*, int*, int*, int*) = NULL;
 static int (*p_tjDecompress2)(tjhandle, const unsigned char*, unsigned long, unsigned char*, int, int, int, int, int) = NULL;
@@ -49,13 +48,10 @@ static tjhandle (*p_tjInitCompress)(void) = NULL;
 static int (*p_tjCompress2)(tjhandle, const unsigned char*, int, int, int, int, unsigned char**, unsigned long*, int, int, int) = NULL;
 static int (*p_tjDestroy)(tjhandle) = NULL;
 static void (*p_tjFree)(void*) = NULL;
-static const char* (*p_tjGetErrorStr2)(tjhandle) = NULL;
 
 static const int TJPF_RGB = 0;
 static const int TJSAMP_420 = 2;
-static const int TJCS_RGB = 2;
 
-// dlopen 一次, 常驻
 static bool ivLoadTj()
 {
     static bool tried = false;
@@ -73,18 +69,16 @@ static bool ivLoadTj()
     p_tjCompress2 = (int(*)(tjhandle, const unsigned char*, int, int, int, int, unsigned char**, unsigned long*, int, int, int))dlsym(h, "tjCompress2");
     p_tjDestroy = (int(*)(tjhandle))dlsym(h, "tjDestroy");
     p_tjFree = (void(*)(void*))dlsym(h, "tjFree");
-    p_tjGetErrorStr2 = (const char*(*)(tjhandle))dlsym(h, "tjGetErrorStr2");
     ok = p_tjInitDecompress && p_tjDecompressHeader3 && p_tjDecompress2 && p_tjInitCompress && p_tjCompress2 && p_tjDestroy && p_tjFree;
     IV_LOG("turbojpeg 加载: %s", ok ? "OK" : "符号缺失");
     return ok;
 }
 
-// ---------------- 抓取 / 读文件 ----------------
 static std::string ivShellQuote(const std::string& s)
 {
     std::string out = "'";
     for (size_t i = 0; i < s.size(); i++) {
-        if (s[i] == '\'') out += "'\\''";
+        if (s[i] == 0x27) out += "'\'\''";
         else out += s[i];
     }
     out += "'";
@@ -94,7 +88,6 @@ static std::string ivShellQuote(const std::string& s)
 static bool ivFetch(const std::string& url, std::string& out)
 {
     out.clear();
-    std::string cmd;
     if (url.compare(0, 7, "file://") == 0) {
         std::string path = url.substr(7);
         FILE* fp = fopen(path.c_str(), "rb");
@@ -105,8 +98,7 @@ static bool ivFetch(const std::string& url, std::string& out)
         fclose(fp);
         return !out.empty();
     }
-    // http(s): 用系统 curl, 带浏览器 UA/Referer (B 站图床需要)
-    cmd = "curl -s --compressed --connect-timeout 4 --retry 1 --retry-delay 1 --max-time 20 -A "
+    std::string cmd = "curl -s --compressed --connect-timeout 4 --retry 1 --retry-delay 1 --max-time 20 -A "
         + ivShellQuote("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
         + " -e " + ivShellQuote("https://www.bilibili.com/")
         + " " + ivShellQuote(url);
@@ -119,25 +111,63 @@ static bool ivFetch(const std::string& url, std::string& out)
     return !out.empty();
 }
 
-// ---------------- 状态 ----------------
-static std::string g_bytes;      // 原图字节 (JPEG/PNG)
-static int g_w = 0, g_h = 0;     // 原图尺寸
-static int g_outSeq = 0;   // 轮换文件名, 避免 <image> 缓存与查询串
+// 降采样: 盒平均
+static void ivSampleBox(const unsigned char* dec, int dw, int dh, double dx, double dy, double foot, int* acc)
+{
+    int x0 = (int)floor(dx - foot * 0.5);
+    int x1 = (int)ceil(dx + foot * 0.5);
+    if (x1 <= x0) x1 = x0 + 1;
+    if (x0 < 0) x0 = 0;
+    if (x1 > dw) x1 = dw;
+    int y0 = (int)floor(dy - foot * 0.5);
+    int y1 = (int)ceil(dy + foot * 0.5);
+    if (y1 <= y0) y1 = y0 + 1;
+    if (y0 < 0) y0 = 0;
+    if (y1 > dh) y1 = dh;
+    long r = 0, g = 0, b = 0, n = 0;
+    for (int y = y0; y < y1; y++) {
+        const unsigned char* row = dec + (size_t)y * dw * 3;
+        for (int x = x0; x < x1; x++) {
+            r += row[x * 3 + 0]; g += row[x * 3 + 1]; b += row[x * 3 + 2]; n++;
+        }
+    }
+    if (n <= 0) { acc[0] = IV_BG_R; acc[1] = IV_BG_G; acc[2] = IV_BG_B; return; }
+    acc[0] = (int)(r / n); acc[1] = (int)(g / n); acc[2] = (int)(b / n);
+}
+
+// 放大: 双线性
+static void ivSampleBilinear(const unsigned char* dec, int dw, int dh, double dx, double dy, int* acc)
+{
+    if (dx < 0) dx = 0;
+    if (dy < 0) dy = 0;
+    if (dx > (double)(dw - 1)) dx = (double)(dw - 1);
+    if (dy > (double)(dh - 1)) dy = (double)(dh - 1);
+    int x0 = (int)dx, y0 = (int)dy;
+    int x1 = (x0 + 1 < dw) ? x0 + 1 : x0;
+    int y1 = (y0 + 1 < dh) ? y0 + 1 : y0;
+    double fx = dx - (double)x0, fy = dy - (double)y0;
+    const unsigned char* p00 = dec + (size_t)y0 * dw * 3 + x0 * 3;
+    const unsigned char* p10 = dec + (size_t)y0 * dw * 3 + x1 * 3;
+    const unsigned char* p01 = dec + (size_t)y1 * dw * 3 + x0 * 3;
+    const unsigned char* p11 = dec + (size_t)y1 * dw * 3 + x1 * 3;
+    for (int c = 0; c < 3; c++) {
+        double v = p00[c] * (1 - fx) * (1 - fy) + p10[c] * fx * (1 - fy)
+                 + p01[c] * (1 - fx) * fy + p11[c] * fx * fy;
+        int iv = (int)(v + 0.5);
+        if (iv < 0) iv = 0;
+        if (iv > 255) iv = 255;
+        acc[c] = iv;
+    }
+}
+
+static std::string g_bytes;
+static int g_w = 0, g_h = 0;
+static int g_outSeq = 0;
 static std::string g_outDir = "/userdisk/xiro";
 static std::mutex g_mtx;
 
-// 选一个不超过 zoom 的 turbojpeg 缩放档 (1/1,1/2,1/4,1/8)
-static void ivPickScale(double zoom, int& num, int& den)
-{
-    num = 1; den = 1;
-    if (zoom <= 0.13) { num = 1; den = 8; }
-    else if (zoom <= 0.26) { num = 1; den = 4; }
-    else if (zoom <= 0.51) { num = 1; den = 2; }
-}
-
 class ImageViewer : public JQUTIL_NS::JQBaseObject {
 public:
-    // open(url) -> {ret, width, height}
     void open(JQUTIL_NS::JQFunctionInfo& info)
     {
         JSContext* ctx = info.GetContext();
@@ -154,21 +184,21 @@ public:
         std::lock_guard<std::mutex> lock(g_mtx);
         std::string body;
         if (!ivFetch(url, body)) { info.GetReturnValue().ThrowTypeError("imageviewer.open: 拉取图片失败"); return; }
-        tjhandle dh = p_tjInitDecompress();
-        if (!dh) { info.GetReturnValue().ThrowTypeError("imageviewer: 解码器初始化失败"); return; }
+        tjhandle hd = p_tjInitDecompress();
+        if (!hd) { info.GetReturnValue().ThrowTypeError("imageviewer: 解码器初始化失败"); return; }
         int w = 0, h = 0, sub = 0, cs = 0;
-        int rc = p_tjDecompressHeader3(dh, (const unsigned char*)body.data(), (unsigned long)body.size(), &w, &h, &sub, &cs);
-        p_tjDestroy(dh);
+        int rc = p_tjDecompressHeader3(hd, (const unsigned char*)body.data(), (unsigned long)body.size(), &w, &h, &sub, &cs);
+        p_tjDestroy(hd);
         if (rc != 0 || w <= 0 || h <= 0) { info.GetReturnValue().ThrowTypeError("imageviewer: 不是可解码的 JPEG 图片"); return; }
         g_bytes.swap(body);
         g_w = w; g_h = h;
-        IV_LOG("open ok: %dx%d (%zu bytes)", w, h, g_bytes.size());
+        IV_LOG("open ok: %dx%d (%u bytes)", w, h, (unsigned)g_bytes.size());
 
-        std::string js = "{\"ret\":0,\"width\":" + std::to_string(w) + ",\"height\":" + std::to_string(h) + "}";
-        info.GetReturnValue().Set(js);
+        char js[128];
+        snprintf(js, sizeof(js), "{\"ret\":0,\"width\":%d,\"height\":%d}", w, h);
+        info.GetReturnValue().Set(std::string(js));
     }
 
-    // view(cx, cy, zoom, outW, outH) -> file:// path (视口内的画面)
     void view(JQUTIL_NS::JQFunctionInfo& info)
     {
         JSContext* ctx = info.GetContext();
@@ -181,45 +211,65 @@ public:
         if (info.Length() >= 5 && JS_IsNumber(info[4])) { double v = 0; JS_ToFloat64(ctx, &v, info[4]); outH = (int)v; }
         if (outW <= 0 || outW > 2048) outW = 960;
         if (outH <= 0 || outH > 2048) outH = 266;
-        if (zoom < 0.05) zoom = 0.05;
-        if (zoom > 8) zoom = 8;
+        if (!(zoom > 0.0)) zoom = 1.0;
+        if (zoom < 0.02) zoom = 0.02;
+        if (zoom > 16.0) zoom = 16.0;
 
         std::lock_guard<std::mutex> lock(g_mtx);
-        if (g_bytes.empty() || g_w <= 0) { info.GetReturnValue().ThrowTypeError("imageviewer.view: 先 open"); return; }
+        if (g_bytes.empty() || g_w <= 0 || g_h <= 0) { info.GetReturnValue().ThrowTypeError("imageviewer.view: 先 open"); return; }
         if (!ivLoadTj()) { info.GetReturnValue().ThrowTypeError("imageviewer: 缺少 libturbojpeg"); return; }
 
-        int num = 1, den = 1;
-        ivPickScale(zoom, num, den);
-        int dw = (g_w * num + den - 1) / den;   // 缩放解码后的尺寸
-        int dh = (g_h * num + den - 1) / den;
+        int den = 1;
+        if (zoom < 0.1875) den = 8;
+        else if (zoom < 0.375) den = 4;
+        else if (zoom < 0.75) den = 2;
+        int dw = (g_w + den - 1) / den;
+        int dh = (g_h + den - 1) / den;
+        while ((double)dw * (double)dh * 3.0 > 32.0 * 1024.0 * 1024.0 && den < 8) {
+            den *= 2;
+            dw = (g_w + den - 1) / den;
+            dh = (g_h + den - 1) / den;
+        }
         if (dw <= 0 || dh <= 0) { info.GetReturnValue().ThrowTypeError("imageviewer: 尺寸异常"); return; }
 
-        std::vector<unsigned char> dec((size_t)dw * dh * 3);
-        tjhandle dh2 = p_tjInitDecompress();
-        if (!dh2) { info.GetReturnValue().ThrowTypeError("imageviewer: 解码器初始化失败"); return; }
-        int rc = p_tjDecompress2(dh2, (const unsigned char*)g_bytes.data(), (unsigned long)g_bytes.size(),
+        std::vector<unsigned char> dec((size_t)dw * (size_t)dh * 3);
+        tjhandle hd2 = p_tjInitDecompress();
+        if (!hd2) { info.GetReturnValue().ThrowTypeError("imageviewer: 解码器初始化失败"); return; }
+        int rc = p_tjDecompress2(hd2, (const unsigned char*)g_bytes.data(), (unsigned long)g_bytes.size(),
                                  dec.data(), dw, dw * 3, dh, TJPF_RGB, 0);
-        p_tjDestroy(dh2);
+        p_tjDestroy(hd2);
         if (rc != 0) { info.GetReturnValue().ThrowTypeError("imageviewer: 解码失败"); return; }
 
-        // 视口: 以 (cx,cy) 为中心, 宽 = outW/zoom, 高 = outH/zoom (源图坐标), 再最近邻缩放到 outW x outH
-        double srcW = (double)outW / zoom;
-        double srcH = (double)outH / zoom;
-        double x0 = cx - srcW / 2.0;
-        double y0 = cy - srcH / 2.0;
-        std::vector<unsigned char> out((size_t)outW * outH * 3);
+        const double srcW = (double)outW / zoom;
+        const double srcH = (double)outH / zoom;
+        const double x0 = cx - srcW * 0.5;
+        const double y0 = cy - srcH * 0.5;
+        const double stepDec = 1.0 / (double)den;
+        const double foot = (1.0 / zoom) * stepDec;
+        const bool useBox = foot >= 1.6;
+        const double maxOx = (double)g_w - 0.5;
+        const double maxOy = (double)g_h - 0.5;
+
+        std::vector<unsigned char> out((size_t)outW * (size_t)outH * 3);
         for (int y = 0; y < outH; y++) {
-            int sy = (int)(y0 + (double)y * srcH / (double)outH);
-            if (sy < 0) sy = 0; if (sy >= dh) sy = dh - 1;
-            const unsigned char* srow = dec.data() + (size_t)sy * dw * 3;
+            const double oy = y0 + ((double)y + 0.5) / zoom;
             unsigned char* drow = out.data() + (size_t)y * outW * 3;
+            const bool yOut = (oy < -0.5 || oy > maxOy);
             for (int x = 0; x < outW; x++) {
-                int sx = (int)(x0 + (double)x * srcW / (double)outW);
-                if (sx < 0) sx = 0; if (sx >= dw) sx = dw - 1;
-                const unsigned char* sp = srow + (size_t)sx * 3;
-                drow[x * 3 + 0] = sp[0];
-                drow[x * 3 + 1] = sp[1];
-                drow[x * 3 + 2] = sp[2];
+                unsigned char* dp = drow + x * 3;
+                const double ox = x0 + ((double)x + 0.5) / zoom;
+                if (yOut || ox < -0.5 || ox > maxOx) {
+                    dp[0] = IV_BG_R; dp[1] = IV_BG_G; dp[2] = IV_BG_B;
+                    continue;
+                }
+                int acc[3] = { 0, 0, 0 };
+                const double ddx = ox * stepDec - 0.5;
+                const double ddy = oy * stepDec - 0.5;
+                if (useBox) ivSampleBox(dec.data(), dw, dh, ddx, ddy, foot, acc);
+                else ivSampleBilinear(dec.data(), dw, dh, ddx, ddy, acc);
+                dp[0] = (unsigned char)acc[0];
+                dp[1] = (unsigned char)acc[1];
+                dp[2] = (unsigned char)acc[2];
             }
         }
 
@@ -227,12 +277,11 @@ public:
         unsigned long jpgSize = 0;
         tjhandle ch = p_tjInitCompress();
         if (!ch) { info.GetReturnValue().ThrowTypeError("imageviewer: 编码器初始化失败"); return; }
-        rc = p_tjCompress2(ch, out.data(), outW, outW * 3, outH, TJPF_RGB, &jpg, &jpgSize, TJSAMP_420, 88, 0);
+        rc = p_tjCompress2(ch, out.data(), outW, outW * 3, outH, TJPF_RGB, &jpg, &jpgSize, TJSAMP_420, 90, 0);
         p_tjDestroy(ch);
         if (rc != 0 || !jpg) { info.GetReturnValue().ThrowTypeError("imageviewer: 编码失败"); return; }
-        g_outSeq = (g_outSeq % 4) + 1;   // 1..4 轮换
+        g_outSeq = (g_outSeq % 4) + 1;
         std::string outPath = g_outDir + "/iview_" + std::to_string(g_outSeq) + ".jpg";
-        // 清掉另外 3 个, 省空间 (出错也无所谓)
         for (int k = 1; k <= 4; k++) {
             if (k == g_outSeq) continue;
             std::string old = g_outDir + "/iview_" + std::to_string(k) + ".jpg";
@@ -244,21 +293,19 @@ public:
         fclose(fp);
         p_tjFree(jpg);
 
-        std::string res = "file://" + outPath;
-        info.GetReturnValue().Set(res);
+        IV_LOG("view ok: zoom=%.3f cx=%.1f cy=%.1f -> %s", zoom, cx, cy, outPath.c_str());
+        info.GetReturnValue().Set(std::string("file://" + outPath));
     }
 
-    // info() -> {ret, width, height, hasImage}
     void info(JQUTIL_NS::JQFunctionInfo& info)
     {
         std::lock_guard<std::mutex> lock(g_mtx);
-        std::string js = "{\"ret\":0,\"width\":" + std::to_string(g_w)
-            + ",\"height\":" + std::to_string(g_h)
-            + ",\"hasImage\":" + (g_bytes.empty() ? "false" : "true") + "}";
-        info.GetReturnValue().Set(js);
+        char js[160];
+        snprintf(js, sizeof(js), "{\"ret\":0,\"width\":%d,\"height\":%d,\"hasImage\":%s}",
+                 g_w, g_h, g_bytes.empty() ? "false" : "true");
+        info.GetReturnValue().Set(std::string(js));
     }
 
-    // close()
     void close(JQUTIL_NS::JQFunctionInfo& info)
     {
         std::lock_guard<std::mutex> lock(g_mtx);
