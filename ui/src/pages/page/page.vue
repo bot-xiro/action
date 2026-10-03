@@ -15,9 +15,9 @@
     </div>
 
     <!-- 右栏: 详情 / 评论 同页 tab 切换; 左右滑动切换 (touch 事件冒泡自内部 scroller) -->
-    <div class="right"
+    <div class="right" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
 >
-      <div class="tabbar" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
+      <div class="tabbar">
         <div :class="['tab', tab === 'detail' ? 'tab-on' : '']" @click="switchTab('detail')">
           <text :class="['tab-text', tab === 'detail' ? 'tab-text-on' : '']">详情</text>
         </div>
@@ -56,6 +56,9 @@
         </div>
         <!-- 交互行: 点赞/投币/收藏/三连/稍后再看 (状态高亮; 均可再点取消, 投币除外) -->
         <div v-if="detail" class="actrow">
+          <div class="act act-comment" @click="goComment">
+            <text class="act-text">评论 {{ total > 0 ? total : '' }}</text>
+          </div>
           <div :class="['act-btn', detail.reqLike ? 'act-on' : '']" @click="doLike">
             <text :class="['act-text', detail.reqLike ? 'act-text-on' : '']">{{ detail.reqLike ? '已赞' : '点赞' }}</text>
           </div>
@@ -588,6 +591,12 @@ export default {
     openPlayer() {
       if (!this.detail) return
       $falcon.navTo('player', { bvid: this.bvid, page: String(this.currentPage), title: this.detail.title })
+    },
+
+    // 保底入口: 普通按钮触发 (tab 栏命中不稳时也能进评论)
+    goComment() {
+      this.tab = 'comment'
+      if (!this.cLoaded) this.loadComments(true, false, true)
     },
 
     switchTab(t) {
