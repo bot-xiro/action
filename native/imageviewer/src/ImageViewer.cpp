@@ -238,7 +238,7 @@ public:
             std::string old = g_outDir + "/iview_" + std::to_string(k) + ".jpg";
             remove(old.c_str());
         }
-        FILE* fp = fopen(g_outPath.c_str(), "wb");
+        FILE* fp = fopen(outPath.c_str(), "wb");
         if (!fp) { p_tjFree(jpg); info.GetReturnValue().ThrowTypeError("imageviewer: 写文件失败"); return; }
         fwrite(jpg, 1, jpgSize, fp);
         fclose(fp);
