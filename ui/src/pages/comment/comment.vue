@@ -79,7 +79,7 @@
 </template>
 
 <script>
-import { getReplies, likeReply, addReply, getMid } from '../../services/bili.js'
+import { getReplies, likeReply, addReply } from '../../services/bili.js'
 import { imageviewer } from 'imageviewer'
 
 const BUILTIN_EMOJI = {}
