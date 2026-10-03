@@ -40,7 +40,7 @@
             <div class="pic-row" v-for="(row, ri) in d.rows" :key="'r' + ri">
               <div class="pic-box" v-for="(p, pi) in row" :key="'p' + ri + '_' + pi"
                    :style="{ width: p.w + 'px', height: p.h + 'px' }" @click="openPic(p)">
-                <image class="pic-img" :src="p.src"
+                <image class="pic-img" :src="p.src" @click="openPic(p)"
                        :style="{ width: p.w + 'px', height: p.h + 'px' }" resize="cover"></image>
               </div>
             </div>

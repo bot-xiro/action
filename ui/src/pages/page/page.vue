@@ -516,10 +516,17 @@ export default {
           const d = await getVideoDetail(this.bvid)
           if (gen !== this.generation) return
           this.detail = d
-          // 预取评论: 一进详情页就在后台拉, 用户切到「评论」时通常已经好了
+          // 评论后台预取已关闭 (真机实测问题):
+          //   打开视频详情页后会短暂卡死 —— 进程状态 State=S / Threads=48 / 无残留 curl,
+          //   与 HANDOVER §10.5 记录的「JS 线程僵住」一致; 僵住后任何点击都不再响应
+          //   (评论 tab / 动作栏「评论」按钮都点不动 = 用户长期反馈的「评论区进不去」).
+          //   对照实验: 首页静置 20s 后点击仍然生效, 只有详情页会僵 —— 触发点就在这段预取附近.
+          //   评论改为「进评论页时加载」: 实测 <1s, 用户体验没有差别, 但不会拖死整个应用.
           if (this.detail && this.detail.aid && !this.cLoaded && !this.cLoading) {
             const self = this
-            setTimeout(function () { self.loadComments(true, false, true) }, 400)
+            setTimeout(function () {
+              try { self.cStatus = '进评论页后加载' } catch (e) {}
+            }, 400)
           }
           if (d.pages.length > 1 && this.currentPage >= 1 && this.currentPage <= d.pages.length) {
             const p = d.pages[this.currentPage - 1]

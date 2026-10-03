@@ -42,7 +42,7 @@
             <div v-if="r.pics && r.pics.length" class="pics">
               <div v-for="(pic, pi) in r.pics" :key="'pb' + pi" class="pic-box"
                    :style="{ width: pic.w + 'px', height: pic.h + 'px' }" @click="openPicAt(r, pi)">
-                <image class="pic" :src="pic.src"
+                <image class="pic" :src="pic.src" @click="openPicAt(r, pi)"
                        :style="{ width: pic.w + 'px', height: pic.h + 'px' }" resize="cover"></image>
               </div>
             </div>
