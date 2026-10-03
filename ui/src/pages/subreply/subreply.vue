@@ -37,7 +37,9 @@
             </template>
           </richtext>
           <div v-if="r.pics && r.pics.length > 0" class="reply-pics">
-            <image v-for="(pic, pi) in r.pics" :key="'pic' + r.rpid + pi" class="reply-pic" :src="pic.src" :style="{ width: pic.w + 'px', height: pic.h + 'px' }" resize="cover"></image>
+            <div class="reply-pic-hit" @click="ivOpen(pic.src)">
+              <image v-for="(pic, pi) in r.pics" :key="'pic' + r.rpid + pi" class="reply-pic" :src="pic.src" :style="{ width: pic.w + 'px', height: pic.h + 'px' }" resize="cover"></image>
+            </div>
           </div>
           <div class="reply-meta">
             <text :class="['meta-text', r.liked ? 'meta-liked' : '']" @click="toggleReplyLike(r)">赞 {{ r.likeText }}{{ r.liked ? ' ✓' : '' }}</text>
@@ -539,6 +541,9 @@ function parseParentSegs(msg) {
   flex-direction: row;
   margin-top: 6px;
   margin-bottom: 4px;
+}
+.reply-pic-hit {
+  margin-right: 8px;
 }
 .reply-pic {
   margin-right: 8px;
