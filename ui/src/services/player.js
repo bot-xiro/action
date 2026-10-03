@@ -59,6 +59,18 @@ export function keepAwakeEnabled() {
   try { return getCfg('keepAwake') !== false } catch (e) { return true }
 }
 
+// 异步版点亮: hal-screen on 偶发长时间不返回, 同步 exec 会把 QuickJS 主线程冻死
+// (真机实测: 画面停帧 + 全部点击失效, State=S/Threads=48/无残留子进程).
+// 优先走 execAsync (原生工作线程执行), 旧 .so 没有该方法时返回 null 由调用方退化.
+export function screenOnAsync() {
+  try {
+    if (bilinet && typeof bilinet.execAsync === 'function') return bilinet.execAsync('hal-screen on')
+  } catch (e) {
+    return null
+  }
+  return null
+}
+
 export function screenOn() {
   if (!bilinet || typeof bilinet.exec !== 'function') return false
   try {

@@ -700,6 +700,30 @@ public:
         pclose(fp);
         info.GetReturnValue().Set(out);
     }
+
+    // v7: execAsync(cmd) —— exec 的异步版, 在工作线程跑, 不阻塞 JS 线程.
+    // 为什么必须异步 (真机实测): 播放器保活每隔几秒调一次「hal-screen on」,
+    // 该命令**偶发长时间不返回**; 同步 exec 会把 QuickJS 主线程永久冻住 ——
+    // 现象: 画面停在最后一帧、任何点击都不再响应, 进程 State=S / Threads=48 / 无残留子进程,
+    // 用户侧表现为「看完视频后评论区怎么点都进不去」.
+    void execAsync(JQUTIL_NS::JQAsyncInfo& info)
+    {
+        JSContext* ctx = info.GetContext();
+        if (info.Length() < 1 || !JS_IsString(info[0])) {
+            info.postError("execAsync: cmd required");
+            return;
+        }
+        const char* c = JS_ToCString(ctx, info[0]);
+        std::string cmd = c ? c : "";
+        if (c) JS_FreeCString(ctx, c);
+        if (cmd.empty() || cmd.size() > 512 ||
+            cmd.find_first_of("\r\n") != std::string::npos) {
+            BN_LOG("execAsync: invalid cmd (len=%zu)", cmd.size());
+            info.postError("execAsync: invalid cmd");
+            return;
+        }
+        runAsync(info, cmd, "execAsync");
+    }
 };
 
 const char* BiliNet::UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -727,6 +751,7 @@ static JSValue createBiliNet(JQModuleEnv* env)
     tpl->SetProtoMethod("dbQuery", &BiliNet::dbQuery);
     tpl->SetProtoMethod("dbClose", &BiliNet::dbClose);
     tpl->SetProtoMethod("exec", &BiliNet::exec);
+    tpl->SetProtoMethodPromise("execAsync", &BiliNet::execAsync);   // v7: 异步 exec (保活不阻塞主线程)
     tpl->SetProtoMethodPromise("httpGetAsync", &BiliNet::httpGetAsync);
     tpl->SetProtoMethodPromise("httpPostAsync", &BiliNet::httpPostAsync);
     return tpl->CallConstructor();

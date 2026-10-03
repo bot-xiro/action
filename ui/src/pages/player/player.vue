@@ -369,8 +369,19 @@ export default {
     // 它内部会注入一次触摸激活面板 -> 会切换控制条, 所以点完立刻还原控制条状态.
     keepAwakeTap: function () {
       var self = this
+      // 上一次保活还没回来就跳过这一轮 —— 绝不让请求堆叠
+      if (this._keepBusy) return
+      this._keepBusy = true
       var wasVisible = this.barVisible
-      player.screenOn()
+      var p = player.screenOnAsync()
+      if (p && typeof p.then === 'function') {
+        p.then(function () { self._keepBusy = false }, function () { self._keepBusy = false })
+      } else {
+        player.screenOn()          // 旧 .so: 退回同步 (有风险但至少能用)
+        this._keepBusy = false
+      }
+      // 兜底解锁: 8s 内没回调也要放行, 否则以后再也不保活
+      setTimer(this, 8000, function () { self._keepBusy = false })
       setTimer(this, 120, function () {
         if (wasVisible) self.showBar(); else self.hideBar()
       })
@@ -393,8 +404,8 @@ export default {
       if (jsapiOn) screenon.screenOnStart()
       try { log('播放器', '防息屏: JSAPI=' + (jsapiOn ? 'on' : 'off') + ' + 每 6s hal-screen on 保活') } catch (e) {}
       // 系统息屏阈值实测 ~10s, 6s 一次留出余量; JSAPI 仍照调 (能生效更好)
-      // hal-screen on 首次立即调一次 (起播瞬间也容易黑)
-      player.screenOn()
+      // hal-screen on 首次立即调一次 (起播瞬间也容易黑) —— 走异步, 不阻塞主线程
+      self.keepAwakeTap()
       this.keepTimer = setTicker(this, 6000, function () {
         if (!self.playing) return
         if (screenon.screenOnAvailable()) {
