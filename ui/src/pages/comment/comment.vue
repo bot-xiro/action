@@ -47,9 +47,15 @@
               </div>
             </div>
             <div class="rmeta">
-              <text :class="['mtext', r.liked ? 'mliked' : '']" @click="like(r)">赞 {{ r.likeText }}{{ r.liked ? ' ✓' : '' }}</text>
-              <text class="mreply" @click="openSub(r)">回复 {{ r.replyCount }}</text>
-              <text v-if="r.pics && r.pics.length" class="mpic" @click="openPic(r)">图 {{ r.pics.length }}</text>
+              <div class="mbtn" @click="like(r)">
+                <text :class="['mtext', r.liked ? 'mliked' : '']">赞 {{ r.likeText }}{{ r.liked ? ' ✓' : '' }}</text>
+              </div>
+              <div class="mbtn" @click="openSub(r)">
+                <text class="mreply">回复 {{ r.replyCount }}</text>
+              </div>
+              <div v-if="r.pics && r.pics.length" class="mbtn" @click="openPic(r)">
+                <text class="mpic">图 {{ r.pics.length }}</text>
+              </div>
             </div>
           </div>
         </div>
@@ -333,7 +339,8 @@ export default {
 .pic-box { margin-right: 8px; border-radius: 8px; background-color: #232830; }
 .pic { border-radius: 8px; }
 .rmeta { flex-direction: row; align-items: center; margin-top: 4px; }
-.mtext { font-size: 16px; color: #9aa3af; padding-top: 6px; padding-bottom: 6px; margin-right: 20px; }
+.mbtn { padding-top: 8px; padding-bottom: 8px; padding-right: 20px; }
+.mtext { font-size: 16px; color: #9aa3af; }
 .mliked { color: #fb7299; }
 .mreply { font-size: 16px; color: #9aa3af; padding-top: 6px; padding-bottom: 6px; margin-right: 20px; }
 .mpic { font-size: 16px; color: #fb7299; background-color: #2b2f36; padding-left: 12px; padding-right: 12px; padding-top: 3px; padding-bottom: 3px; border-radius: 6px; }

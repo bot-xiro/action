@@ -32,7 +32,9 @@
               <image v-else :key="'e' + si" :src="seg.v" :style="{ width: seg.w + 'px', height: seg.h + 'px' }"></image>
             </template>
           </richtext>
-          <text v-if="d.segs && d.segs.length > 0 && !d.expanded" class="dmore" @click="toggle(d)">展开 ▾</text>
+          <div v-if="d.segs && d.segs.length > 0 && !d.expanded" class="dmore" @click="toggle(d)">
+            <text class="dmore-t">展开全文 ▾</text>
+          </div>
 
           <div class="pics" v-if="d.rows && d.rows.length">
             <div class="pic-row" v-for="(row, ri) in d.rows" :key="'r' + ri">
@@ -293,7 +295,8 @@ export default {
 .dtext { font-size: 19px; color: #dfe4ea; lines: 3; margin-top: 4px; }
 .dtext-open { lines: 99; }
 .dhl { color: #8fb8ff; }
-.dmore { font-size: 16px; color: #8fb8ff; margin-top: 2px; }
+.dmore { padding-top: 6px; padding-bottom: 6px; }
+.dmore-t { font-size: 16px; color: #8fb8ff; }
 .pics { margin-top: 6px; }
 .pic-row { flex-direction: row; }
 .pic-box { margin-right: 6px; margin-bottom: 6px; border-radius: 8px; background-color: #232830; }

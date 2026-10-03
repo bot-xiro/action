@@ -111,8 +111,8 @@
       <div v-if="dynStatus !== '' && dynStatus.indexOf('未登录') >= 0" class="login-cta" @click="openLogin">
         <text class="login-cta-text">去登录</text>
       </div>
-      <div class="dynbar">
-        <text class="dynbar-t" @click="openFeed">分类浏览全类型动态（投稿 / 图文 / 文字 / 转发 / 专栏）›</text>
+      <div class="dynbar" @click="openFeed">
+        <text class="dynbar-t">分类浏览全类型动态（投稿 / 图文 / 文字 / 转发 / 专栏）›</text>
       </div>
       <scroller v-if="dynStatus === '' || dynItems.length > 0" class="list"
                 scroll-direction="vertical" :show-scrollbar="true"
@@ -177,6 +177,10 @@
           <!-- 设置入口 -->
           <div class="login-cta" @click="openSettings">
             <text class="login-cta-text">设置 (蓝牙补偿 · 防息屏 · 清缓存)</text>
+          </div>
+          <!-- 动态入口 (全类型 + 分类) -->
+          <div class="login-cta" @click="openFeed">
+            <text class="login-cta-text">动态 (投稿 · 图文 · 文字 · 转发 · 专栏)</text>
           </div>
           <text v-if="pullHint !== ''" class="status status-pull status-center">{{ pullHint }}</text>
           <text v-else-if="myLoading" class="status status-center">{{ '加载中' + dots }}</text>
@@ -765,8 +769,8 @@ export default {
   display: flex;
   flex-direction: column;
 }
-.dynbar { width: 960px; height: 34px; flex-direction: row; align-items: center; }
-.dynbar-t { font-size: 17px; color: #8fb8ff; margin-left: 20px; }
+.dynbar { width: 960px; height: 34px; flex-direction: row; align-items: center; padding-left: 20px; }
+.dynbar-t { font-size: 17px; color: #8fb8ff; }
 /* 列表区吃满剩余高度 (搜索页有结果时下方不再留空白) */
 .list {
   width: 960px;
