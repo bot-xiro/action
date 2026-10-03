@@ -1,6 +1,10 @@
 {
   "pages": {
     "cap": "pages/cap/cap.vue",
+    "cvc": "pages/cvc/cvc.vue",
+    "cimg": "pages/cimg/cimg.vue",
+    "ctf": "pages/ctf/ctf.vue",
+    "csz": "pages/csz/csz.vue",
     "index": "pages/index/index.vue"
   },
   "options": {
