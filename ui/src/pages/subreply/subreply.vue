@@ -37,8 +37,8 @@
             </template>
           </richtext>
           <div v-if="r.pics && r.pics.length > 0" class="reply-pics">
-            <div class="reply-pic-hit" @click="ivOpen(pic.src)">
-              <image v-for="(pic, pi) in r.pics" :key="'pic' + r.rpid + pi" class="reply-pic" :src="pic.src" :style="{ width: pic.w + 'px', height: pic.h + 'px' }" resize="cover"></image>
+            <div class="reply-pic-hit" :style="{ width: pic.w + 'px', height: pic.h + 'px' }" @click="ivOpen(pic.src)">
+              <image v-for="(pic, pi) in r.pics" :key="'pic' + r.rpid + pi" class="reply-pic" @click="ivOpen(pic.src)" :src="pic.src" :style="{ width: pic.w + 'px', height: pic.h + 'px' }" resize="cover"></image>
             </div>
           </div>
           <div class="reply-meta">
