@@ -1,5 +1,5 @@
 <template>
-  <div class="page" :class="entering ? 'page-enter' : ''">
+  <div class="page" :class="entering ? 'page-enter' : ''" @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
     <!-- 左栏: 封面 (不放播放器也不放播放条, 点封面进播放器页; 播放按钮在右栏详情 tab) -->
     <div class="left">
       <!-- 封面: 按原始比例等比显示, 不裁切 (盒子本身就是同比例) -->
@@ -16,7 +16,7 @@
 
     <!-- 右栏: 详情 / 评论 同页 tab 切换; 左右滑动切换 (touch 事件冒泡自内部 scroller) -->
     <div class="right"
-         @touchstart="onTouchStart" @touchmove="onTouchMove" @touchend="onTouchEnd">
+>
       <div class="tabbar">
         <div :class="['tab', tab === 'detail' ? 'tab-on' : '']" @click="switchTab('detail')">
           <text :class="['tab-text', tab === 'detail' ? 'tab-text-on' : '']">详情</text>
@@ -603,12 +603,13 @@ export default {
         const t = (e && e.changedTouches && e.changedTouches[0]) ||
           (e && e.touches && e.touches[0]) || e
         if (t) {
-          if (typeof t.pageX === 'number') return { x: t.pageX, y: t.pageY }
-          if (typeof t.clientX === 'number') return { x: t.clientX, y: t.clientY }
-          if (typeof t.x === 'number') return { x: t.x, y: t.y }
+          if (typeof t.pageX === 'number') return { x: t.pageX, y: t.pageY , valid: true }
+          if (typeof t.clientX === 'number') return { x: t.clientX, y: t.clientY , valid: true }
+          if (typeof t.x === 'number') return { x: t.x, y: t.y , valid: true }
         }
       } catch (err) {}
-      return { x: 0, y: 0 }
+      // 拿不到坐标时标记无效, 避免被当成"整屏位移"而误切 tab
+      return { x: 0, y: 0, valid: false }
     },
     onListScroll(e) {
       try {
@@ -618,6 +619,8 @@ export default {
     },
     onTouchStart(e) {
       const p = this.touchXY(e)
+      if (!p.valid) { this._tx0 = null; this._t0 = 0; return }   // 手势作废
+      this._t0 = Date.now()
       this._tx0 = p.x
       this._ty0 = p.y
       this._pullArmed = false
@@ -631,6 +634,12 @@ export default {
     },
     onTouchEnd(e) {
       const p = this.touchXY(e)
+      // 手势无效(起点未记录/超 1.2s/终点无坐标)直接忽略 —— 否则 dx 会等于整屏宽度,
+      // 点一下 tab 也被当成横向滑动切回原 tab (用户反馈的「评论页进不去」就是这个)
+      if (!p.valid || this._tx0 === null || this._tx0 === undefined || !this._t0 || Date.now() - this._t0 > 1200) {
+        this._tx0 = null; this._t0 = 0; this._pullArmed = false
+        return
+      }
       const dx = p.x - this._tx0
       const dy = p.y - this._ty0
       // 1) 左右滑动: 横向大幅 + 竖向小幅 → 切 tab
