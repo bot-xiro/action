@@ -80,7 +80,82 @@
 import { getReplies, likeReply, addReply } from '../../services/bili.js'
 import { imageviewer } from 'imageviewer'
 
-const BUILTIN_EMOJI = {}
+const BUILTIN_EMOJI = {
+'1f197': require('../../assets/emoji/1f197.png'),
+'1f338': require('../../assets/emoji/1f338.png'),
+'1f339': require('../../assets/emoji/1f339.png'),
+'1f349': require('../../assets/emoji/1f349.png'),
+'1f34b': require('../../assets/emoji/1f34b.png'),
+'1f35a': require('../../assets/emoji/1f35a.png'),
+'1f37a': require('../../assets/emoji/1f37a.png'),
+'1f381': require('../../assets/emoji/1f381.png'),
+'1f382': require('../../assets/emoji/1f382.png'),
+'1f389': require('../../assets/emoji/1f389.png'),
+'1f414': require('../../assets/emoji/1f414.png'),
+'1f42e': require('../../assets/emoji/1f42e.png'),
+'1f431': require('../../assets/emoji/1f431.png'),
+'1f436': require('../../assets/emoji/1f436.png'),
+'1f437': require('../../assets/emoji/1f437.png'),
+'1f440': require('../../assets/emoji/1f440.png'),
+'1f446': require('../../assets/emoji/1f446.png'),
+'1f448': require('../../assets/emoji/1f448.png'),
+'1f449': require('../../assets/emoji/1f449.png'),
+'1f44d': require('../../assets/emoji/1f44d.png'),
+'1f44e': require('../../assets/emoji/1f44e.png'),
+'1f44f': require('../../assets/emoji/1f44f.png'),
+'1f451': require('../../assets/emoji/1f451.png'),
+'1f47b': require('../../assets/emoji/1f47b.png'),
+'1f480': require('../../assets/emoji/1f480.png'),
+'1f494': require('../../assets/emoji/1f494.png'),
+'1f495': require('../../assets/emoji/1f495.png'),
+'1f496': require('../../assets/emoji/1f496.png'),
+'1f497': require('../../assets/emoji/1f497.png'),
+'1f498': require('../../assets/emoji/1f498.png'),
+'1f4a9': require('../../assets/emoji/1f4a9.png'),
+'1f4aa': require('../../assets/emoji/1f4aa.png'),
+'1f4ac': require('../../assets/emoji/1f4ac.png'),
+'1f4af': require('../../assets/emoji/1f4af.png'),
+'1f525': require('../../assets/emoji/1f525.png'),
+'1f600': require('../../assets/emoji/1f600.png'),
+'1f602': require('../../assets/emoji/1f602.png'),
+'1f604': require('../../assets/emoji/1f604.png'),
+'1f605': require('../../assets/emoji/1f605.png'),
+'1f606': require('../../assets/emoji/1f606.png'),
+'1f607': require('../../assets/emoji/1f607.png'),
+'1f609': require('../../assets/emoji/1f609.png'),
+'1f60a': require('../../assets/emoji/1f60a.png'),
+'1f60d': require('../../assets/emoji/1f60d.png'),
+'1f60f': require('../../assets/emoji/1f60f.png'),
+'1f612': require('../../assets/emoji/1f612.png'),
+'1f618': require('../../assets/emoji/1f618.png'),
+'1f61c': require('../../assets/emoji/1f61c.png'),
+'1f621': require('../../assets/emoji/1f621.png'),
+'1f622': require('../../assets/emoji/1f622.png'),
+'1f629': require('../../assets/emoji/1f629.png'),
+'1f62a': require('../../assets/emoji/1f62a.png'),
+'1f62d': require('../../assets/emoji/1f62d.png'),
+'1f631': require('../../assets/emoji/1f631.png'),
+'1f633': require('../../assets/emoji/1f633.png'),
+'1f634': require('../../assets/emoji/1f634.png'),
+'1f644': require('../../assets/emoji/1f644.png'),
+'1f64f': require('../../assets/emoji/1f64f.png'),
+'1f914': require('../../assets/emoji/1f914.png'),
+'1f917': require('../../assets/emoji/1f917.png'),
+'1f91d': require('../../assets/emoji/1f91d.png'),
+'1f921': require('../../assets/emoji/1f921.png'),
+'1f923': require('../../assets/emoji/1f923.png'),
+'1f92c': require('../../assets/emoji/1f92c.png'),
+'1f970': require('../../assets/emoji/1f970.png'),
+'1f973': require('../../assets/emoji/1f973.png'),
+'1f976': require('../../assets/emoji/1f976.png'),
+'1f97a': require('../../assets/emoji/1f97a.png'),
+'2615': require('../../assets/emoji/2615.png'),
+'2705': require('../../assets/emoji/2705.png'),
+'2728': require('../../assets/emoji/2728.png'),
+'274c': require('../../assets/emoji/274c.png'),
+'2753': require('../../assets/emoji/2753.png'),
+'2764': require('../../assets/emoji/2764.png'),
+}
 var PULL_DY = 55
 
 export default {
@@ -100,14 +175,25 @@ export default {
       viewer: { on: false, path: '', zoom: 1, cx: 0, cy: 0, w: 0, h: 0, zoomText: '100%' }
     }
   },
-  created() {
-    const o = this.$page.options || {}
-    this.aid = o.aid || ''
-    this.title = o.title ? ('评论 · ' + o.title) : '评论'
-    this.total = Number(o.total || 0)
-    log('评论页', '打开 aid=' + this.aid)
-    this.load(true)
+  // 注意: 本运行时的页面生命周期是 onLoad(options) (继承 BasePage), 不是 Vue 的 created ——
+  // 之前误用 created 导致初始化根本没跑, 页面永远停在「加载中…」.
+  onLoad(options) {
+    const self = this
+    try { this.$page.onNewOptions = function (o) { self.applyOptions(o) } } catch (e) {}
+    this.applyOptions((this.$page && this.$page.options) || options || {})
   },
+  methods: {
+    applyOptions(o) {
+      o = o || {}
+      this.aid = String(o.aid || this.aid || '')
+      this.title = o.title ? ('评论 · ' + o.title) : (this.title || '评论')
+      this.total = Number(o.total || this.total || 0)
+      if (!this.aid) { this.status = '缺少稿件参数'; return }
+      if (this._started) return
+      this._started = true
+      log('评论页', '打开 aid=' + this.aid)
+      this.load(true)
+    },
   methods: {
     back() { try { this.$page.finish() } catch (e) {} },
     async load(reset, fresh) {
