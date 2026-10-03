@@ -20,8 +20,8 @@
         <div :class="['tab', tab === 'detail' ? 'tab-on' : '']" @click="switchTab('detail')">
           <text @click="switchTab('detail')" :class="['tab-text', tab === 'detail' ? 'tab-text-on' : '']">详情</text>
         </div>
-        <div :class="['tab', tab === 'comment' ? 'tab-on' : '']" @click="switchTab('comment')">
-          <text @click="switchTab('comment')" :class="['tab-text', tab === 'comment' ? 'tab-text-on' : '']">评论{{ total > 0 ? ' ' + total : '' }}</text>
+        <div class="tab" @click="goComment">
+          <text @click="goComment" :class="['tab-text', tab === 'comment' ? 'tab-text-on' : '']">评论{{ total > 0 ? ' ' + total : '' }}</text>
         </div>
         <div class="tab-spacer"></div>
         <div class="mini-btn" @click="goHome">
@@ -593,9 +593,18 @@ export default {
     },
 
     // 保底入口: 普通按钮触发 (tab 栏命中不稳时也能进评论)
+    // 评论入口: 跳转独立页面 (同页 tab 切换在本机固件上命中不稳, 改成按钮跳转)
     goComment() {
-      this.tab = 'comment'
-      if (!this.cLoaded) this.loadComments(true, false, true)
+      if (!this.detail || !this.detail.aid) return
+      try {
+        $falcon.navTo('comment', {
+          aid: String(this.detail.aid),
+          title: this.detail.title || '',
+          total: String(this.total || 0)
+        })
+      } catch (e) {
+        this.cStatus = '打开评论页失败'
+      }
     },
 
     switchTab(t) {
