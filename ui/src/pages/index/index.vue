@@ -182,9 +182,7 @@
           <div class="login-cta" @click="openFeed">
             <text class="login-cta-text">动态 (投稿 · 图文 · 文字 · 转发 · 专栏)</text>
           </div>
-          <div class="login-cta" @click="openCapx">
-            <text class="login-cta-text">图片能力自测 (canvas/网络图/transform)</text>
-          </div>
+
           <text v-if="pullHint !== ''" class="status status-pull status-center">{{ pullHint }}</text>
           <text v-else-if="myLoading" class="status status-center">{{ '加载中' + dots }}</text>
           <text v-else-if="myStatus !== ''" class="status status-center">{{ myStatus }}</text>
@@ -685,7 +683,6 @@ export default {
     },
 
     // 动态页: 全类型(投稿/图文/文字/转发/专栏) + 分类筛选 + 九宫格 + 独立图片查看器
-    openCapx() { try { $falcon.navTo('capx', {}) } catch (e) { this.myStatus = '打开自测页失败' } },
     openFeed() {
       try { $falcon.navTo('feed', {}) } catch (e) { this.dynStatus = '打开动态页失败' }
     },
