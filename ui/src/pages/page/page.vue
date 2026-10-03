@@ -643,15 +643,6 @@ export default {
       const adx = Math.abs(p.x - this._tx0), ady = Math.abs(p.y - this._ty0)
       // 点击 tab 栏: 位移很小 —— 直接在这里切, 不等 click 事件 (评论渲染期间 click 常被丢掉,
       // 这正是用户反馈「评论页点不进去」的直接原因). 触控坐标: x = 959 - 显示X
-      if (adx < 14 && ady < 20) {
-        const dispX = 959 - p.x
-        const dispY = p.y + 45
-        if (dispY < 46 && dispX > 300) {   // tab 栏范围内
-          this._tx0 = null; this._t0 = 0; this._pullArmed = false
-          this.switchTab(dispX < 380 ? 'detail' : 'comment')
-          return
-        }
-      }
       const dx = p.x - this._tx0
       const dy = p.y - this._ty0
       // 1) 左右滑动: 横向大幅 + 竖向小幅 → 切 tab
@@ -1837,3 +1828,21 @@ export default {
   color: #c8d2de;
 }
 </style>
+      const adx = Math.abs(p.x - this._tx0), ady = Math.abs(p.y - this._ty0)
+      // 点击 tab 栏: 位移很小 —— 直接在触摸管线里切, 不等 click 事件
+      // (评论渲染期间 click 常被丢掉, 这是「评论页点不进去」的直接原因).
+      // 触摸字段映射在不同固件上不一致, 两种候选都算一遍, 取落在 tab 栏内的那个.
+      if (adx < 16 && ady < 22) {
+        const cands = [
+          { dx: 959 - p.x, dy: p.y + 45 },   // 常见: pageX = 显示Y+107, pageY = 显示Y-45
+          { dx: 959 - p.y, dy: p.x - 107 }    // 另一种: pageX = 显示Y+107, pageY = 959-显示X
+        ]
+        for (let ci = 0; ci < cands.length; ci++) {
+          const c = cands[ci]
+          if (c.dy >= -5 && c.dy < 48 && c.dx > 280 && c.dx < 620) {
+            this._tx0 = null; this._t0 = 0; this._pullArmed = false
+            this.switchTab(c.dx < 380 ? 'detail' : 'comment')
+            return
+          }
+        }
+      }
