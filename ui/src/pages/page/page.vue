@@ -517,7 +517,7 @@ export default {
           // 预取评论: 一进详情页就在后台拉, 用户切到「评论」时通常已经好了
           if (this.detail && this.detail.aid && !this.cLoaded && !this.cLoading) {
             const self = this
-            setTimeout(function () { self.loadComments(true) }, 400)
+            setTimeout(function () { self.loadComments(true, false, true) }, 400)
           }
           if (d.pages.length > 1 && this.currentPage >= 1 && this.currentPage <= d.pages.length) {
             const p = d.pages[this.currentPage - 1]
@@ -935,27 +935,38 @@ export default {
     },
 
     // ---------- 评论区 (内联) ----------
-    loadComments(reset, fresh) {
-      if (!this.detail || !this.detail.aid || this.cLoading) return
+    // bg=true: 后台预取 —— 不能等 afterPaint (评论 tab 还没渲染时它可能永不回调,
+    // 那样 cLoading 会永远停在 true, 用户再点进来就一直卡在「加载中」).
+    loadComments(reset, fresh, bg) {
+      if (!this.detail || !this.detail.aid) return
+      // 看门狗: 上次加载已卡住超过 8 秒就允许重来, 否则才是真正的在途请求
+      if (this.cLoading && this._cAt && Date.now() - this._cAt < 8000) return
       const gen = ++this.cGeneration
       this.cLoading = true
+      this._cAt = Date.now()
       if (reset) this.cStatus = '加载中…'
-      afterPaint(async () => {
+      const self = this
+      const run = async function () {
         try {
-          const r = await getReplies(this.detail.aid, this.pn, BUILTIN_EMOJI, this.sortMode, fresh)
-          if (gen !== this.cGeneration) return
-          if (reset) this.replies = []
-          this.appendPage(r)
-          this.cLoaded = true
-          this.cStatus = ''
+          const r = await getReplies(self.detail.aid, self.pn, BUILTIN_EMOJI, self.sortMode, fresh)
+          if (gen !== self.cGeneration) return
+          if (reset) self.replies = []
+          self.appendPage(r)
+          self.cLoaded = true
+          self.cStatus = ''
         } catch (err) {
-          if (gen !== this.cGeneration) return
+          if (gen !== self.cGeneration) return
           console.log('[page] comments error: ' + (err && err.message ? err.message : err))
-          this.cStatus = err && err.message ? err.message : String(err)
+          self.cStatus = err && err.message ? err.message : String(err)
         } finally {
-          if (gen === this.cGeneration) this.cLoading = false
+          if (gen === self.cGeneration) { self.cLoading = false; self._cAt = 0 }
         }
-      })
+      }
+      if (bg) {
+        setTimeout(run, 0)
+      } else {
+        afterPaint(run)
+      }
     },
 
     appendPage(r) {
