@@ -78,6 +78,7 @@
 
 <script>
 import { getReplies, likeReply, addReply } from '../../services/bili.js'
+import { log } from '../../services/log.js'
 import { imageviewer } from 'imageviewer'
 
 const BUILTIN_EMOJI = {
@@ -194,7 +195,7 @@ export default {
       if (!this.aid) { this.status = '缺少稿件参数'; return }
       if (this._started) return
       this._started = true
-      log('评论页', '打开 aid=' + this.aid)
+      try { log('评论页', '打开 aid=' + this.aid) } catch (e) {}
       this.load(true)
     },
     back() { try { this.$page.finish() } catch (e) {} },
@@ -216,10 +217,10 @@ export default {
         }
         this.total = r.total || this.total
         this.status = this.replies.length === 0 ? '还没有评论' : ''
-        log('评论页', '加载完成 ' + this.replies.length + ' 条 (total=' + this.total + ')')
+        try { log('评论页', '加载完成 ' + this.replies.length + ' 条 (total=' + this.total + ')') } catch (e) {}
       } catch (e) {
         this.status = (e && e.message) ? e.message : String(e)
-        log('评论页', '加载失败 ' + this.status)
+        try { log('评论页', '加载失败 ' + this.status) } catch (e) {}
       } finally {
         this.loading = false
       }
