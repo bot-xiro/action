@@ -175,14 +175,17 @@ export default {
       viewer: { on: false, path: '', zoom: 1, cx: 0, cy: 0, w: 0, h: 0, zoomText: '100%' }
     }
   },
-  // 注意: 本运行时的页面生命周期是 onLoad(options) (继承 BasePage), 不是 Vue 的 created ——
-  // 之前误用 created 导致初始化根本没跑, 页面永远停在「加载中…」.
-  onLoad(options) {
-    const self = this
-    try { this.$page.onNewOptions = function (o) { self.applyOptions(o) } } catch (e) {}
-    this.applyOptions((this.$page && this.$page.options) || options || {})
-  },
+  // 生命周期: 本运行时 BasePage 只把 onShow/onHide/onUnload 转发给页面根组件($root),
+  // onLoad(options) 只落在 Page 实例上 —— 组件里写 onLoad/created 都不会执行(0.9.52/0.9.53 卡「加载中」的真因).
   methods: {
+    onShow() {
+      if (this.$page && !this._newOptionsBound) {
+        this._newOptionsBound = true
+        const self = this
+        this.$page.onNewOptions = function (o) { self.applyOptions(o) }
+      }
+      this.applyOptions((this.$page && this.$page.options) || {})
+    },
     applyOptions(o) {
       o = o || {}
       this.aid = String(o.aid || this.aid || '')
@@ -194,7 +197,6 @@ export default {
       log('评论页', '打开 aid=' + this.aid)
       this.load(true)
     },
-  methods: {
     back() { try { this.$page.finish() } catch (e) {} },
     async load(reset, fresh) {
       if (!this.aid || this.loading) return
