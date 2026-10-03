@@ -61,9 +61,6 @@
     </scroller>
 
     <!-- 底部: 发评论 -->
-    <div class="cpost">
-      <input class="cinput" type="text" placeholder="说点什么…" :value="draft" @input="onInput" />
-      <div class="csend" @click="send"><text class="csend-t">{{ posting ? '发送中' : '发送' }}</text></div>
     </div>
 
     <!-- 图片查看器 (独立 so) -->
@@ -83,7 +80,6 @@
 
 <script>
 import { getReplies, likeReply, addReply, getMid } from '../../services/bili.js'
-import { log } from '../../services/logger.js'
 import { imageviewer } from 'imageviewer'
 
 const BUILTIN_EMOJI = {}
@@ -161,19 +157,6 @@ export default {
     openSub(r) { try { $falcon.navTo('subreply', { aid: this.aid, root: String(r.rpid), count: String(r.replyCount || 0), msg: r.message || '', author: r.author }) } catch (e) {} },
     openPic(r) { if (r.pics && r.pics.length) this.ivOpen(r.pics[0].src) },
     onInput(e) { try { this.draft = e.detail && e.detail.value !== undefined ? e.detail.value : (e.target && e.target.value) || '' } catch (err) {} },
-    async send() {
-      const msg = (this.draft || '').trim()
-      if (!msg) { this.status = '先写点什么'; return }
-      if (this.posting) return
-      this.posting = true
-      try {
-        await addReply(this.aid, msg)
-        this.draft = ''
-        this.status = '✓ 已发送'
-        this.load(true, true)
-      } catch (e) { this.status = '发送失败: ' + ((e && e.message) ? e.message : e) }
-      this.posting = false
-    },
     ivOpen(url) {
       try {
         const info = imageviewer.open(url)
@@ -265,10 +248,6 @@ export default {
 .loadmore-t { font-size: 17px; color: #8fb8ff; }
 .empty { margin-top: 20px; justify-content: center; }
 .empty-t { font-size: 18px; color: #8a93a0; }
-.cpost { position: absolute; left: 0px; top: 222px; width: 960px; height: 44px; flex-direction: row; align-items: center; background-color: #1b1e24; padding-left: 14px; padding-right: 14px; }
-.cinput { flex: 1; height: 34px; font-size: 18px; color: #e6eaf0; background-color: #232830; border-radius: 6px; padding-left: 10px; }
-.csend { width: 120px; height: 34px; margin-left: 12px; background-color: #fb7299; border-radius: 6px; justify-content: center; }
-.csend-t { font-size: 18px; color: #ffffff; }
 .iview { position: absolute; left: 0px; top: 0px; width: 960px; height: 266px; background-color: #000000; z-index: 200; }
 .iview-img { position: absolute; left: 0px; top: 0px; width: 960px; height: 266px; }
 .iview-bar { position: absolute; left: 0px; bottom: 0px; width: 960px; height: 44px; flex-direction: row; align-items: center; background-color: rgba(0,0,0,0.72); padding-left: 10px; }
